@@ -889,11 +889,29 @@ async function readJson<T>(request: Request): Promise<T> {
   return (await request.json()) as T;
 }
 
+function hasD1Binding(env: Env): env is Env & { DB: D1Database } {
+  return Boolean(env.DB && typeof env.DB.prepare === "function");
+}
+
+function hasAssetsBinding(env: Env): env is Env & { ASSETS: Fetcher } {
+  return Boolean(env.ASSETS && typeof env.ASSETS.fetch === "function");
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     try {
+      if (url.pathname.startsWith("/api/") && !hasD1Binding(env)) {
+        return json(
+          {
+            error: "CRM D1 binding is missing in this deployment.",
+            hint: "Add the D1 binding `DB -> easyqueue_db` to the easyq-crm Worker, or redeploy from wrangler.toml so Cloudflare picks it up.",
+          },
+          { status: 500 }
+        );
+      }
+
       if (url.pathname === "/api/crm" && request.method === "GET") {
         const payload = await getCrmPayload(env, getSelectedDate(request));
         return json(payload);
@@ -931,7 +949,17 @@ export default {
         return json({ error: "Not found" }, { status: 404 });
       }
 
-      return env.ASSETS.fetch(request);
+      if (!hasAssetsBinding(env)) {
+        return json(
+          {
+            error: "CRM assets binding is missing in this deployment.",
+            hint: "Redeploy easyq-crm with the assets configuration from wrangler.toml, or reconnect the Worker so Cloudflare publishes the `dist` assets.",
+          },
+          { status: 500 }
+        );
+      }
+
+      return await env.ASSETS.fetch(request);
     } catch (error) {
       console.error("CRM worker error", error);
       const message = error instanceof Error ? error.message : "Unknown CRM error";

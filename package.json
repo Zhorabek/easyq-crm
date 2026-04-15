@@ -1,0 +1,31 @@
+{
+  "name": "easyq-crm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "npm run build && wrangler dev",
+    "dev:worker:remote": "npm run build && wrangler dev --remote",
+    "db:init:local": "wrangler d1 execute easyqueue_db --local --file=../easyqueue-business-bot/schema.sql",
+    "db:migrate:local": "wrangler d1 execute easyqueue_db --local --file=../easyqueue-business-bot/migrations/2026-04-06-booking-slots.sql",
+    "db:migrate:local:payments": "wrangler d1 execute easyqueue_db --local --file=../easyqueue-business-bot/migrations/2026-04-06-payments.sql",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260320.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "wrangler": "^4.79.0"
+  }
+}

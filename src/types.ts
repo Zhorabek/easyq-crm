@@ -14,6 +14,15 @@ export interface BusinessProfile {
   description: string | null;
   photoFileId: string | null;
   photoFileUniqueId: string | null;
+  crmUsername: string | null;
+  crmHasTemporaryPassword: boolean;
+}
+
+export interface AuthSession {
+  businessId: number;
+  businessName: string;
+  username: string;
+  isTemporaryPassword: boolean;
 }
 
 export interface KpiCard {
@@ -243,4 +252,15 @@ export interface UpdateBusinessProfileInput {
   phone?: string;
   schedule?: string;
   description?: string | null;
+}
+
+export interface LoginInput {
+  username: string;
+  password: string;
+}
+
+export interface UpdateCrmCredentialsInput {
+  username: string;
+  currentPassword: string;
+  newPassword?: string;
 }

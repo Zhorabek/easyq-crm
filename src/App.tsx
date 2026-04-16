@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState, useDeferredValue, type ChangeEvent } from "react";
+import { startTransition, useEffect, useRef, useState, useDeferredValue, type ChangeEvent, type FormEvent } from "react";
 import { ClientTable } from "./components/ClientTable";
 import { DayScheduler } from "./components/DayScheduler";
 import { EmployeeTable } from "./components/EmployeeTable";
@@ -6,15 +6,20 @@ import { KpiStrip } from "./components/KpiStrip";
 import { Sidebar } from "./components/Sidebar";
 import { ServicesTable } from "./components/ServicesTable";
 import {
+  ApiError,
   createBookingPayment,
   createEmployee,
   createService,
   deleteBusinessPhoto,
   deleteEmployee,
+  getAuthSession,
   getCrmPayload,
+  login,
+  logout,
   patchBookingStatus,
   saveEmployeeSlots,
   updateBusinessProfile,
+  updateCrmCredentials,
   updateEmployee,
   updateService,
   uploadBusinessPhoto,
@@ -32,6 +37,7 @@ import {
 } from "./lib/date";
 import type {
   AppSection,
+  AuthSession,
   BookingStatus,
   CalendarBookingCard,
   ClientRow,
@@ -112,6 +118,11 @@ function App() {
   const [activeSection, setActiveSection] = useState<AppSection>("calendar");
   const [selectedDate, setSelectedDate] = useState(isoToday());
   const [payload, setPayload] = useState<CrmPayload | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<CalendarBookingCard | null>(null);
@@ -138,6 +149,12 @@ function App() {
   const [serviceEditor, setServiceEditor] = useState<ServiceEditorState | null>(null);
   const [employeeEditor, setEmployeeEditor] = useState<EmployeeEditorState | null>(null);
   const [businessEditor, setBusinessEditor] = useState<BusinessEditorState | null>(null);
+  const [credentialsEditor, setCredentialsEditor] = useState<{
+    username: string;
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  } | null>(null);
   const [businessPhotoBroken, setBusinessPhotoBroken] = useState(false);
   const businessPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -146,8 +163,18 @@ function App() {
   const deferredServiceSearch = useDeferredValue(serviceSearch);
 
   useEffect(() => {
+    void bootstrapAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setPayload(null);
+      setLoading(false);
+      return;
+    }
+
     void load(selectedDate);
-  }, [selectedDate]);
+  }, [selectedDate, session?.businessId]);
 
   useEffect(() => {
     if (!toast) return;
@@ -184,6 +211,28 @@ function App() {
     setBusinessPhotoBroken(false);
   }, [payload?.business.photoFileId]);
 
+  async function bootstrapAuth() {
+    try {
+      const nextSession = await getAuthSession();
+      setSession(nextSession);
+      setLoginForm((current) => ({
+        ...current,
+        username: nextSession.username,
+        password: "",
+      }));
+    } catch (authError) {
+      if (authError instanceof ApiError && authError.status === 401) {
+        setSession(null);
+        setLoginError(null);
+        return;
+      }
+
+      setError(authError instanceof Error ? authError.message : "Не удалось проверить сессию CRM.");
+    } finally {
+      setAuthChecking(false);
+    }
+  }
+
   async function load(date: string) {
     try {
       setLoading(true);
@@ -191,6 +240,17 @@ function App() {
       const response = await getCrmPayload(date);
       setPayload(response);
     } catch (loadError) {
+      if (loadError instanceof ApiError && loadError.status === 401) {
+        setSession(null);
+        setPayload(null);
+        setError(null);
+        setSelectedBooking(null);
+        setSelectedClient(null);
+        setSchedulePreview(null);
+        setSlotEditor(null);
+        setLoginForm((current) => ({ ...current, password: "" }));
+        return;
+      }
       setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить CRM.");
     } finally {
       setLoading(false);
@@ -199,6 +259,57 @@ function App() {
 
   async function reload() {
     await load(selectedDate);
+  }
+
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const username = loginForm.username.trim();
+    const password = loginForm.password;
+
+    if (!username || !password) {
+      setLoginError("Введите логин и пароль.");
+      return;
+    }
+
+    try {
+      setAuthSubmitting(true);
+      setLoginError(null);
+      const response = await login({ username, password });
+      setSession(response.session);
+      setActiveSection("calendar");
+      setError(null);
+      setLoginForm({
+        username: response.session.username,
+        password: "",
+      });
+    } catch (authError) {
+      setLoginError(authError instanceof Error ? authError.message : "Не удалось выполнить вход.");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      setSession(null);
+      setActiveSection("calendar");
+      setPayload(null);
+      setSelectedBooking(null);
+      setSelectedClient(null);
+      setSchedulePreview(null);
+      setSlotEditor(null);
+      setBusinessEditor(null);
+      setCredentialsEditor(null);
+      setError(null);
+      setLoginError(null);
+      setLoginForm((current) => ({
+        username: current.username,
+        password: "",
+      }));
+    }
   }
 
   async function handleStatusUpdate(status: BookingStatus) {
@@ -388,6 +499,39 @@ function App() {
     }
   }
 
+  async function handleSaveCrmCredentials() {
+    if (!credentialsEditor) return;
+
+    const username = credentialsEditor.username.trim();
+    const currentPassword = credentialsEditor.currentPassword;
+    const newPassword = credentialsEditor.newPassword.trim();
+    const confirmPassword = credentialsEditor.confirmPassword.trim();
+
+    if (!username || !currentPassword) {
+      setToast("Укажите логин и текущий пароль");
+      return;
+    }
+
+    if (newPassword && newPassword !== confirmPassword) {
+      setToast("Новый пароль и подтверждение не совпадают");
+      return;
+    }
+
+    try {
+      const response = await updateCrmCredentials({
+        username,
+        currentPassword,
+        newPassword: newPassword || undefined,
+      });
+      setSession(response.session);
+      setCredentialsEditor(null);
+      setToast("CRM логин и пароль обновлены");
+      await reload();
+    } catch (credentialsError) {
+      setToast(credentialsError instanceof Error ? credentialsError.message : "Не удалось обновить CRM доступ");
+    }
+  }
+
   function moveDate(delta: number) {
     startTransition(() => {
       setSelectedDate((current) => addDays(current, delta));
@@ -416,6 +560,17 @@ function App() {
 
   function openBusinessPhotoPicker() {
     businessPhotoInputRef.current?.click();
+  }
+
+  function openCredentialsEditor() {
+    if (!payload?.business.crmUsername) return;
+
+    setCredentialsEditor({
+      username: payload.business.crmUsername,
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
   }
 
   function openSlotEditor(employee: EmployeeRow) {
@@ -605,6 +760,81 @@ function App() {
   const topbarEyebrow = activeSection === "profile" ? "Профиль бизнеса" : payload?.business.name ?? "EasyQ CRM";
   const topbarTitle = activeSection === "profile" ? payload?.business.name ?? "EasyQ CRM" : formatLongDate(selectedDate);
 
+  if (authChecking) {
+    return (
+      <div className="auth-shell">
+        <section className="auth-card">
+          <p className="eyebrow">EasyQueue CRM</p>
+          <h1>Проверяем доступ</h1>
+          <p>Подключаем текущую CRM-сессию и загружаем рабочее пространство бизнеса.</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="auth-shell">
+        <section className="auth-card">
+          <p className="eyebrow">EasyQueue CRM</p>
+          <h1>Вход для бизнеса</h1>
+          <p className="auth-card__lead">
+            Используйте тестовый логин и пароль из business bot. После входа вы сможете сменить их на свои.
+          </p>
+
+          <form className="auth-form" onSubmit={(event) => void handleLoginSubmit(event)}>
+            <label className="slot-editor-row">
+              <span>Логин</span>
+              <input
+                className="search-input"
+                value={loginForm.username}
+                onChange={(event) =>
+                  setLoginForm((current) => ({
+                    ...current,
+                    username: event.target.value,
+                  }))
+                }
+                autoComplete="username"
+                placeholder="Например, bestbarber_4"
+              />
+            </label>
+
+            <label className="slot-editor-row">
+              <span>Пароль</span>
+              <input
+                className="search-input"
+                type="password"
+                value={loginForm.password}
+                onChange={(event) =>
+                  setLoginForm((current) => ({
+                    ...current,
+                    password: event.target.value,
+                  }))
+                }
+                autoComplete="current-password"
+                placeholder="Введите временный пароль"
+              />
+            </label>
+
+            {(loginError || error) && <p className="auth-form__error">{loginError ?? error}</p>}
+
+            <button type="submit" className="primary-button auth-form__submit" disabled={authSubmitting}>
+              {authSubmitting ? "Входим..." : "Войти в CRM"}
+            </button>
+          </form>
+
+          <div className="auth-card__hint">
+            <strong>Где взять данные?</strong>
+            <p>
+              Откройте business bot, перейдите в профиль бизнеса и нажмите <code>CRM доступ</code>. Для старых бизнесов бот
+              покажет временные credentials или позволит сбросить пароль.
+            </p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="crm-root">
       <Sidebar
@@ -638,6 +868,9 @@ function App() {
             )}
             <button type="button" className="outline-button" onClick={() => void reload()}>
               Обновить
+            </button>
+            <button type="button" className="outline-button" onClick={() => void handleLogout()}>
+              Выйти
             </button>
           </div>
         </header>
@@ -733,6 +966,27 @@ function App() {
                       <strong>{payload.business.description?.trim() || "Пока не добавлено"}</strong>
                     </article>
                   </div>
+
+                  <article className="business-profile__security">
+                    <div>
+                      <span className="business-profile__security-label">CRM доступ</span>
+                      <strong>{payload.business.crmUsername ?? "—"}</strong>
+                      <p>
+                        {payload.business.crmHasTemporaryPassword
+                          ? "Сейчас вы используете временный пароль. Рекомендуем сменить логин и пароль после первого входа."
+                          : "Пароль уже изменён и больше не показывается в business bot. Здесь вы можете обновить логин и задать новый пароль."}
+                      </p>
+                    </div>
+
+                    <div className="business-profile__actions business-profile__actions--compact">
+                      <button type="button" className="primary-button" onClick={openCredentialsEditor}>
+                        Изменить логин и пароль
+                      </button>
+                      <button type="button" className="outline-button" onClick={() => void handleLogout()}>
+                        Выйти из CRM
+                      </button>
+                    </div>
+                  </article>
                 </article>
               </section>
             )}
@@ -1319,6 +1573,124 @@ function App() {
         </div>
       )}
 
+      {credentialsEditor && (
+        <div className="modal-backdrop">
+          <section className="modal modal--compact">
+            <div className="drawer__header">
+              <div>
+                <p className="eyebrow">CRM доступ</p>
+                <h3>Логин и пароль</h3>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setCredentialsEditor(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal__grid modal__grid--single">
+              <label className="slot-editor-row">
+                <span>Новый логин</span>
+                <input
+                  className="search-input"
+                  value={credentialsEditor.username}
+                  onChange={(event) =>
+                    setCredentialsEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            username: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  autoComplete="username"
+                  placeholder="bestbarber_4"
+                />
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Текущий пароль</span>
+                <input
+                  className="search-input"
+                  type="password"
+                  value={credentialsEditor.currentPassword}
+                  onChange={(event) =>
+                    setCredentialsEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            currentPassword: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  autoComplete="current-password"
+                  placeholder="Подтвердите текущий пароль"
+                />
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Новый пароль</span>
+                <input
+                  className="search-input"
+                  type="password"
+                  value={credentialsEditor.newPassword}
+                  onChange={(event) =>
+                    setCredentialsEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            newPassword: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  autoComplete="new-password"
+                  placeholder="Оставьте пустым, если пароль не меняется"
+                />
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Повторите новый пароль</span>
+                <input
+                  className="search-input"
+                  type="password"
+                  value={credentialsEditor.confirmPassword}
+                  onChange={(event) =>
+                    setCredentialsEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            confirmPassword: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  autoComplete="new-password"
+                  placeholder="Нужно только если меняете пароль"
+                />
+              </label>
+
+              <article className="drawer__subsection">
+                <h4>Как это работает</h4>
+                <p>
+                  Логин можно обновить в любой момент. Если зададите новый пароль, временный пароль из business bot
+                  перестанет действовать.
+                </p>
+              </article>
+            </div>
+
+            <div className="modal__footer">
+              <button type="button" className="outline-button" onClick={() => setCredentialsEditor(null)}>
+                Отмена
+              </button>
+              <button type="button" className="primary-button" onClick={() => void handleSaveCrmCredentials()}>
+                Сохранить доступ
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {businessEditor && (
         <div className="modal-backdrop">
           <section className="modal">
@@ -1619,7 +1991,7 @@ function App() {
 
       {slotEditor && (
         <div className="modal-backdrop">
-          <section className="modal">
+          <section className="modal modal--slot-editor">
             <div className="drawer__header">
               <div>
                 <p className="eyebrow">Управление слотами</p>

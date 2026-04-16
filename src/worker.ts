@@ -1,5 +1,6 @@
 import type {
   AddEmployeeInput,
+  AuthSession,
   BookingLinkItem,
   BookingStatus,
   CalendarBookingCard,
@@ -15,6 +16,7 @@ import type {
   PaymentMethod,
   PaymentSummary,
   ServiceCatalogItem,
+  UpdateCrmCredentialsInput,
   UpdateBusinessProfileInput,
   UpdateBookingStatusInput,
   UpdateEmployeeInput,
@@ -22,6 +24,15 @@ import type {
   UpdateEmployeeSlotsInput,
   UpsertServiceInput,
 } from "./types";
+import {
+  clearSessionCookie,
+  createSessionCookie,
+  hashCrmPassword,
+  isValidCrmUsername,
+  normalizeCrmUsername,
+  readSession,
+  verifyCrmPassword,
+} from "./server/auth";
 
 interface Env {
   DB: D1Database;
@@ -29,6 +40,7 @@ interface Env {
   APP_TIMEZONE?: string;
   CRM_BUSINESS_ID?: string;
   CRM_BUSINESS_TELEGRAM_ID?: string;
+  CRM_SESSION_SECRET?: string;
   CLIENT_BOT_USERNAME?: string;
   BUSINESS_BOT_USERNAME?: string;
   BUSINESS_BOT_TOKEN?: string;
@@ -45,6 +57,18 @@ type BusinessRow = {
   description: string | null;
   photo_file_id: string | null;
   photo_file_unique_id: string | null;
+  crm_username: string | null;
+  crm_password_hash: string | null;
+  crm_temp_password: string | null;
+  crm_credentials_updated_at: string | null;
+};
+
+type LoginRow = {
+  id: number;
+  name: string;
+  crm_username: string | null;
+  crm_password_hash: string | null;
+  crm_temp_password: string | null;
 };
 
 type ServiceRow = {
@@ -154,6 +178,43 @@ function json(data: unknown, init: ResponseInit = {}) {
       ...init.headers,
     },
   });
+}
+
+function toAuthSession(business: BusinessRow): AuthSession {
+  return {
+    businessId: business.id,
+    businessName: business.name,
+    username: business.crm_username ?? "",
+    isTemporaryPassword: Boolean(business.crm_temp_password),
+  };
+}
+
+async function getBusinessById(db: D1Database, businessId: number) {
+  return (
+    (await db
+      .prepare(
+        `SELECT
+           id,
+           user_id,
+           name,
+           type,
+           address,
+           phone,
+           schedule,
+           description,
+           photo_file_id,
+           photo_file_unique_id,
+           crm_username,
+           crm_password_hash,
+           crm_temp_password,
+           crm_credentials_updated_at
+         FROM businesses
+         WHERE id = ?
+         LIMIT 1`
+      )
+      .bind(businessId)
+      .first<BusinessRow>()) ?? null
+  );
 }
 
 function isIsoDate(value: string | null) {
@@ -368,60 +429,171 @@ function sumPaymentsInRange(payments: PaymentRow[], predicate: (payment: Payment
     );
 }
 
-async function resolveBusiness(env: Env): Promise<BusinessRow> {
-  if (env.CRM_BUSINESS_ID) {
-    const business = await env.DB
-      .prepare(
-        "SELECT id, user_id, name, type, address, phone, schedule, description, photo_file_id, photo_file_unique_id FROM businesses WHERE id = ? LIMIT 1"
-      )
-      .bind(Number(env.CRM_BUSINESS_ID))
-      .first<BusinessRow>();
-    if (business) return business;
-
-    throw new Error(`CRM_BUSINESS_ID=${env.CRM_BUSINESS_ID} was set, but no such business exists in D1.`);
+async function requireAuthenticatedBusiness(env: Env, request: Request): Promise<BusinessRow> {
+  const session = await readSession(request, env.CRM_SESSION_SECRET);
+  if (!session) {
+    throw new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": clearSessionCookie(request),
+      },
+    });
   }
 
-  if (env.CRM_BUSINESS_TELEGRAM_ID) {
-    const business = await env.DB
-      .prepare(
-        `SELECT b.id, b.user_id, b.name, b.type, b.address, b.phone, b.schedule, b.description, b.photo_file_id, b.photo_file_unique_id
-         FROM businesses b
-         INNER JOIN users u ON u.id = b.user_id
-         WHERE u.telegram_id = ?
-         LIMIT 1`
-      )
-      .bind(Number(env.CRM_BUSINESS_TELEGRAM_ID))
-      .first<BusinessRow>();
+  const business = await getBusinessById(env.DB, session.businessId);
+  if (!business || !business.crm_username) {
+    throw new Response(JSON.stringify({ error: "Your CRM session is no longer valid. Please sign in again." }), {
+      status: 401,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": clearSessionCookie(request),
+      },
+    });
+  }
 
-    if (business) return business;
+  return business;
+}
 
-    throw new Error(
-      `CRM_BUSINESS_TELEGRAM_ID=${env.CRM_BUSINESS_TELEGRAM_ID} was set, but no matching business owner was found in D1.`
+async function getSessionState(env: Env, request: Request) {
+  const business = await requireAuthenticatedBusiness(env, request);
+  return json(toAuthSession(business));
+}
+
+async function login(env: Env, request: Request) {
+  const input = (await request.json().catch(() => ({}))) as { username?: string; password?: string };
+  const username = normalizeCrmUsername(input.username ?? "");
+  const password = String(input.password ?? "");
+
+  if (!username || !password) {
+    return json({ error: "Введите логин и пароль." }, { status: 400 });
+  }
+
+  const row = await env.DB
+    .prepare(
+      `SELECT
+         id,
+         name,
+         crm_username,
+         crm_password_hash,
+         crm_temp_password
+       FROM businesses
+       WHERE crm_username = ?
+       LIMIT 1`
+    )
+    .bind(username)
+    .first<LoginRow>();
+
+  if (!row || !(await verifyCrmPassword(password, row.crm_password_hash))) {
+    return json({ error: "Неверный логин или пароль." }, { status: 401 });
+  }
+
+  const business = await getBusinessById(env.DB, row.id);
+  if (!business) {
+    return json({ error: "Бизнес для этого логина не найден." }, { status: 404 });
+  }
+
+  const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+    businessId: business.id,
+    username: business.crm_username ?? username,
+  });
+
+  return json(
+    {
+      ok: true,
+      session: toAuthSession(business),
+    },
+    {
+      headers: {
+        "set-cookie": cookie,
+      },
+    }
+  );
+}
+
+async function logout(request: Request) {
+  return json(
+    { ok: true },
+    {
+      headers: {
+        "set-cookie": clearSessionCookie(request),
+      },
+    }
+  );
+}
+
+async function updateBusinessCredentials(env: Env, request: Request, business: BusinessRow, input: UpdateCrmCredentialsInput) {
+  const username = normalizeCrmUsername(input.username ?? "");
+  const currentPassword = String(input.currentPassword ?? "");
+  const newPassword = input.newPassword?.trim();
+
+  if (!isValidCrmUsername(username)) {
+    return json(
+      {
+        error: "Логин должен быть длиной 4-32 символа и содержать только латинские буквы, цифры, точку, дефис или подчёркивание.",
+      },
+      { status: 400 }
     );
   }
 
-  const rows = await env.DB
+  if (!(await verifyCrmPassword(currentPassword, business.crm_password_hash))) {
+    return json({ error: "Текущий пароль указан неверно." }, { status: 400 });
+  }
+
+  const usernameOwner = await env.DB
+    .prepare("SELECT id FROM businesses WHERE crm_username = ? AND id != ? LIMIT 1")
+    .bind(username, business.id)
+    .first<{ id: number }>();
+
+  if (usernameOwner?.id) {
+    return json({ error: "Такой логин уже занят другим бизнесом." }, { status: 400 });
+  }
+
+  let nextPasswordHash = business.crm_password_hash;
+  let nextTempPassword: string | null = business.crm_temp_password;
+
+  if (newPassword) {
+    if (newPassword.length < 8) {
+      return json({ error: "Новый пароль должен содержать минимум 8 символов." }, { status: 400 });
+    }
+
+    nextPasswordHash = await hashCrmPassword(newPassword);
+    nextTempPassword = null;
+  }
+
+  if (username === business.crm_username && !newPassword) {
+    return json({ error: "Измените логин или задайте новый пароль." }, { status: 400 });
+  }
+
+  await env.DB
     .prepare(
-      "SELECT id, user_id, name, type, address, phone, schedule, description, photo_file_id, photo_file_unique_id FROM businesses ORDER BY id ASC"
+      `UPDATE businesses
+       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, crm_credentials_updated_at = datetime('now')
+       WHERE id = ?`
     )
-    .all<BusinessRow>();
-  const businesses = (rows.results ?? []) as BusinessRow[];
+    .bind(username, nextPasswordHash, nextTempPassword, business.id)
+    .run();
 
-  if (businesses.length === 0) {
-    throw new Error("No business found for CRM.");
+  const refreshed = await getBusinessById(env.DB, business.id);
+  if (!refreshed) {
+    return json({ error: "Не удалось перечитать бизнес после обновления данных доступа." }, { status: 500 });
   }
 
-  if (businesses.length === 1) {
-    return businesses[0];
-  }
+  const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+    businessId: refreshed.id,
+    username: refreshed.crm_username ?? username,
+  });
 
-  const availableBusinesses = businesses
-    .slice(0, 8)
-    .map((business) => `${business.id}: ${business.name}`)
-    .join(", ");
-
-  throw new Error(
-    `CRM business is not configured. Set CRM_BUSINESS_ID or CRM_BUSINESS_TELEGRAM_ID. Available businesses: ${availableBusinesses}`
+  return json(
+    {
+      ok: true,
+      session: toAuthSession(refreshed),
+    },
+    {
+      headers: {
+        "set-cookie": cookie,
+      },
+    }
   );
 }
 
@@ -463,8 +635,7 @@ async function replaceServiceBindings(db: D1Database, serviceId: number, staffId
   }
 }
 
-async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload> {
-  const business = await resolveBusiness(env);
+async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: string): Promise<CrmPayload> {
   const weekday = new Date(`${selectedDate}T00:00:00`).getDay();
 
   const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes] =
@@ -932,6 +1103,8 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
       description: business.description,
       photoFileId: business.photo_file_id,
       photoFileUniqueId: business.photo_file_unique_id,
+      crmUsername: business.crm_username,
+      crmHasTemporaryPassword: Boolean(business.crm_temp_password),
     },
     generatedAt: new Date().toISOString(),
     selectedDate,
@@ -963,8 +1136,7 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
   };
 }
 
-async function updateBookingStatus(env: Env, bookingId: number, input: UpdateBookingStatusInput) {
-  const business = await resolveBusiness(env);
+async function updateBookingStatus(env: Env, business: BusinessRow, bookingId: number, input: UpdateBookingStatusInput) {
   const allowed = ["pending", "confirmed", "done", "cancelled"];
   if (!allowed.includes(input.status)) {
     return json({ error: "Invalid booking status" }, { status: 400 });
@@ -984,8 +1156,7 @@ async function updateBookingStatus(env: Env, bookingId: number, input: UpdateBoo
   return json({ ok: true });
 }
 
-async function createBookingPayment(env: Env, bookingId: number, input: CreatePaymentInput) {
-  const business = await resolveBusiness(env);
+async function createBookingPayment(env: Env, business: BusinessRow, bookingId: number, input: CreatePaymentInput) {
   const booking = await env.DB
     .prepare(
       `SELECT id, business_id, staff_id, price_snapshot
@@ -1022,8 +1193,7 @@ async function createBookingPayment(env: Env, bookingId: number, input: CreatePa
   return json({ ok: true }, { status: 201 });
 }
 
-async function addEmployee(env: Env, input: AddEmployeeInput) {
-  const business = await resolveBusiness(env);
+async function addEmployee(env: Env, business: BusinessRow, input: AddEmployeeInput) {
   const name = input.name?.trim();
   if (!name) {
     return json({ error: "Employee name is required" }, { status: 400 });
@@ -1033,8 +1203,7 @@ async function addEmployee(env: Env, input: AddEmployeeInput) {
   return json({ ok: true }, { status: 201 });
 }
 
-async function updateEmployee(env: Env, staffId: number, input: UpdateEmployeeInput) {
-  const business = await resolveBusiness(env);
+async function updateEmployee(env: Env, business: BusinessRow, staffId: number, input: UpdateEmployeeInput) {
   const current = await env.DB
     .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(staffId, business.id)
@@ -1053,8 +1222,7 @@ async function updateEmployee(env: Env, staffId: number, input: UpdateEmployeeIn
   return json({ ok: true });
 }
 
-async function deleteEmployee(env: Env, staffId: number) {
-  const business = await resolveBusiness(env);
+async function deleteEmployee(env: Env, business: BusinessRow, staffId: number) {
   const current = await env.DB
     .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(staffId, business.id)
@@ -1068,8 +1236,7 @@ async function deleteEmployee(env: Env, staffId: number) {
   return json({ ok: true });
 }
 
-async function updateBusinessProfile(env: Env, input: UpdateBusinessProfileInput) {
-  const business = await resolveBusiness(env);
+async function updateBusinessProfile(env: Env, business: BusinessRow, input: UpdateBusinessProfileInput) {
   const nextName = input.name === undefined ? business.name : input.name.trim();
   const nextAddress = input.address === undefined ? business.address : input.address.trim();
   const nextPhone = input.phone === undefined ? business.phone : input.phone.trim();
@@ -1110,8 +1277,7 @@ async function updateBusinessProfile(env: Env, input: UpdateBusinessProfileInput
   return json({ ok: true });
 }
 
-async function uploadBusinessPhoto(env: Env, request: Request) {
-  const business = await resolveBusiness(env);
+async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Request) {
   const formData = await request.formData();
   const photo = formData.get("photo");
 
@@ -1129,8 +1295,7 @@ async function uploadBusinessPhoto(env: Env, request: Request) {
   return json({ ok: true }, { status: 201 });
 }
 
-async function deleteBusinessPhoto(env: Env) {
-  const business = await resolveBusiness(env);
+async function deleteBusinessPhoto(env: Env, business: BusinessRow) {
   await env.DB
     .prepare("UPDATE businesses SET photo_file_id = NULL, photo_file_unique_id = NULL WHERE id = ?")
     .bind(business.id)
@@ -1139,8 +1304,7 @@ async function deleteBusinessPhoto(env: Env) {
   return json({ ok: true });
 }
 
-async function proxyBusinessPhoto(env: Env) {
-  const business = await resolveBusiness(env);
+async function proxyBusinessPhoto(env: Env, business: BusinessRow) {
 
   if (!business.photo_file_id) {
     return new Response("Not found", { status: 404 });
@@ -1161,8 +1325,7 @@ async function proxyBusinessPhoto(env: Env) {
   });
 }
 
-async function createService(env: Env, input: UpsertServiceInput) {
-  const business = await resolveBusiness(env);
+async function createService(env: Env, business: BusinessRow, input: UpsertServiceInput) {
   const name = input.name?.trim();
   const price = Number(input.price);
   const duration = Number(input.duration);
@@ -1209,8 +1372,7 @@ async function createService(env: Env, input: UpsertServiceInput) {
   return json({ ok: true }, { status: 201 });
 }
 
-async function updateService(env: Env, serviceId: number, input: UpdateServiceInput) {
-  const business = await resolveBusiness(env);
+async function updateService(env: Env, business: BusinessRow, serviceId: number, input: UpdateServiceInput) {
   const current = await env.DB
     .prepare("SELECT id, name, price, duration, is_active FROM services WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(serviceId, business.id)
@@ -1253,8 +1415,7 @@ async function updateService(env: Env, serviceId: number, input: UpdateServiceIn
   return json({ ok: true });
 }
 
-async function updateEmployeeSlots(env: Env, staffId: number, input: UpdateEmployeeSlotsInput) {
-  const business = await resolveBusiness(env);
+async function updateEmployeeSlots(env: Env, business: BusinessRow, staffId: number, input: UpdateEmployeeSlotsInput) {
   const staff = await env.DB
     .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(staffId, business.id)
@@ -1366,63 +1527,93 @@ export default {
         );
       }
 
+      if (url.pathname === "/api/auth/session" && request.method === "GET") {
+        return getSessionState(env, request);
+      }
+
+      if (url.pathname === "/api/auth/login" && request.method === "POST") {
+        return login(env, request);
+      }
+
+      if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+        return logout(request);
+      }
+
       if (url.pathname === "/api/crm" && request.method === "GET") {
-        const payload = await getCrmPayload(env, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
+        const business = await requireAuthenticatedBusiness(env, request);
+        const payload = await getCrmPayload(env, business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
         return json(payload);
       }
 
       if (url.pathname.startsWith("/api/bookings/") && request.method === "PATCH") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const bookingId = Number(url.pathname.split("/")[3]);
-        return updateBookingStatus(env, bookingId, await readJson<UpdateBookingStatusInput>(request));
+        return updateBookingStatus(env, business, bookingId, await readJson<UpdateBookingStatusInput>(request));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && url.pathname.endsWith("/payments") && request.method === "POST") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const bookingId = Number(url.pathname.split("/")[3]);
-        return createBookingPayment(env, bookingId, await readJson<CreatePaymentInput>(request));
+        return createBookingPayment(env, business, bookingId, await readJson<CreatePaymentInput>(request));
       }
 
       if (url.pathname === "/api/employees" && request.method === "POST") {
-        return addEmployee(env, await readJson<AddEmployeeInput>(request));
+        const business = await requireAuthenticatedBusiness(env, request);
+        return addEmployee(env, business, await readJson<AddEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "PATCH") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const staffId = Number(url.pathname.split("/")[3]);
-        return updateEmployee(env, staffId, await readJson<UpdateEmployeeInput>(request));
+        return updateEmployee(env, business, staffId, await readJson<UpdateEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "DELETE") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const staffId = Number(url.pathname.split("/")[3]);
-        return deleteEmployee(env, staffId);
+        return deleteEmployee(env, business, staffId);
       }
 
       if (url.pathname === "/api/services" && request.method === "POST") {
-        return createService(env, await readJson<UpsertServiceInput>(request));
+        const business = await requireAuthenticatedBusiness(env, request);
+        return createService(env, business, await readJson<UpsertServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/services/") && request.method === "PATCH") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const serviceId = Number(url.pathname.split("/")[3]);
-        return updateService(env, serviceId, await readJson<UpdateServiceInput>(request));
+        return updateService(env, business, serviceId, await readJson<UpdateServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && url.pathname.endsWith("/slots") && request.method === "PUT") {
+        const business = await requireAuthenticatedBusiness(env, request);
         const staffId = Number(url.pathname.split("/")[3]);
-        return updateEmployeeSlots(env, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
+        return updateEmployeeSlots(env, business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
       }
 
       if (url.pathname === "/api/business" && request.method === "PATCH") {
-        return updateBusinessProfile(env, await readJson<UpdateBusinessProfileInput>(request));
+        const business = await requireAuthenticatedBusiness(env, request);
+        return updateBusinessProfile(env, business, await readJson<UpdateBusinessProfileInput>(request));
+      }
+
+      if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {
+        const business = await requireAuthenticatedBusiness(env, request);
+        return updateBusinessCredentials(env, request, business, await readJson<UpdateCrmCredentialsInput>(request));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "POST") {
-        return uploadBusinessPhoto(env, request);
+        const business = await requireAuthenticatedBusiness(env, request);
+        return uploadBusinessPhoto(env, business, request);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "DELETE") {
-        return deleteBusinessPhoto(env);
+        const business = await requireAuthenticatedBusiness(env, request);
+        return deleteBusinessPhoto(env, business);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {
-        return proxyBusinessPhoto(env);
+        const business = await requireAuthenticatedBusiness(env, request);
+        return proxyBusinessPhoto(env, business);
       }
 
       if (url.pathname.startsWith("/api/")) {
@@ -1441,6 +1632,9 @@ export default {
 
       return await env.ASSETS.fetch(request);
     } catch (error) {
+      if (error instanceof Response) {
+        return error;
+      }
       console.error("CRM worker error", error);
       const message = error instanceof Error ? error.message : "Unknown CRM error";
       const hint = message.includes("no such table: businesses")

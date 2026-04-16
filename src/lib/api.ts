@@ -1,14 +1,27 @@
 import type {
   AddEmployeeInput,
+  AuthSession,
   BookingStatus,
   CreatePaymentInput,
   CrmPayload,
+  LoginInput,
+  UpdateCrmCredentialsInput,
   UpdateBusinessProfileInput,
   UpdateEmployeeInput,
   UpdateServiceInput,
   UpdateEmployeeSlotsInput,
   UpsertServiceInput,
 } from "../types";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
@@ -23,10 +36,27 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({ error: "Request failed" }))) as { error?: string };
-    throw new Error(payload.error ?? "Request failed");
+    throw new ApiError(payload.error ?? "Request failed", response.status);
   }
 
   return (await response.json()) as T;
+}
+
+export function getAuthSession() {
+  return request<AuthSession>("/api/auth/session");
+}
+
+export function login(input: LoginInput) {
+  return request<{ ok: true; session: AuthSession }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function logout() {
+  return request<{ ok: true }>("/api/auth/logout", {
+    method: "POST",
+  });
 }
 
 export function getCrmPayload(date: string) {
@@ -108,5 +138,12 @@ export function uploadBusinessPhoto(file: File) {
 export function deleteBusinessPhoto() {
   return request<{ ok: true }>("/api/business/photo", {
     method: "DELETE",
+  });
+}
+
+export function updateCrmCredentials(input: UpdateCrmCredentialsInput) {
+  return request<{ ok: true; session: AuthSession }>("/api/business/credentials", {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }

@@ -21,16 +21,17 @@ npm install
 
 ## Local env
 
-Copy `.dev.vars.example` to `.dev.vars` and set at least one business selector:
+Copy `.dev.vars.example` to `.dev.vars` and set the local runtime vars:
 
 ```bash
-CRM_BUSINESS_ID=1
 APP_TIMEZONE=Asia/Almaty
+CRM_SESSION_SECRET=easyq-crm-dev-session-secret
 CLIENT_BOT_USERNAME=easyqueue_client_bot
 BUSINESS_BOT_USERNAME=easyqueue_business_bot
 ```
 
-You can also use `CRM_BUSINESS_TELEGRAM_ID` instead of `CRM_BUSINESS_ID`.
+CRM now uses login/password per business, so `CRM_BUSINESS_ID` is no longer required for the normal UI flow.
+Open the business in Telegram, go to the profile, tap `CRM доступ`, and use the shown test credentials to sign in.
 
 ## Run
 
@@ -85,6 +86,7 @@ npm run deploy
 ## Notes
 
 - The CRM reads the same D1 schema as the bots.
+- Set `CRM_SESSION_SECRET` in Cloudflare secrets for production auth cookies.
 - Earnings and finance analytics now come from the shared `payments` ledger, not only from booking status.
 - `wrangler dev` uses a local D1 by default, so it will be empty until you initialize it.
 - It does not store Telegram bot tokens in the source tree.

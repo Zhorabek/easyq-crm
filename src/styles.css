@@ -44,6 +44,10 @@ body {
     linear-gradient(180deg, #edf5ef 0%, #f6fbf7 100%);
 }
 
+code {
+  font-family: "SFMono-Regular", "Menlo", monospace;
+}
+
 button,
 input,
 textarea {
@@ -71,6 +75,63 @@ a {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+
+.auth-card {
+  width: min(520px, 100%);
+  background: rgba(255, 255, 252, 0.92);
+  border: 1px solid rgba(157, 175, 160, 0.18);
+  border-radius: 32px;
+  padding: 30px;
+  box-shadow: 0 28px 64px rgba(135, 153, 137, 0.16);
+  display: grid;
+  gap: 18px;
+}
+
+.auth-card h1,
+.auth-card p,
+.auth-card strong {
+  margin: 0;
+}
+
+.auth-card__lead {
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.auth-card__hint {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(248, 251, 247, 0.94);
+  border: 1px solid rgba(154, 173, 157, 0.16);
+}
+
+.auth-card__hint p {
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form__error {
+  margin: 0;
+  color: #9a5644;
+}
+
+.auth-form__submit {
+  justify-content: center;
 }
 
 .sidebar {
@@ -411,9 +472,13 @@ a {
 }
 
 .content-grid--overview,
-.content-grid--analytics,
 .content-grid--booking {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.content-grid--analytics {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  align-items: start;
 }
 
 .business-profile {
@@ -535,6 +600,41 @@ a {
   line-height: 1.6;
 }
 
+.business-profile__security {
+  margin-top: 18px;
+  background: linear-gradient(135deg, rgba(248, 251, 247, 0.98), rgba(255, 255, 252, 0.98));
+  border: 1px solid rgba(154, 173, 157, 0.16);
+  border-radius: 24px;
+  padding: 20px 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+
+.business-profile__security-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-soft);
+}
+
+.business-profile__security strong {
+  display: block;
+  font-size: 1.2rem;
+  margin-bottom: 8px;
+}
+
+.business-profile__security p {
+  margin: 0;
+  color: var(--text-soft);
+  max-width: 64ch;
+  line-height: 1.7;
+}
+
+.business-profile__actions--compact {
+  justify-content: flex-end;
+}
+
 .panel,
 .scheduler-card {
   border-radius: 28px;
@@ -634,9 +734,17 @@ a {
 
 .leaderboard__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
   align-items: center;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(154, 173, 157, 0.16);
+  background: rgba(248, 251, 247, 0.92);
+}
+
+.leaderboard__row p {
+  margin-top: 6px;
 }
 
 .leaderboard__bar {
@@ -1060,6 +1168,14 @@ a {
   width: min(560px, 100%);
 }
 
+.modal--slot-editor {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .modal__grid,
 .weekly-grid,
 .analytics-cards {
@@ -1084,6 +1200,18 @@ a {
   display: grid;
   gap: 16px;
   margin-top: 10px;
+}
+
+.modal--slot-editor .slot-editor-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.modal--slot-editor .modal__footer {
+  flex-shrink: 0;
+  margin-top: 16px;
 }
 
 .slot-editor-stack {
@@ -1253,11 +1381,22 @@ a {
 }
 
 .analytics-cards {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .analytics-card {
   border-radius: 20px;
+  padding: 18px 20px;
+  min-height: 148px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.analytics-card strong {
+  line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .empty-state {
@@ -1315,6 +1454,11 @@ a {
   .business-profile__grid,
   .business-profile__hero {
     grid-template-columns: 1fr;
+  }
+
+  .business-profile__security {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .slot-day-tabs {

@@ -15,7 +15,9 @@ import type {
   PaymentMethod,
   PaymentSummary,
   ServiceCatalogItem,
+  UpdateBusinessProfileInput,
   UpdateBookingStatusInput,
+  UpdateEmployeeInput,
   UpdateServiceInput,
   UpdateEmployeeSlotsInput,
   UpsertServiceInput,
@@ -29,15 +31,20 @@ interface Env {
   CRM_BUSINESS_TELEGRAM_ID?: string;
   CLIENT_BOT_USERNAME?: string;
   BUSINESS_BOT_USERNAME?: string;
+  BUSINESS_BOT_TOKEN?: string;
 }
 
 type BusinessRow = {
   id: number;
+  user_id: number | null;
   name: string;
   type: string;
   address: string;
   phone: string;
   schedule: string;
+  description: string | null;
+  photo_file_id: string | null;
+  photo_file_unique_id: string | null;
 };
 
 type ServiceRow = {
@@ -70,6 +77,16 @@ type StaffSlotRow = {
   slot_time: string;
 };
 
+type StaffUnavailabilityRow = {
+  id: number;
+  staff_id: number;
+  kind: "break" | "day_off";
+  weekday: number | null;
+  date: string | null;
+  slot_time: string | null;
+  is_full_day: number;
+};
+
 type BookingRow = {
   id: number;
   business_id: number;
@@ -98,8 +115,36 @@ type PaymentRow = {
   created_at: string;
 };
 
+type TelegramGetFileResult = {
+  ok?: boolean;
+  result?: {
+    file_path?: string;
+  };
+};
+
+type TelegramSendPhotoResult = {
+  ok?: boolean;
+  result?: {
+    message_id?: number;
+    photo?: Array<{
+      file_id?: string;
+      file_unique_id?: string;
+      file_size?: number;
+    }>;
+  };
+};
+
 const CARD_COLORS = ["#c9ebdd", "#eaf59e", "#dff1c4", "#d4ede2", "#f1f6cf", "#c4e5d4"];
 const WEEKDAY_LABELS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+const ALLOWED_BUSINESS_TYPES = new Set([
+  "barbershop",
+  "beauty_salon",
+  "carwash",
+  "spa_salon",
+  "dentistry",
+  "medical_services",
+  "other",
+]);
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -115,10 +160,26 @@ function isIsoDate(value: string | null) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
-function getSelectedDate(request: Request) {
+function formatDateInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year ?? "1970"}-${map.month ?? "01"}-${map.day ?? "01"}`;
+}
+
+function getTodayIso(timeZone = "UTC") {
+  return formatDateInTimeZone(new Date(), timeZone);
+}
+
+function getSelectedDate(request: Request, timeZone = "UTC") {
   const url = new URL(request.url);
   const requested = url.searchParams.get("date");
-  return isIsoDate(requested) ? requested! : new Date().toISOString().slice(0, 10);
+  return isIsoDate(requested) ? requested! : getTodayIso(timeZone);
 }
 
 function getDatePart(datetime: string) {
@@ -144,6 +205,122 @@ function normalizeTime(value: string) {
   const minutes = Number(match[2]);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function normalizeBusinessType(value: string | null | undefined) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (normalized === "salon") {
+    return "beauty_salon";
+  }
+
+  return ALLOWED_BUSINESS_TYPES.has(normalized) ? normalized : null;
+}
+
+async function tgCallJson<T>(token: string, method: string, payload: unknown) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Telegram ${method} failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function tgCallMultipart<T>(token: string, method: string, formData: FormData) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Telegram ${method} failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function getBusinessOwnerTelegramId(env: Env, business: BusinessRow) {
+  if (!business.user_id) return null;
+
+  const owner = await env.DB
+    .prepare("SELECT telegram_id FROM users WHERE id = ? LIMIT 1")
+    .bind(business.user_id)
+    .first<{ telegram_id: number | null }>();
+
+  return owner?.telegram_id ? Number(owner.telegram_id) : null;
+}
+
+async function getTelegramFileResponse(token: string, fileId: string) {
+  const payload = await fetch(
+    `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`
+  );
+
+  if (!payload.ok) {
+    const text = await payload.text().catch(() => "");
+    throw new Error(`Telegram getFile failed: ${payload.status} ${text}`);
+  }
+
+  const data = (await payload.json()) as TelegramGetFileResult;
+  if (!data.ok || !data.result?.file_path) {
+    throw new Error("Telegram did not return a file path for this photo.");
+  }
+
+  const fileResponse = await fetch(`https://api.telegram.org/file/bot${token}/${data.result.file_path}`);
+  if (!fileResponse.ok) {
+    const text = await fileResponse.text().catch(() => "");
+    throw new Error(`Telegram file download failed: ${fileResponse.status} ${text}`);
+  }
+
+  return fileResponse;
+}
+
+async function uploadPhotoToBusinessBot(env: Env, business: BusinessRow, photo: File) {
+  if (!env.BUSINESS_BOT_TOKEN) {
+    throw new Error("BUSINESS_BOT_TOKEN is not configured for CRM.");
+  }
+
+  const ownerTelegramId = await getBusinessOwnerTelegramId(env, business);
+  if (!ownerTelegramId) {
+    throw new Error("Could not resolve the business owner Telegram account.");
+  }
+
+  const formData = new FormData();
+  formData.set("chat_id", String(ownerTelegramId));
+  formData.set("photo", photo, photo.name || "business-photo.jpg");
+  formData.set("caption", "CRM business profile photo upload");
+
+  const response = await tgCallMultipart<TelegramSendPhotoResult>(env.BUSINESS_BOT_TOKEN, "sendPhoto", formData);
+  const telegramPhotos = response.result?.photo ? [...response.result.photo] : [];
+  const telegramPhoto = telegramPhotos.sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0))[0];
+
+  if (!response.ok || !response.result?.message_id || !telegramPhoto?.file_id) {
+    throw new Error("Telegram did not return a valid business photo file_id.");
+  }
+
+  await tgCallJson(env.BUSINESS_BOT_TOKEN, "deleteMessage", {
+    chat_id: ownerTelegramId,
+    message_id: response.result.message_id,
+  }).catch((error) => {
+    console.log("deleteMessage error:", error);
+    return null;
+  });
+
+  return {
+    fileId: telegramPhoto.file_id,
+    fileUniqueId: telegramPhoto.file_unique_id ?? null,
+  };
 }
 
 function summarizePayments(totalAmount: number, payments: PaymentRow[]): PaymentSummary {
@@ -194,16 +371,20 @@ function sumPaymentsInRange(payments: PaymentRow[], predicate: (payment: Payment
 async function resolveBusiness(env: Env): Promise<BusinessRow> {
   if (env.CRM_BUSINESS_ID) {
     const business = await env.DB
-      .prepare("SELECT id, name, type, address, phone, schedule FROM businesses WHERE id = ? LIMIT 1")
+      .prepare(
+        "SELECT id, user_id, name, type, address, phone, schedule, description, photo_file_id, photo_file_unique_id FROM businesses WHERE id = ? LIMIT 1"
+      )
       .bind(Number(env.CRM_BUSINESS_ID))
       .first<BusinessRow>();
     if (business) return business;
+
+    throw new Error(`CRM_BUSINESS_ID=${env.CRM_BUSINESS_ID} was set, but no such business exists in D1.`);
   }
 
   if (env.CRM_BUSINESS_TELEGRAM_ID) {
     const business = await env.DB
       .prepare(
-        `SELECT b.id, b.name, b.type, b.address, b.phone, b.schedule
+        `SELECT b.id, b.user_id, b.name, b.type, b.address, b.phone, b.schedule, b.description, b.photo_file_id, b.photo_file_unique_id
          FROM businesses b
          INNER JOIN users u ON u.id = b.user_id
          WHERE u.telegram_id = ?
@@ -213,17 +394,35 @@ async function resolveBusiness(env: Env): Promise<BusinessRow> {
       .first<BusinessRow>();
 
     if (business) return business;
+
+    throw new Error(
+      `CRM_BUSINESS_TELEGRAM_ID=${env.CRM_BUSINESS_TELEGRAM_ID} was set, but no matching business owner was found in D1.`
+    );
   }
 
-  const fallback = await env.DB
-    .prepare("SELECT id, name, type, address, phone, schedule FROM businesses ORDER BY id ASC LIMIT 1")
-    .first<BusinessRow>();
+  const rows = await env.DB
+    .prepare(
+      "SELECT id, user_id, name, type, address, phone, schedule, description, photo_file_id, photo_file_unique_id FROM businesses ORDER BY id ASC"
+    )
+    .all<BusinessRow>();
+  const businesses = (rows.results ?? []) as BusinessRow[];
 
-  if (!fallback) {
+  if (businesses.length === 0) {
     throw new Error("No business found for CRM.");
   }
 
-  return fallback;
+  if (businesses.length === 1) {
+    return businesses[0];
+  }
+
+  const availableBusinesses = businesses
+    .slice(0, 8)
+    .map((business) => `${business.id}: ${business.name}`)
+    .join(", ");
+
+  throw new Error(
+    `CRM business is not configured. Set CRM_BUSINESS_ID or CRM_BUSINESS_TELEGRAM_ID. Available businesses: ${availableBusinesses}`
+  );
 }
 
 async function normalizeStaffIdsForBusiness(db: D1Database, businessId: number, staffIds: number[] | undefined) {
@@ -268,7 +467,8 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
   const business = await resolveBusiness(env);
   const weekday = new Date(`${selectedDate}T00:00:00`).getDay();
 
-  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, bookingsRes, paymentsRes] = await Promise.all([
+  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes] =
+    await Promise.all([
     env.DB
       .prepare(
         "SELECT id, business_id, name, price, duration, is_active FROM services WHERE business_id = ? ORDER BY is_active DESC, name ASC"
@@ -298,6 +498,15 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
       .all<StaffSlotRow>(),
     env.DB
       .prepare(
+        `SELECT id, staff_id, kind, weekday, date, slot_time, is_full_day
+         FROM staff_unavailability
+         WHERE staff_id IN (SELECT id FROM staff WHERE business_id = ?)
+         ORDER BY date ASC, weekday ASC, slot_time ASC`
+      )
+      .bind(business.id)
+      .all<StaffUnavailabilityRow>(),
+    env.DB
+      .prepare(
         `SELECT id, business_id, user_id, service_id, staff_id, client_name, service_name, staff_name, datetime, status, price_snapshot, duration_snapshot, notes
          FROM bookings
          WHERE business_id = ?
@@ -314,12 +523,13 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
       )
       .bind(business.id)
       .all<PaymentRow>(),
-  ]);
+    ]);
 
   const services = (servicesRes.results ?? []) as unknown as ServiceRow[];
   const staff = (staffRes.results ?? []) as unknown as StaffRow[];
   const staffServices = (staffServicesRes.results ?? []) as unknown as StaffServiceRow[];
   const staffSlots = (staffSlotsRes.results ?? []) as unknown as StaffSlotRow[];
+  const staffUnavailability = (staffUnavailabilityRes.results ?? []) as unknown as StaffUnavailabilityRow[];
   const bookings = (bookingsRes.results ?? []) as unknown as BookingRow[];
   const payments = (paymentsRes.results ?? []) as unknown as PaymentRow[];
 
@@ -354,6 +564,34 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
     slotsByStaff.set(slot.staff_id, list);
   }
 
+  const weeklyBreaksByStaff = new Map<number, Map<number, string[]>>();
+  const dayOffsByStaff = new Map<number, Map<string, { isFullDay: boolean; slots: string[] }>>();
+
+  for (const entry of staffUnavailability) {
+    if (entry.date) {
+      const byDate = dayOffsByStaff.get(entry.staff_id) ?? new Map<string, { isFullDay: boolean; slots: string[] }>();
+      const current = byDate.get(entry.date) ?? { isFullDay: false, slots: [] };
+      if (Number(entry.is_full_day) === 1) {
+        current.isFullDay = true;
+        current.slots = [];
+      } else if (entry.slot_time && !current.isFullDay && !current.slots.includes(entry.slot_time)) {
+        current.slots.push(entry.slot_time);
+      }
+      byDate.set(entry.date, current);
+      dayOffsByStaff.set(entry.staff_id, byDate);
+      continue;
+    }
+
+    if (entry.weekday == null || !entry.slot_time) continue;
+    const byWeekday = weeklyBreaksByStaff.get(entry.staff_id) ?? new Map<number, string[]>();
+    const current = byWeekday.get(entry.weekday) ?? [];
+    if (!current.includes(entry.slot_time)) {
+      current.push(entry.slot_time);
+    }
+    byWeekday.set(entry.weekday, current);
+    weeklyBreaksByStaff.set(entry.staff_id, byWeekday);
+  }
+
   const paymentsByBooking = new Map<number, PaymentRow[]>();
   for (const payment of payments) {
     const list = paymentsByBooking.get(payment.booking_id) ?? [];
@@ -386,7 +624,14 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
 
   const calendarColumns: CalendarStaffColumn[] = staff.map((person) => {
     const serviceNames = servicesByStaff.get(person.id) ?? [];
-    const daySlots = (slotsByStaff.get(person.id) ?? []).filter((slot) => slot.weekday === weekday);
+    const rawDaySlots = (slotsByStaff.get(person.id) ?? []).filter((slot) => slot.weekday === weekday);
+    const weeklyBreaks = weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? [];
+    const dayOff = dayOffsByStaff.get(person.id)?.get(selectedDate);
+    const blockedSlotTimes = new Set<string>([
+      ...weeklyBreaks,
+      ...(dayOff?.isFullDay ? [] : dayOff?.slots ?? []),
+    ]);
+    const daySlots = dayOff?.isFullDay ? [] : rawDaySlots.filter((slot) => !blockedSlotTimes.has(slot.slot_time));
     const staffBookingsToday = bookingsToday.filter((booking) => booking.staff_id === person.id && booking.status !== "cancelled");
     const completedRevenue = staffBookingsToday.reduce(
       (sum, booking) => sum + (paymentSummaryByBooking.get(booking.id)?.net ?? 0),
@@ -396,7 +641,7 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
     return {
       id: person.id,
       name: person.name,
-      role: serviceNames[0] ?? "Специалист",
+      role: dayOff?.isFullDay ? "Выходной" : serviceNames[0] ?? "Специалист",
       serviceNames,
       slots: daySlots.map((slot) => ({ id: slot.id, time: slot.slot_time })),
       utilization: daySlots.length > 0 ? Math.round((staffBookingsToday.length / daySlots.length) * 100) : 0,
@@ -462,6 +707,18 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
         .filter((slot) => slot.weekday === dayIndex)
         .map((slot) => slot.slot_time),
     }));
+    const weeklyBreaks = Array.from({ length: 7 }, (_, dayIndex) => ({
+      weekday: dayIndex,
+      label: WEEKDAY_LABELS[dayIndex],
+      slots: [...(weeklyBreaksByStaff.get(person.id)?.get(dayIndex) ?? [])].sort(),
+    }));
+    const dayOffs = Array.from(dayOffsByStaff.get(person.id)?.entries() ?? [])
+      .map(([date, value]) => ({
+        date,
+        isFullDay: value.isFullDay,
+        slots: [...value.slots].sort(),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     const relevantBookings = bookings.filter((booking) => booking.staff_id === person.id);
     const todayEmployeeBookings = bookingsToday.filter((booking) => booking.staff_id === person.id && booking.status !== "cancelled");
@@ -471,6 +728,14 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
         booking.status !== "cancelled" &&
         booking.datetime >= `${selectedDate} 00:00:00`
     ).length;
+    const todayDayOff = dayOffsByStaff.get(person.id)?.get(selectedDate);
+    const todayBlocked = new Set<string>([
+      ...(weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? []),
+      ...(todayDayOff?.slots ?? []),
+    ]);
+    const todayAvailableSlotCount = todayDayOff?.isFullDay
+      ? 0
+      : weeklySlots[weekday].slots.filter((slot) => !todayBlocked.has(slot)).length;
 
     return {
       id: person.id,
@@ -487,11 +752,10 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
         (sum, booking) => sum + Math.max(paymentSummaryByBooking.get(booking.id)?.remaining ?? booking.price_snapshot, 0),
         0
       ),
-      utilization:
-        weeklySlots[weekday].slots.length > 0
-          ? Math.round((todayEmployeeBookings.length / weeklySlots[weekday].slots.length) * 100)
-          : 0,
+      utilization: todayAvailableSlotCount > 0 ? Math.round((todayEmployeeBookings.length / todayAvailableSlotCount) * 100) : 0,
       weeklySlots,
+      weeklyBreaks,
+      dayOffs,
     };
   });
 
@@ -658,7 +922,17 @@ async function getCrmPayload(env: Env, selectedDate: string): Promise<CrmPayload
   ];
 
   return {
-    business,
+    business: {
+      id: business.id,
+      name: business.name,
+      type: normalizeBusinessType(business.type) ?? business.type,
+      address: business.address,
+      phone: business.phone,
+      schedule: business.schedule,
+      description: business.description,
+      photoFileId: business.photo_file_id,
+      photoFileUniqueId: business.photo_file_unique_id,
+    },
     generatedAt: new Date().toISOString(),
     selectedDate,
     miniCalendarAnchor: selectedDate,
@@ -757,6 +1031,134 @@ async function addEmployee(env: Env, input: AddEmployeeInput) {
 
   await env.DB.prepare("INSERT INTO staff (business_id, name) VALUES (?, ?)").bind(business.id, name).run();
   return json({ ok: true }, { status: 201 });
+}
+
+async function updateEmployee(env: Env, staffId: number, input: UpdateEmployeeInput) {
+  const business = await resolveBusiness(env);
+  const current = await env.DB
+    .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(staffId, business.id)
+    .first<{ id: number; name: string }>();
+
+  if (!current) {
+    return json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  const name = input.name?.trim();
+  if (!name) {
+    return json({ error: "Employee name is required" }, { status: 400 });
+  }
+
+  await env.DB.prepare("UPDATE staff SET name = ? WHERE id = ? AND business_id = ?").bind(name, staffId, business.id).run();
+  return json({ ok: true });
+}
+
+async function deleteEmployee(env: Env, staffId: number) {
+  const business = await resolveBusiness(env);
+  const current = await env.DB
+    .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(staffId, business.id)
+    .first<{ id: number }>();
+
+  if (!current) {
+    return json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  await env.DB.prepare("DELETE FROM staff WHERE id = ? AND business_id = ?").bind(staffId, business.id).run();
+  return json({ ok: true });
+}
+
+async function updateBusinessProfile(env: Env, input: UpdateBusinessProfileInput) {
+  const business = await resolveBusiness(env);
+  const nextName = input.name === undefined ? business.name : input.name.trim();
+  const nextAddress = input.address === undefined ? business.address : input.address.trim();
+  const nextPhone = input.phone === undefined ? business.phone : input.phone.trim();
+  const nextSchedule = input.schedule === undefined ? business.schedule : input.schedule.trim();
+  const nextDescription =
+    input.description === undefined ? business.description : input.description?.trim() ? input.description.trim() : null;
+  const nextType = input.type === undefined ? normalizeBusinessType(business.type) ?? business.type : normalizeBusinessType(input.type);
+
+  if (!nextName) {
+    return json({ error: "Business name is required" }, { status: 400 });
+  }
+
+  if (!nextAddress) {
+    return json({ error: "Business address is required" }, { status: 400 });
+  }
+
+  if (!nextPhone) {
+    return json({ error: "Business phone is required" }, { status: 400 });
+  }
+
+  if (!nextSchedule) {
+    return json({ error: "Business schedule is required" }, { status: 400 });
+  }
+
+  if (!nextType) {
+    return json({ error: "Business category is invalid" }, { status: 400 });
+  }
+
+  await env.DB
+    .prepare(
+      `UPDATE businesses
+       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?
+       WHERE id = ?`
+    )
+    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, business.id)
+    .run();
+
+  return json({ ok: true });
+}
+
+async function uploadBusinessPhoto(env: Env, request: Request) {
+  const business = await resolveBusiness(env);
+  const formData = await request.formData();
+  const photo = formData.get("photo");
+
+  if (!(photo instanceof File)) {
+    return json({ error: "Photo file is required" }, { status: 400 });
+  }
+
+  const uploaded = await uploadPhotoToBusinessBot(env, business, photo);
+
+  await env.DB
+    .prepare("UPDATE businesses SET photo_file_id = ?, photo_file_unique_id = ? WHERE id = ?")
+    .bind(uploaded.fileId, uploaded.fileUniqueId, business.id)
+    .run();
+
+  return json({ ok: true }, { status: 201 });
+}
+
+async function deleteBusinessPhoto(env: Env) {
+  const business = await resolveBusiness(env);
+  await env.DB
+    .prepare("UPDATE businesses SET photo_file_id = NULL, photo_file_unique_id = NULL WHERE id = ?")
+    .bind(business.id)
+    .run();
+
+  return json({ ok: true });
+}
+
+async function proxyBusinessPhoto(env: Env) {
+  const business = await resolveBusiness(env);
+
+  if (!business.photo_file_id) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  if (!env.BUSINESS_BOT_TOKEN) {
+    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
+  }
+
+  const telegramFile = await getTelegramFileResponse(env.BUSINESS_BOT_TOKEN, business.photo_file_id);
+  const headers = new Headers();
+  headers.set("content-type", telegramFile.headers.get("content-type") ?? "image/jpeg");
+  headers.set("cache-control", "public, max-age=300");
+
+  return new Response(telegramFile.body, {
+    status: 200,
+    headers,
+  });
 }
 
 async function createService(env: Env, input: UpsertServiceInput) {
@@ -866,18 +1268,70 @@ async function updateEmployeeSlots(env: Env, staffId: number, input: UpdateEmplo
     weekday: day.weekday,
     slots: Array.from(new Set(day.slots.map((slot) => normalizeTime(slot)).filter((slot): slot is string => Boolean(slot)))).sort(),
   }));
+  const normalizedBreaks = (input.weeklyBreaks ?? []).map((day) => ({
+    weekday: day.weekday,
+    slots: Array.from(new Set(day.slots.map((slot) => normalizeTime(slot)).filter((slot): slot is string => Boolean(slot)))).sort(),
+  }));
+  const normalizedDayOffs = (input.dayOffs ?? [])
+    .map((entry) => ({
+      date: isIsoDate(entry.date) ? entry.date : null,
+      isFullDay: Boolean(entry.isFullDay),
+      slots: Array.from(new Set(entry.slots.map((slot) => normalizeTime(slot)).filter((slot): slot is string => Boolean(slot)))).sort(),
+    }))
+    .filter((entry) => entry.date && (entry.isFullDay || entry.slots.length > 0)) as Array<{
+      date: string;
+      isFullDay: boolean;
+      slots: string[];
+    }>;
 
   if (normalized.some((day) => Number.isNaN(day.weekday) || day.weekday < 0 || day.weekday > 6)) {
     return json({ error: "Invalid weekday supplied" }, { status: 400 });
   }
 
+  if (normalizedBreaks.some((day) => Number.isNaN(day.weekday) || day.weekday < 0 || day.weekday > 6)) {
+    return json({ error: "Invalid weekly break weekday supplied" }, { status: 400 });
+  }
+
   await env.DB.prepare("DELETE FROM staff_slots WHERE staff_id = ?").bind(staffId).run();
+  await env.DB.prepare("DELETE FROM staff_unavailability WHERE staff_id = ?").bind(staffId).run();
 
   for (const day of normalized) {
     for (const slot of day.slots) {
       await env.DB
         .prepare("INSERT INTO staff_slots (staff_id, weekday, slot_time) VALUES (?, ?, ?)")
         .bind(staffId, day.weekday, slot)
+        .run();
+    }
+  }
+
+  for (const day of normalizedBreaks) {
+    for (const slot of day.slots) {
+      await env.DB
+        .prepare(
+          "INSERT INTO staff_unavailability (staff_id, kind, weekday, date, slot_time, is_full_day) VALUES (?, 'break', ?, NULL, ?, 0)"
+        )
+        .bind(staffId, day.weekday, slot)
+        .run();
+    }
+  }
+
+  for (const dayOff of normalizedDayOffs) {
+    if (dayOff.isFullDay) {
+      await env.DB
+        .prepare(
+          "INSERT INTO staff_unavailability (staff_id, kind, weekday, date, slot_time, is_full_day) VALUES (?, 'day_off', NULL, ?, NULL, 1)"
+        )
+        .bind(staffId, dayOff.date)
+        .run();
+      continue;
+    }
+
+    for (const slot of dayOff.slots) {
+      await env.DB
+        .prepare(
+          "INSERT INTO staff_unavailability (staff_id, kind, weekday, date, slot_time, is_full_day) VALUES (?, 'day_off', NULL, ?, ?, 0)"
+        )
+        .bind(staffId, dayOff.date, slot)
         .run();
     }
   }
@@ -913,7 +1367,7 @@ export default {
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {
-        const payload = await getCrmPayload(env, getSelectedDate(request));
+        const payload = await getCrmPayload(env, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
         return json(payload);
       }
 
@@ -931,6 +1385,16 @@ export default {
         return addEmployee(env, await readJson<AddEmployeeInput>(request));
       }
 
+      if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "PATCH") {
+        const staffId = Number(url.pathname.split("/")[3]);
+        return updateEmployee(env, staffId, await readJson<UpdateEmployeeInput>(request));
+      }
+
+      if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "DELETE") {
+        const staffId = Number(url.pathname.split("/")[3]);
+        return deleteEmployee(env, staffId);
+      }
+
       if (url.pathname === "/api/services" && request.method === "POST") {
         return createService(env, await readJson<UpsertServiceInput>(request));
       }
@@ -943,6 +1407,22 @@ export default {
       if (url.pathname.startsWith("/api/employees/") && url.pathname.endsWith("/slots") && request.method === "PUT") {
         const staffId = Number(url.pathname.split("/")[3]);
         return updateEmployeeSlots(env, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
+      }
+
+      if (url.pathname === "/api/business" && request.method === "PATCH") {
+        return updateBusinessProfile(env, await readJson<UpdateBusinessProfileInput>(request));
+      }
+
+      if (url.pathname === "/api/business/photo" && request.method === "POST") {
+        return uploadBusinessPhoto(env, request);
+      }
+
+      if (url.pathname === "/api/business/photo" && request.method === "DELETE") {
+        return deleteBusinessPhoto(env);
+      }
+
+      if (url.pathname === "/api/business/photo" && request.method === "GET") {
+        return proxyBusinessPhoto(env);
       }
 
       if (url.pathname.startsWith("/api/")) {

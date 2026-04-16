@@ -5,9 +5,10 @@ type EmployeeTableProps = {
   employees: EmployeeRow[];
   onOpenSlots: (employee: EmployeeRow) => void;
   onViewSchedule: (employee: EmployeeRow) => void;
+  onEditEmployee: (employee: EmployeeRow) => void;
 };
 
-export function EmployeeTable({ employees, onOpenSlots, onViewSchedule }: EmployeeTableProps) {
+export function EmployeeTable({ employees, onOpenSlots, onViewSchedule, onEditEmployee }: EmployeeTableProps) {
   return (
     <section className="panel">
       <div className="panel__header">
@@ -50,6 +51,9 @@ export function EmployeeTable({ employees, onOpenSlots, onViewSchedule }: Employ
               <p>{employee.utilization}% загрузки сегодня</p>
             </div>
             <div className="table__actions">
+              <button type="button" className="outline-button" onClick={() => onEditEmployee(employee)}>
+                Редактировать
+              </button>
               <button type="button" className="outline-button" onClick={() => onViewSchedule(employee)}>
                 Расписание
               </button>

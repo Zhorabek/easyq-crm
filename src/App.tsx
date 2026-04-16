@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState, useDeferredValue } from "react";
+import { startTransition, useEffect, useRef, useState, useDeferredValue, type ChangeEvent } from "react";
 import { ClientTable } from "./components/ClientTable";
 import { DayScheduler } from "./components/DayScheduler";
 import { EmployeeTable } from "./components/EmployeeTable";
@@ -9,15 +9,21 @@ import {
   createBookingPayment,
   createEmployee,
   createService,
+  deleteBusinessPhoto,
+  deleteEmployee,
   getCrmPayload,
   patchBookingStatus,
   saveEmployeeSlots,
+  updateBusinessProfile,
+  updateEmployee,
   updateService,
+  uploadBusinessPhoto,
 } from "./lib/api";
 import {
   addDays,
   formatCurrency,
   formatLongDate,
+  formatShortDate,
   generateHalfHourIntervals,
   isoToday,
   parseBusinessHours,
@@ -34,6 +40,7 @@ import type {
   PaymentFlow,
   PaymentMethod,
   ServiceCatalogItem,
+  UpdateBusinessProfileInput,
 } from "./types";
 
 type ServiceEditorState = {
@@ -45,6 +52,39 @@ type ServiceEditorState = {
   staffIds: number[];
   isActive: boolean;
 };
+
+type EmployeeEditorState = {
+  employee: EmployeeRow;
+  name: string;
+};
+
+type BusinessEditorState = {
+  name: string;
+  type: string;
+  address: string;
+  phone: string;
+  schedule: string;
+  description: string;
+};
+
+const BUSINESS_TYPE_OPTIONS = [
+  { value: "barbershop", label: "Барбершоп" },
+  { value: "beauty_salon", label: "Салон красоты" },
+  { value: "carwash", label: "Автомойка" },
+  { value: "spa_salon", label: "SPA-салон" },
+  { value: "dentistry", label: "Стоматология" },
+  { value: "medical_services", label: "Медицинские услуги" },
+  { value: "other", label: "Другое" },
+] as const;
+
+function normalizeBusinessTypeValue(value: string) {
+  return value === "salon" ? "beauty_salon" : value;
+}
+
+function getBusinessTypeLabel(value: string) {
+  const normalized = normalizeBusinessTypeValue(value);
+  return BUSINESS_TYPE_OPTIONS.find((option) => option.value === normalized)?.label ?? value;
+}
 
 function paymentMethodLabel(method: PaymentMethod) {
   switch (method) {
@@ -81,7 +121,10 @@ function App() {
   const [slotEditor, setSlotEditor] = useState<{
     employee: EmployeeRow;
     values: Record<number, string[]>;
+    breakValues: Record<number, string[]>;
+    dayOffs: Record<string, { isFullDay: boolean; slots: string[] }>;
     activeWeekday: number;
+    activeDayOffDate: string;
   } | null>(null);
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [clientSearch, setClientSearch] = useState("");
@@ -93,6 +136,10 @@ function App() {
   const [paymentFlow, setPaymentFlow] = useState<PaymentFlow>("in");
   const [paymentNote, setPaymentNote] = useState("");
   const [serviceEditor, setServiceEditor] = useState<ServiceEditorState | null>(null);
+  const [employeeEditor, setEmployeeEditor] = useState<EmployeeEditorState | null>(null);
+  const [businessEditor, setBusinessEditor] = useState<BusinessEditorState | null>(null);
+  const [businessPhotoBroken, setBusinessPhotoBroken] = useState(false);
+  const businessPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const deferredClientSearch = useDeferredValue(clientSearch);
   const deferredEmployeeSearch = useDeferredValue(employeeSearch);
@@ -133,6 +180,10 @@ function App() {
     setPaymentNote("");
   }, [selectedBooking]);
 
+  useEffect(() => {
+    setBusinessPhotoBroken(false);
+  }, [payload?.business.photoFileId]);
+
   async function load(date: string) {
     try {
       setLoading(true);
@@ -167,6 +218,40 @@ function App() {
     await reload();
   }
 
+  async function handleSaveEmployee() {
+    if (!employeeEditor) return;
+
+    const name = employeeEditor.name.trim();
+    if (!name) {
+      setToast("Введите имя сотрудника");
+      return;
+    }
+
+    try {
+      await updateEmployee(employeeEditor.employee.id, { name });
+      setEmployeeEditor(null);
+      setToast("Карточка сотрудника обновлена");
+      await reload();
+    } catch (saveError) {
+      setToast(saveError instanceof Error ? saveError.message : "Не удалось сохранить сотрудника");
+    }
+  }
+
+  async function handleDeleteEmployee() {
+    if (!employeeEditor) return;
+
+    try {
+      await deleteEmployee(employeeEditor.employee.id);
+      setEmployeeEditor(null);
+      setSchedulePreview((current) => (current?.id === employeeEditor.employee.id ? null : current));
+      setSlotEditor((current) => (current?.employee.id === employeeEditor.employee.id ? null : current));
+      setToast("Сотрудник удален");
+      await reload();
+    } catch (deleteError) {
+      setToast(deleteError instanceof Error ? deleteError.message : "Не удалось удалить сотрудника");
+    }
+  }
+
   async function handleSaveSlots() {
     if (!slotEditor) return;
     await saveEmployeeSlots(slotEditor.employee.id, {
@@ -174,9 +259,20 @@ function App() {
         weekday,
         slots: slotEditor.values[weekday] ?? [],
       })),
+      weeklyBreaks: Array.from({ length: 7 }, (_, weekday) => ({
+        weekday,
+        slots: slotEditor.breakValues[weekday] ?? [],
+      })),
+      dayOffs: Object.entries(slotEditor.dayOffs)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, value]) => ({
+          date,
+          isFullDay: value.isFullDay,
+          slots: value.isFullDay ? [] : [...value.slots].sort(),
+        })),
     });
     setSlotEditor(null);
-    setToast("Недельные слоты сохранены");
+    setToast("Расписание сотрудника сохранено");
     await reload();
   }
 
@@ -215,6 +311,33 @@ function App() {
     await reload();
   }
 
+  async function handleSaveBusinessProfile() {
+    if (!businessEditor) return;
+
+    const input: UpdateBusinessProfileInput = {
+      name: businessEditor.name.trim(),
+      type: businessEditor.type,
+      address: businessEditor.address.trim(),
+      phone: businessEditor.phone.trim(),
+      schedule: businessEditor.schedule.trim(),
+      description: businessEditor.description.trim() || null,
+    };
+
+    if (!input.name || !input.address || !input.phone || !input.schedule) {
+      setToast("Заполните название, адрес, телефон и график");
+      return;
+    }
+
+    try {
+      await updateBusinessProfile(input);
+      setBusinessEditor(null);
+      setToast("Профиль бизнеса обновлен");
+      await reload();
+    } catch (saveError) {
+      setToast(saveError instanceof Error ? saveError.message : "Не удалось обновить профиль бизнеса");
+    }
+  }
+
   async function handleToggleServiceActive(service: ServiceCatalogItem) {
     await updateService(service.id, { isActive: !service.isActive });
     setToast(service.isActive ? "Услуга отправлена в архив" : "Услуга возвращена в каталог");
@@ -241,18 +364,79 @@ function App() {
     await reload();
   }
 
+  async function handleBusinessPhotoSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      await uploadBusinessPhoto(file);
+      setToast("Постер бизнеса обновлен");
+      await reload();
+    } catch (uploadError) {
+      setToast(uploadError instanceof Error ? uploadError.message : "Не удалось загрузить фото");
+    }
+  }
+
+  async function handleDeleteBusinessPhoto() {
+    try {
+      await deleteBusinessPhoto();
+      setToast("Постер бизнеса удален");
+      await reload();
+    } catch (deleteError) {
+      setToast(deleteError instanceof Error ? deleteError.message : "Не удалось удалить фото");
+    }
+  }
+
   function moveDate(delta: number) {
     startTransition(() => {
       setSelectedDate((current) => addDays(current, delta));
     });
   }
 
+  function openEmployeeEditor(employee: EmployeeRow) {
+    setEmployeeEditor({
+      employee,
+      name: employee.name,
+    });
+  }
+
+  function openBusinessEditor() {
+    if (!payload) return;
+
+    setBusinessEditor({
+      name: payload.business.name,
+      type: normalizeBusinessTypeValue(payload.business.type),
+      address: payload.business.address,
+      phone: payload.business.phone,
+      schedule: payload.business.schedule,
+      description: payload.business.description ?? "",
+    });
+  }
+
+  function openBusinessPhotoPicker() {
+    businessPhotoInputRef.current?.click();
+  }
+
   function openSlotEditor(employee: EmployeeRow) {
     const values = Object.fromEntries(employee.weeklySlots.map((day) => [day.weekday, [...day.slots].sort()]));
+    const breakValues = Object.fromEntries(employee.weeklyBreaks.map((day) => [day.weekday, [...day.slots].sort()]));
+    const dayOffs = Object.fromEntries(
+      employee.dayOffs.map((dayOff) => [
+        dayOff.date,
+        {
+          isFullDay: dayOff.isFullDay,
+          slots: [...dayOff.slots].sort(),
+        },
+      ])
+    );
     setSlotEditor({
       employee,
       values,
+      breakValues,
+      dayOffs,
       activeWeekday: getInitialSlotWeekday(employee, selectedDate),
+      activeDayOffDate: employee.dayOffs[0]?.date ?? selectedDate,
     });
   }
 
@@ -287,6 +471,94 @@ function App() {
           }
         : current
     );
+  }
+
+  function toggleBreakInterval(weekday: number, slotTime: string) {
+    setSlotEditor((current) => {
+      if (!current) return current;
+      const currentValues = current.breakValues[weekday] ?? [];
+      const exists = currentValues.includes(slotTime);
+      const nextValues = exists
+        ? currentValues.filter((value) => value !== slotTime)
+        : [...currentValues, slotTime].sort();
+
+      return {
+        ...current,
+        breakValues: {
+          ...current.breakValues,
+          [weekday]: nextValues,
+        },
+      };
+    });
+  }
+
+  function clearBreaks(weekday: number) {
+    setSlotEditor((current) =>
+      current
+        ? {
+            ...current,
+            breakValues: {
+              ...current.breakValues,
+              [weekday]: [],
+            },
+          }
+        : current
+    );
+  }
+
+  function updateDayOff(date: string, updater: (current: { isFullDay: boolean; slots: string[] }) => { isFullDay: boolean; slots: string[] }) {
+    setSlotEditor((current) => {
+      if (!current) return current;
+      const next = updater(current.dayOffs[date] ?? { isFullDay: false, slots: [] });
+      const normalizedSlots = next.isFullDay ? [] : [...next.slots].sort();
+      const hasValue = next.isFullDay || normalizedSlots.length > 0;
+      const dayOffs = { ...current.dayOffs };
+
+      if (hasValue) {
+        dayOffs[date] = {
+          isFullDay: next.isFullDay,
+          slots: normalizedSlots,
+        };
+      } else {
+        delete dayOffs[date];
+      }
+
+      return {
+        ...current,
+        dayOffs,
+      };
+    });
+  }
+
+  function toggleDayOffFullDay(date: string) {
+    updateDayOff(date, (current) => ({
+      isFullDay: !current.isFullDay,
+      slots: !current.isFullDay ? [] : current.slots,
+    }));
+  }
+
+  function toggleDayOffInterval(date: string, slotTime: string) {
+    updateDayOff(date, (current) => {
+      const sourceSlots = current.isFullDay ? [] : current.slots;
+      const exists = sourceSlots.includes(slotTime);
+      const nextSlots = exists ? sourceSlots.filter((value) => value !== slotTime) : [...sourceSlots, slotTime];
+      return {
+        isFullDay: false,
+        slots: nextSlots,
+      };
+    });
+  }
+
+  function clearDayOff(date: string) {
+    setSlotEditor((current) => {
+      if (!current) return current;
+      const dayOffs = { ...current.dayOffs };
+      delete dayOffs[date];
+      return {
+        ...current,
+        dayOffs,
+      };
+    });
   }
 
   function openCreateServiceEditor() {
@@ -330,6 +602,8 @@ function App() {
 
   const businessHours = payload ? parseBusinessHours(payload.business.schedule) : null;
   const businessIntervals = payload ? generateHalfHourIntervals(payload.business.schedule) : [];
+  const topbarEyebrow = activeSection === "profile" ? "Профиль бизнеса" : payload?.business.name ?? "EasyQ CRM";
+  const topbarTitle = activeSection === "profile" ? payload?.business.name ?? "EasyQ CRM" : formatLongDate(selectedDate);
 
   return (
     <div className="crm-root">
@@ -344,25 +618,37 @@ function App() {
       <main className="crm-main">
         <header className="topbar">
           <div>
-            <p className="eyebrow">{payload?.business.name ?? "EasyQ CRM"}</p>
-            <h1>{formatLongDate(selectedDate)}</h1>
+            <p className="eyebrow">{topbarEyebrow}</p>
+            <h1>{topbarTitle}</h1>
           </div>
 
           <div className="topbar__actions">
-            <button type="button" className="outline-button" onClick={() => setSelectedDate(isoToday())}>
-              Сегодня
-            </button>
-            <button type="button" className="ghost-button" onClick={() => moveDate(-1)}>
-              ‹
-            </button>
-            <button type="button" className="ghost-button" onClick={() => moveDate(1)}>
-              ›
-            </button>
+            {activeSection !== "profile" && (
+              <>
+                <button type="button" className="outline-button" onClick={() => setSelectedDate(isoToday())}>
+                  Сегодня
+                </button>
+                <button type="button" className="ghost-button" onClick={() => moveDate(-1)}>
+                  ‹
+                </button>
+                <button type="button" className="ghost-button" onClick={() => moveDate(1)}>
+                  ›
+                </button>
+              </>
+            )}
             <button type="button" className="outline-button" onClick={() => void reload()}>
               Обновить
             </button>
           </div>
         </header>
+
+        <input
+          ref={businessPhotoInputRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/*"
+          onChange={(event) => void handleBusinessPhotoSelected(event)}
+        />
 
         {loading ? (
           <section className="empty-state">
@@ -377,6 +663,79 @@ function App() {
         ) : (
           <>
             <KpiStrip items={payload.kpis} />
+
+            {activeSection === "profile" && (
+              <section className="content-grid">
+                <article className="panel business-profile">
+                  <div className="business-profile__hero">
+                    <div className="business-profile__media">
+                      {payload.business.photoFileId && !businessPhotoBroken ? (
+                        <img
+                          src={`/api/business/photo?v=${encodeURIComponent(payload.generatedAt)}`}
+                          alt={payload.business.name}
+                          className="business-profile__image"
+                          onError={() => setBusinessPhotoBroken(true)}
+                        />
+                      ) : (
+                        <div className="business-profile__placeholder">
+                          <span>{payload.business.name.slice(0, 1).toUpperCase()}</span>
+                          <small>Постер бизнеса</small>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="business-profile__content">
+                      <span className="business-profile__badge">{getBusinessTypeLabel(payload.business.type)}</span>
+                      <h2>{payload.business.name}</h2>
+                      <p className="business-profile__description">
+                        {payload.business.description?.trim() || "Добавьте описание бизнеса, чтобы команда и клиенты лучше понимали ваше позиционирование."}
+                      </p>
+
+                      <div className="business-profile__actions">
+                        <button type="button" className="primary-button" onClick={openBusinessEditor}>
+                          Редактировать профиль
+                        </button>
+                        <button type="button" className="outline-button" onClick={openBusinessPhotoPicker}>
+                          {payload.business.photoFileId ? "Обновить фото" : "Загрузить фото"}
+                        </button>
+                        {payload.business.photoFileId && (
+                          <button type="button" className="outline-button danger-button" onClick={() => void handleDeleteBusinessPhoto()}>
+                            Удалить фото
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="business-profile__grid">
+                    <article className="business-profile__card">
+                      <span>Название</span>
+                      <strong>{payload.business.name}</strong>
+                    </article>
+                    <article className="business-profile__card">
+                      <span>Категория</span>
+                      <strong>{getBusinessTypeLabel(payload.business.type)}</strong>
+                    </article>
+                    <article className="business-profile__card">
+                      <span>Адрес</span>
+                      <strong>{payload.business.address}</strong>
+                    </article>
+                    <article className="business-profile__card">
+                      <span>Телефон</span>
+                      <strong>{payload.business.phone}</strong>
+                    </article>
+                    <article className="business-profile__card">
+                      <span>График работы</span>
+                      <strong>{payload.business.schedule}</strong>
+                    </article>
+                    <article className="business-profile__card">
+                      <span>Описание</span>
+                      <strong>{payload.business.description?.trim() || "Пока не добавлено"}</strong>
+                    </article>
+                  </div>
+                </article>
+              </section>
+            )}
 
             {activeSection === "overview" && (
               <section className="content-grid content-grid--overview">
@@ -511,6 +870,7 @@ function App() {
 
                 <EmployeeTable
                   employees={filteredEmployees}
+                  onEditEmployee={openEmployeeEditor}
                   onOpenSlots={openSlotEditor}
                   onViewSchedule={setSchedulePreview}
                 />
@@ -866,8 +1226,243 @@ function App() {
                 </article>
               ))}
             </div>
+
+            <div className="weekly-grid">
+              {schedulePreview.weeklyBreaks.map((day) => (
+                <article key={`break-${day.weekday}`} className="weekly-card">
+                  <strong>{day.label}: перерывы</strong>
+                  <p>{day.slots.length > 0 ? day.slots.map((slot) => toHalfHourIntervalLabel(slot)).join(", ") : "Перерывов нет"}</p>
+                </article>
+              ))}
+            </div>
+
+            <article className="drawer__subsection">
+              <h4>Ближайшие выходные и исключения</h4>
+              <div className="history-list">
+                {schedulePreview.dayOffs.length > 0 ? (
+                  schedulePreview.dayOffs.map((entry) => (
+                    <div key={entry.date} className="history-row">
+                      <div>
+                        <strong>{formatShortDate(entry.date)}</strong>
+                        <p>{entry.isFullDay ? "Полный выходной" : entry.slots.map(toHalfHourIntervalLabel).join(", ")}</p>
+                      </div>
+                      <span className={`status-pill is-${entry.isFullDay ? "cancelled" : "confirmed"}`}>
+                        {entry.isFullDay ? "Весь день" : `${entry.slots.length} интервалов`}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p>Исключений по датам пока нет.</p>
+                )}
+              </div>
+            </article>
           </div>
         </aside>
+      )}
+
+      {employeeEditor && (
+        <div className="modal-backdrop">
+          <section className="modal modal--compact">
+            <div className="drawer__header">
+              <div>
+                <p className="eyebrow">Сотрудник</p>
+                <h3>{employeeEditor.employee.name}</h3>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setEmployeeEditor(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal__grid modal__grid--single">
+              <label className="slot-editor-row">
+                <span>Имя сотрудника</span>
+                <input
+                  className="search-input"
+                  value={employeeEditor.name}
+                  onChange={(event) =>
+                    setEmployeeEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            name: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="Например, Нуржас"
+                />
+              </label>
+
+              <article className="drawer__subsection">
+                <h4>Что произойдет при удалении</h4>
+                <p>
+                  Слоты и привязки услуг этого сотрудника будут удалены. История прошлых бронирований сохранится по
+                  snapshot-данным, но сотрудник исчезнет из активной команды.
+                </p>
+              </article>
+            </div>
+
+            <div className="modal__footer modal__footer--spread">
+              <button type="button" className="outline-button danger-button" onClick={() => void handleDeleteEmployee()}>
+                Удалить сотрудника
+              </button>
+              <div className="modal__footer-actions">
+                <button type="button" className="outline-button" onClick={() => setEmployeeEditor(null)}>
+                  Отмена
+                </button>
+                <button type="button" className="primary-button" onClick={() => void handleSaveEmployee()}>
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {businessEditor && (
+        <div className="modal-backdrop">
+          <section className="modal">
+            <div className="drawer__header">
+              <div>
+                <p className="eyebrow">Профиль бизнеса</p>
+                <h3>Редактирование данных</h3>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setBusinessEditor(null)}>
+                ✕
+              </button>
+            </div>
+
+            <div className="modal__grid">
+              <label className="slot-editor-row">
+                <span>Название бизнеса</span>
+                <input
+                  className="search-input"
+                  value={businessEditor.name}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            name: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="Например, Best Barber"
+                />
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Категория</span>
+                <select
+                  className="search-input"
+                  value={businessEditor.type}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            type: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                >
+                  {BUSINESS_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Адрес</span>
+                <input
+                  className="search-input"
+                  value={businessEditor.address}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            address: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="Улица, дом, ориентир"
+                />
+              </label>
+
+              <label className="slot-editor-row">
+                <span>Телефон</span>
+                <input
+                  className="search-input"
+                  value={businessEditor.phone}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            phone: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="+7 700 000 00 00"
+                />
+              </label>
+
+              <label className="slot-editor-row modal__grid-span-2">
+                <span>График работы</span>
+                <input
+                  className="search-input"
+                  value={businessEditor.schedule}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            schedule: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="Например, 09:00-21:00"
+                />
+                <p>Этот диапазон используется в CRM и слотах сотрудников как рабочие часы бизнеса.</p>
+              </label>
+
+              <label className="slot-editor-row modal__grid-span-2">
+                <span>Описание</span>
+                <textarea
+                  value={businessEditor.description}
+                  onChange={(event) =>
+                    setBusinessEditor((current) =>
+                      current
+                        ? {
+                            ...current,
+                            description: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  placeholder="Коротко расскажите о бизнесе, подходе и атмосфере."
+                />
+              </label>
+            </div>
+
+            <div className="modal__footer">
+              <button type="button" className="outline-button" onClick={() => setBusinessEditor(null)}>
+                Отмена
+              </button>
+              <button type="button" className="primary-button" onClick={() => void handleSaveBusinessProfile()}>
+                Сохранить профиль
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {serviceEditor && payload && (
@@ -1041,6 +1636,9 @@ function App() {
                   slotEditor.employee.weeklySlots.find((day) => day.weekday === slotEditor.activeWeekday) ??
                   slotEditor.employee.weeklySlots[slotEditor.activeWeekday];
                 const selected = new Set(slotEditor.values[slotEditor.activeWeekday] ?? []);
+                const selectedBreaks = new Set(slotEditor.breakValues[slotEditor.activeWeekday] ?? []);
+                const activeDayOff = slotEditor.dayOffs[slotEditor.activeDayOffDate] ?? { isFullDay: false, slots: [] };
+                const dayOffEntries = Object.entries(slotEditor.dayOffs).sort((a, b) => a[0].localeCompare(b[0]));
 
                 return (
                   <>
@@ -1068,39 +1666,178 @@ function App() {
                       })}
                     </div>
 
-                    <article className="slot-editor-row slot-editor-card">
-                      <div className="slot-editor-head">
-                        <div>
-                          <span>{activeDay.label}</span>
-                          <p>
-                            {businessHours.start}-{businessHours.end} · {selected.size} интервалов
-                          </p>
+                    <div className="slot-editor-stack">
+                      <article className="slot-editor-row slot-editor-card">
+                        <div className="slot-editor-head">
+                          <div>
+                            <span>Рабочие интервалы: {activeDay.label}</span>
+                            <p>
+                              {businessHours.start}-{businessHours.end} · {selected.size} доступных интервалов
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="outline-button"
+                            onClick={() => clearDaySlots(slotEditor.activeWeekday)}
+                          >
+                            Очистить день
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="outline-button"
-                          onClick={() => clearDaySlots(slotEditor.activeWeekday)}
-                        >
-                          Очистить день
-                        </button>
-                      </div>
 
-                      <div className="slot-chip-grid">
-                        {businessIntervals.map((interval) => {
-                          const isSelected = selected.has(interval.start);
-                          return (
+                        <div className="slot-chip-grid">
+                          {businessIntervals.map((interval) => {
+                            const isSelected = selected.has(interval.start);
+                            return (
+                              <button
+                                key={`${slotEditor.activeWeekday}-${interval.start}`}
+                                type="button"
+                                className={`slot-chip ${isSelected ? "is-selected" : ""}`}
+                                onClick={() => toggleSlotInterval(slotEditor.activeWeekday, interval.start)}
+                              >
+                                {interval.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </article>
+
+                      <article className="slot-editor-row slot-editor-card">
+                        <div className="slot-editor-head">
+                          <div>
+                            <span>Повторяющиеся перерывы: {activeDay.label}</span>
+                            <p>Отметьте интервалы, которые каждую неделю должны быть закрыты для записи клиентов.</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="outline-button"
+                            onClick={() => clearBreaks(slotEditor.activeWeekday)}
+                          >
+                            Очистить перерывы
+                          </button>
+                        </div>
+
+                        <div className="slot-chip-grid">
+                          {businessIntervals.map((interval) => {
+                            const isSelected = selectedBreaks.has(interval.start);
+                            return (
+                              <button
+                                key={`break-${slotEditor.activeWeekday}-${interval.start}`}
+                                type="button"
+                                className={`slot-chip ${isSelected ? "is-selected" : ""}`}
+                                onClick={() => toggleBreakInterval(slotEditor.activeWeekday, interval.start)}
+                              >
+                                {interval.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </article>
+
+                      <article className="slot-editor-row slot-editor-card">
+                        <div className="slot-editor-head">
+                          <div>
+                            <span>Выходные и исключения по дате</span>
+                            <p>Можно отметить полный выходной или закрыть отдельные интервалы только на выбранную дату.</p>
+                          </div>
+                        </div>
+
+                        <div className="day-off-toolbar">
+                          <label className="slot-editor-row">
+                            <span>Дата</span>
+                            <input
+                              type="date"
+                              className="search-input"
+                              value={slotEditor.activeDayOffDate}
+                              min={selectedDate}
+                              onChange={(event) =>
+                                setSlotEditor((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        activeDayOffDate: event.target.value,
+                                      }
+                                    : current
+                                )
+                              }
+                            />
+                          </label>
+
+                          <div className="day-off-toolbar__actions">
                             <button
-                              key={`${slotEditor.activeWeekday}-${interval.start}`}
                               type="button"
-                              className={`slot-chip ${isSelected ? "is-selected" : ""}`}
-                              onClick={() => toggleSlotInterval(slotEditor.activeWeekday, interval.start)}
+                              className={`outline-button ${activeDayOff.isFullDay ? "is-active-chip" : ""}`}
+                              onClick={() => toggleDayOffFullDay(slotEditor.activeDayOffDate)}
                             >
-                              {interval.label}
+                              {activeDayOff.isFullDay ? "Снять полный выходной" : "Полный выходной"}
                             </button>
-                          );
-                        })}
-                      </div>
-                    </article>
+                            <button
+                              type="button"
+                              className="outline-button"
+                              onClick={() => clearDayOff(slotEditor.activeDayOffDate)}
+                            >
+                              Очистить дату
+                            </button>
+                          </div>
+                        </div>
+
+                        {activeDayOff.isFullDay ? (
+                          <div className="day-off-banner">
+                            <span className="status-pill is-cancelled">Весь день закрыт</span>
+                            <p>Клиентам не будут показаны никакие слоты на {formatShortDate(slotEditor.activeDayOffDate)}.</p>
+                          </div>
+                        ) : (
+                          <div className="slot-chip-grid">
+                            {businessIntervals.map((interval) => {
+                              const isSelected = activeDayOff.slots.includes(interval.start);
+                              return (
+                                <button
+                                  key={`dayoff-${slotEditor.activeDayOffDate}-${interval.start}`}
+                                  type="button"
+                                  className={`slot-chip ${isSelected ? "is-selected" : ""}`}
+                                  onClick={() => toggleDayOffInterval(slotEditor.activeDayOffDate, interval.start)}
+                                >
+                                  {interval.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="day-off-list">
+                          {dayOffEntries.length > 0 ? (
+                            dayOffEntries.map(([date, value]) => (
+                              <button
+                                key={date}
+                                type="button"
+                                className={`day-off-item ${date === slotEditor.activeDayOffDate ? "is-active" : ""}`}
+                                onClick={() =>
+                                  setSlotEditor((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          activeDayOffDate: date,
+                                        }
+                                      : current
+                                  )
+                                }
+                              >
+                                <div>
+                                  <strong>{formatShortDate(date)}</strong>
+                                  <p>
+                                    {value.isFullDay
+                                      ? "Полный выходной"
+                                      : `${value.slots.length} закрытых интервалов`}
+                                  </p>
+                                </div>
+                                <span>{value.isFullDay ? "Весь день" : value.slots.map(toHalfHourIntervalLabel).join(", ")}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <p>На будущие даты исключения пока не заданы.</p>
+                          )}
+                        </div>
+                      </article>
+                    </div>
                   </>
                 );
               })() : (
@@ -1116,7 +1853,7 @@ function App() {
                 Отмена
               </button>
               <button type="button" className="primary-button" onClick={() => void handleSaveSlots()}>
-                Сохранить слоты
+                Сохранить расписание
               </button>
             </div>
           </section>

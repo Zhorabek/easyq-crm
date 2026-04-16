@@ -3,18 +3,22 @@ import type {
   BookingStatus,
   CreatePaymentInput,
   CrmPayload,
+  UpdateBusinessProfileInput,
+  UpdateEmployeeInput,
   UpdateServiceInput,
   UpdateEmployeeSlotsInput,
   UpsertServiceInput,
 } from "../types";
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!(init?.body instanceof FormData) && init?.body !== undefined && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
   const response = await fetch(input, {
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    headers,
   });
 
   if (!response.ok) {
@@ -50,6 +54,19 @@ export function createEmployee(input: AddEmployeeInput) {
   });
 }
 
+export function updateEmployee(staffId: number, input: UpdateEmployeeInput) {
+  return request<{ ok: true }>(`/api/employees/${staffId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteEmployee(staffId: number) {
+  return request<{ ok: true }>(`/api/employees/${staffId}`, {
+    method: "DELETE",
+  });
+}
+
 export function createService(input: UpsertServiceInput) {
   return request<{ ok: true }>("/api/services", {
     method: "POST",
@@ -68,5 +85,28 @@ export function saveEmployeeSlots(staffId: number, input: UpdateEmployeeSlotsInp
   return request<{ ok: true }>(`/api/employees/${staffId}/slots`, {
     method: "PUT",
     body: JSON.stringify(input),
+  });
+}
+
+export function updateBusinessProfile(input: UpdateBusinessProfileInput) {
+  return request<{ ok: true }>("/api/business", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function uploadBusinessPhoto(file: File) {
+  const formData = new FormData();
+  formData.set("photo", file);
+
+  return request<{ ok: true }>("/api/business/photo", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function deleteBusinessPhoto() {
+  return request<{ ok: true }>("/api/business/photo", {
+    method: "DELETE",
   });
 }

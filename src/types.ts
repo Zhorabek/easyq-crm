@@ -1,5 +1,5 @@
 export type BookingStatus = "pending" | "confirmed" | "done" | "cancelled";
-export type AppSection = "overview" | "calendar" | "employees" | "services" | "clients" | "analytics" | "booking";
+export type AppSection = "overview" | "calendar" | "employees" | "services" | "clients" | "analytics" | "booking" | "profile";
 export type PaymentMethod = "cash" | "card" | "transfer" | "other";
 export type PaymentFlow = "in" | "out";
 export type PaymentStatus = "unpaid" | "partial" | "paid" | "overpaid";
@@ -11,6 +11,9 @@ export interface BusinessProfile {
   address: string;
   phone: string;
   schedule: string;
+  description: string | null;
+  photoFileId: string | null;
+  photoFileUniqueId: string | null;
 }
 
 export interface KpiCard {
@@ -91,6 +94,16 @@ export interface EmployeeRow {
   weeklySlots: Array<{
     weekday: number;
     label: string;
+    slots: string[];
+  }>;
+  weeklyBreaks: Array<{
+    weekday: number;
+    label: string;
+    slots: string[];
+  }>;
+  dayOffs: Array<{
+    date: string;
+    isFullDay: boolean;
     slots: string[];
   }>;
 }
@@ -188,6 +201,10 @@ export interface AddEmployeeInput {
   name: string;
 }
 
+export interface UpdateEmployeeInput {
+  name: string;
+}
+
 export interface UpsertServiceInput {
   name: string;
   price: number;
@@ -208,4 +225,22 @@ export interface UpdateEmployeeSlotsInput {
     weekday: number;
     slots: string[];
   }>;
+  weeklyBreaks: Array<{
+    weekday: number;
+    slots: string[];
+  }>;
+  dayOffs: Array<{
+    date: string;
+    isFullDay: boolean;
+    slots: string[];
+  }>;
+}
+
+export interface UpdateBusinessProfileInput {
+  name?: string;
+  type?: string;
+  address?: string;
+  phone?: string;
+  schedule?: string;
+  description?: string | null;
 }

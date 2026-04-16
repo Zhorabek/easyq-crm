@@ -1,12 +1,20 @@
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function formatLocalDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function parseUtcDate(dateIso: string) {
+  return new Date(`${dateIso}T00:00:00Z`);
+}
+
 export function isoToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalDate(new Date());
 }
 
 export function addDays(dateIso: string, days: number): string {
-  const value = new Date(`${dateIso}T00:00:00`);
-  value.setDate(value.getDate() + days);
+  const value = parseUtcDate(dateIso);
+  value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
 
@@ -15,23 +23,24 @@ export function formatLongDate(dateIso: string) {
     day: "numeric",
     month: "long",
     weekday: "long",
-  }).format(new Date(`${dateIso}T00:00:00`));
+    timeZone: "UTC",
+  }).format(parseUtcDate(dateIso));
 }
 
 export function getMonthMatrix(anchorIso: string) {
-  const anchor = new Date(`${anchorIso}T00:00:00`);
-  const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const anchor = parseUtcDate(anchorIso);
+  const monthStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
   const gridStart = new Date(monthStart);
-  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+  gridStart.setUTCDate(monthStart.getUTCDate() - monthStart.getUTCDay());
 
   return Array.from({ length: 35 }, (_, index) => {
     const current = new Date(gridStart);
-    current.setDate(gridStart.getDate() + index);
+    current.setUTCDate(gridStart.getUTCDate() + index);
     return {
       iso: current.toISOString().slice(0, 10),
-      label: current.getDate(),
-      weekday: WEEKDAY_LABELS[current.getDay()],
-      outside: current.getMonth() !== anchor.getMonth(),
+      label: current.getUTCDate(),
+      weekday: WEEKDAY_LABELS[current.getUTCDay()],
+      outside: current.getUTCMonth() !== anchor.getUTCMonth(),
     };
   });
 }
@@ -40,7 +49,16 @@ export function monthTitle(anchorIso: string) {
   return new Intl.DateTimeFormat("ru-RU", {
     month: "long",
     year: "numeric",
-  }).format(new Date(`${anchorIso}T00:00:00`));
+    timeZone: "UTC",
+  }).format(parseUtcDate(anchorIso));
+}
+
+export function formatShortDate(dateIso: string) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(parseUtcDate(dateIso));
 }
 
 export function timeToMinutes(time: string) {

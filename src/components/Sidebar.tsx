@@ -13,6 +13,18 @@ const SECTIONS: Array<{ id: AppSection; label: string }> = [
   { id: "booking", label: "Онлайн-запись" },
 ];
 
+function formatBusinessTypeLabel(value: string | undefined) {
+  if (!value) return "Booking dashboard";
+  if (value === "beauty_salon" || value === "salon") return "Салон красоты";
+  if (value === "barbershop") return "Барбершоп";
+  if (value === "carwash") return "Автомойка";
+  if (value === "spa_salon") return "SPA-салон";
+  if (value === "dentistry") return "Стоматология";
+  if (value === "medical_services") return "Медицинские услуги";
+  if (value === "other") return "Другое";
+  return value.replaceAll("_", " ");
+}
+
 type SidebarProps = {
   business: BusinessProfile | null;
   activeSection: AppSection;
@@ -26,13 +38,17 @@ export function Sidebar({ business, activeSection, anchorDate, onSelectSection, 
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__brand">
+      <button
+        type="button"
+        className={`sidebar__brand sidebar__brand-button ${activeSection === "profile" ? "is-active" : ""}`}
+        onClick={() => onSelectSection("profile")}
+      >
         <div className="sidebar__logo">E</div>
         <div>
           <strong>{business?.name ?? "EasyQ CRM"}</strong>
-          <p>{business?.type ?? "Booking dashboard"}</p>
+          <p>{formatBusinessTypeLabel(business?.type)}</p>
         </div>
-      </div>
+      </button>
 
       <div className="sidebar__calendar">
         <div className="sidebar__calendar-head">

@@ -1,5 +1,6 @@
 const COOKIE_NAME = "easyq_crm_session";
 const PBKDF2_HASH_BYTES = 32;
+const PBKDF2_ITERATIONS = 100_000;
 
 type SessionPayload = {
   businessId: number;
@@ -111,19 +112,18 @@ export async function hashCrmPassword(password: string) {
     false,
     ["deriveBits"]
   );
-  const iterations = 120_000;
   const bits = await crypto.subtle.deriveBits(
     {
       name: "PBKDF2",
       hash: "SHA-256",
       salt,
-      iterations,
+      iterations: PBKDF2_ITERATIONS,
     },
     key,
     PBKDF2_HASH_BYTES * 8
   );
 
-  return `pbkdf2_sha256$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
+  return `pbkdf2_sha256$${PBKDF2_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
 }
 
 export async function verifyCrmPassword(password: string, storedHash: string | null | undefined) {

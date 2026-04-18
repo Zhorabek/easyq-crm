@@ -28,6 +28,7 @@ APP_TIMEZONE=Asia/Almaty
 CRM_SESSION_SECRET=easyq-crm-dev-session-secret
 CLIENT_BOT_USERNAME=easyqueue_client_bot
 BUSINESS_BOT_USERNAME=easyqueue_business_bot
+BUSINESS_BOT_TOKEN=your_business_bot_token_here
 ```
 
 CRM now uses login/password per business, so `CRM_BUSINESS_ID` is no longer required for the normal UI flow.
@@ -87,6 +88,7 @@ npm run deploy
 
 - The CRM reads the same D1 schema as the bots.
 - Set `CRM_SESSION_SECRET` in Cloudflare secrets for production auth cookies.
+- `BUSINESS_BOT_TOKEN` is required for business photo preview/upload in CRM, because CRM proxies the photo through the business bot's Telegram file access.
 - Earnings and finance analytics now come from the shared `payments` ledger, not only from booking status.
 - `wrangler dev` uses a local D1 by default, so it will be empty until you initialize it.
 - It does not store Telegram bot tokens in the source tree.

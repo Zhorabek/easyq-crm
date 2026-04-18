@@ -1278,6 +1278,10 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
 }
 
 async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Request) {
+  if (!env.BUSINESS_BOT_TOKEN) {
+    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
+  }
+
   const formData = await request.formData();
   const photo = formData.get("photo");
 
@@ -1305,7 +1309,6 @@ async function deleteBusinessPhoto(env: Env, business: BusinessRow) {
 }
 
 async function proxyBusinessPhoto(env: Env, business: BusinessRow) {
-
   if (!business.photo_file_id) {
     return new Response("Not found", { status: 404 });
   }

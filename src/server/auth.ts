@@ -187,7 +187,14 @@ export async function readSession(request: Request, secret: string | undefined):
   const [payloadSegment, signature] = token.split(".");
   if (!payloadSegment || !signature) return null;
 
-  const expectedSignature = await signValue(payloadSegment, getSessionSecret(request, secret));
+  let expectedSignature: string;
+  try {
+    expectedSignature = await signValue(payloadSegment, getSessionSecret(request, secret));
+  } catch (error) {
+    console.log("CRM session verification skipped:", error);
+    return null;
+  }
+
   if (signature !== expectedSignature) {
     return null;
   }

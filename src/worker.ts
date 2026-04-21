@@ -180,6 +180,13 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
+class HttpResponseError extends Error {
+  constructor(public response: Response) {
+    super(`HTTP ${response.status}`);
+    this.name = "HttpResponseError";
+  }
+}
+
 function toAuthSession(business: BusinessRow): AuthSession {
   return {
     businessId: business.id,
@@ -432,24 +439,32 @@ function sumPaymentsInRange(payments: PaymentRow[], predicate: (payment: Payment
 async function requireAuthenticatedBusiness(env: Env, request: Request): Promise<BusinessRow> {
   const session = await readSession(request, env.CRM_SESSION_SECRET);
   if (!session) {
-    throw new Response(JSON.stringify({ error: "Authentication required" }), {
-      status: 401,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "set-cookie": clearSessionCookie(request),
-      },
-    });
+    throw new HttpResponseError(
+      json(
+        { error: "Authentication required" },
+        {
+          status: 401,
+          headers: {
+            "set-cookie": clearSessionCookie(request),
+          },
+        }
+      )
+    );
   }
 
   const business = await getBusinessById(env.DB, session.businessId);
   if (!business || !business.crm_username) {
-    throw new Response(JSON.stringify({ error: "Your CRM session is no longer valid. Please sign in again." }), {
-      status: 401,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "set-cookie": clearSessionCookie(request),
-      },
-    });
+    throw new HttpResponseError(
+      json(
+        { error: "Your CRM session is no longer valid. Please sign in again." },
+        {
+          status: 401,
+          headers: {
+            "set-cookie": clearSessionCookie(request),
+          },
+        }
+      )
+    );
   }
 
   return business;
@@ -1635,8 +1650,8 @@ export default {
 
       return await env.ASSETS.fetch(request);
     } catch (error) {
-      if (error instanceof Response) {
-        return error;
+      if (error instanceof HttpResponseError) {
+        return error.response;
       }
       console.error("CRM worker error", error);
       const message = error instanceof Error ? error.message : "Unknown CRM error";

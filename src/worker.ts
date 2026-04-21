@@ -184,7 +184,23 @@ class HttpResponseError extends Error {
   constructor(public response: Response) {
     super(`HTTP ${response.status}`);
     this.name = "HttpResponseError";
+    Object.setPrototypeOf(this, HttpResponseError.prototype);
   }
+}
+
+function getHttpErrorResponse(error: unknown) {
+  if (error instanceof HttpResponseError) {
+    return error.response;
+  }
+
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: unknown }).response;
+    if (response instanceof Response) {
+      return response;
+    }
+  }
+
+  return null;
 }
 
 function toAuthSession(business: BusinessRow): AuthSession {
@@ -471,7 +487,32 @@ async function requireAuthenticatedBusiness(env: Env, request: Request): Promise
 }
 
 async function getSessionState(env: Env, request: Request) {
-  const business = await requireAuthenticatedBusiness(env, request);
+  const session = await readSession(request, env.CRM_SESSION_SECRET);
+  if (!session) {
+    return json(
+      { error: "Authentication required" },
+      {
+        status: 401,
+        headers: {
+          "set-cookie": clearSessionCookie(request),
+        },
+      }
+    );
+  }
+
+  const business = await getBusinessById(env.DB, session.businessId);
+  if (!business || !business.crm_username) {
+    return json(
+      { error: "Your CRM session is no longer valid. Please sign in again." },
+      {
+        status: 401,
+        headers: {
+          "set-cookie": clearSessionCookie(request),
+        },
+      }
+    );
+  }
+
   return json(toAuthSession(business));
 }
 
@@ -1650,8 +1691,9 @@ export default {
 
       return await env.ASSETS.fetch(request);
     } catch (error) {
-      if (error instanceof HttpResponseError) {
-        return error.response;
+      const authResponse = getHttpErrorResponse(error);
+      if (authResponse) {
+        return authResponse;
       }
       console.error("CRM worker error", error);
       const message = error instanceof Error ? error.message : "Unknown CRM error";

@@ -42,6 +42,7 @@ body {
     radial-gradient(circle at top left, rgba(226, 243, 122, 0.2), transparent 30%),
     radial-gradient(circle at right center, rgba(202, 236, 221, 0.28), transparent 32%),
     linear-gradient(180deg, #edf5ef 0%, #f6fbf7 100%);
+  overflow-x: hidden;
 }
 
 code {
@@ -75,6 +76,7 @@ a {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  min-width: 0;
 }
 
 .auth-shell {
@@ -148,6 +150,12 @@ a {
   position: sticky;
   top: 0;
   height: 100vh;
+}
+
+.sidebar__mobile-head,
+.mobile-menu-button,
+.mobile-nav-backdrop {
+  display: none;
 }
 
 .sidebar__brand {
@@ -313,6 +321,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
 }
 
 .topbar h1,
@@ -325,6 +334,7 @@ a {
 .topbar h1 {
   font-size: clamp(2rem, 2.8vw, 2.8rem);
   text-transform: capitalize;
+  overflow-wrap: anywhere;
 }
 
 .eyebrow {
@@ -412,6 +422,7 @@ a {
   border: 1px solid var(--panel-border);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+  min-width: 0;
 }
 
 .kpi-card {
@@ -1419,15 +1430,6 @@ a {
 }
 
 @media (max-width: 1280px) {
-  .crm-root {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: relative;
-    height: auto;
-  }
-
   .kpi-strip,
   .content-grid--overview,
   .content-grid--analytics,
@@ -1439,8 +1441,117 @@ a {
 }
 
 @media (max-width: 900px) {
+  .crm-root {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .crm-main {
+    padding: 14px 14px 28px;
+    gap: 16px;
+  }
+
+  .mobile-menu-button {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+    border: 1px solid rgba(155, 172, 157, 0.2);
+    background: rgba(255, 255, 255, 0.9);
+    color: #2b342d;
+    font-size: 1.25rem;
+    box-shadow: 0 10px 22px rgba(140, 156, 142, 0.1);
+  }
+
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 24;
+    border: 0;
+    background: rgba(43, 55, 47, 0.22);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .mobile-nav-backdrop.is-open {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 25;
+    width: min(360px, 88vw);
+    height: 100dvh;
     padding: 18px;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+    box-shadow: 26px 0 52px rgba(72, 89, 76, 0.18);
+    pointer-events: none;
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .sidebar__mobile-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--sidebar-text-strong);
+  }
+
+  .sidebar__close {
+    flex: 0 0 auto;
+  }
+
+  .sidebar__brand {
+    order: 1;
+  }
+
+  .sidebar__nav {
+    order: 2;
+  }
+
+  .sidebar__calendar {
+    order: 3;
+  }
+
+  .sidebar__footer {
+    order: 4;
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+  }
+
+  .topbar__title {
+    min-width: 0;
+  }
+
+  .topbar h1 {
+    font-size: clamp(1.75rem, 8vw, 2.35rem);
+    line-height: 1.12;
+  }
+
+  .topbar__actions {
+    grid-column: 1 / -1;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .topbar__actions .outline-button,
+  .topbar__actions .ghost-button {
+    flex: 0 0 auto;
   }
 
   .kpi-strip,
@@ -1461,6 +1572,29 @@ a {
     align-items: stretch;
   }
 
+  .panel,
+  .scheduler-card,
+  .kpi-card {
+    border-radius: 22px;
+  }
+
+  .panel,
+  .scheduler-card {
+    padding: 18px;
+  }
+
+  .panel--flat {
+    padding: 0;
+  }
+
+  .panel--flat > .panel__header {
+    padding: 18px 18px 0;
+  }
+
+  .panel__header {
+    align-items: flex-start;
+  }
+
   .slot-day-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1473,15 +1607,42 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .topbar,
   .filter-panel__row,
   .detail-meta,
-  .table__row,
-  .table__head,
-  .scheduler-head,
   .payment-form {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .filter-panel__row {
+    align-items: stretch;
+  }
+
+  .filter-panel__inline {
+    width: 100%;
+  }
+
+  .search-input--small {
+    min-width: 0;
+  }
+
+  .table__head,
+  .clients-table .table__head,
+  .services-table .table__head {
+    display: none;
+  }
+
+  .table__row,
+  .clients-table .table__row,
+  .services-table .table__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .table__row > div {
+    min-width: 0;
   }
 
   .slot-editor-head {
@@ -1503,10 +1664,117 @@ a {
     width: auto;
     top: 12px;
   }
+
+  .scheduler-filter {
+    flex-basis: 190px;
+    min-width: 190px;
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .modal,
+  .modal--compact,
+  .modal--slot-editor {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: 24px;
+    overflow: auto;
+  }
 }
 
 @media (max-width: 640px) {
+  .auth-shell {
+    padding: 16px;
+  }
+
+  .auth-card {
+    border-radius: 24px;
+    padding: 22px;
+  }
+
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .kpi-card {
+    min-height: 126px;
+    padding: 16px;
+  }
+
+  .kpi-card strong,
+  .analytics-card strong {
+    font-size: 1.45rem;
+  }
+
+  .topbar__actions {
+    gap: 8px;
+  }
+
+  .outline-button,
+  .primary-button {
+    padding: 11px 14px;
+  }
+
+  .business-profile__media,
+  .business-profile__placeholder {
+    min-height: 220px;
+    border-radius: 22px;
+  }
+
+  .reservation-item,
+  .history-row,
+  .leaderboard__row,
+  .day-off-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .leaderboard__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .table__actions,
+  .business-profile__actions,
+  .modal__footer,
+  .modal__footer-actions,
+  .drawer__actions-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .table__actions button,
+  .business-profile__actions button,
+  .modal__footer button,
+  .drawer__actions-grid button {
+    width: 100%;
+  }
+
+  .drawer,
+  .drawer--wide {
+    inset: 8px;
+    border-radius: 24px;
+  }
+
+  .detail-meta {
+    gap: 10px;
+  }
+
+  .detail-meta > div {
+    padding: 12px 14px;
+  }
+
   .slot-day-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .slot-chip-grid {
+    grid-template-columns: 1fr;
   }
 }

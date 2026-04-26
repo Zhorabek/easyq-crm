@@ -83,6 +83,16 @@ const BUSINESS_TYPE_OPTIONS = [
   { value: "other", label: "Другое" },
 ] as const;
 
+const MOBILE_NAV_QUERY = "(max-width: 900px)";
+
+function getDefaultSectionForViewport(): AppSection {
+  if (typeof window !== "undefined" && window.matchMedia(MOBILE_NAV_QUERY).matches) {
+    return "overview";
+  }
+
+  return "calendar";
+}
+
 function normalizeBusinessTypeValue(value: string) {
   return value === "salon" ? "beauty_salon" : value;
 }
@@ -115,10 +125,11 @@ function getInitialSlotWeekday(employee: EmployeeRow, anchorDate: string) {
 }
 
 function App() {
-  const [activeSection, setActiveSection] = useState<AppSection>("calendar");
+  const [activeSection, setActiveSection] = useState<AppSection>(() => getDefaultSectionForViewport());
   const [selectedDate, setSelectedDate] = useState(isoToday());
   const [payload, setPayload] = useState<CrmPayload | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
@@ -181,6 +192,16 @@ function App() {
     const timer = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     if (!payload || selectedCalendarStaffId == null) return;
@@ -277,7 +298,7 @@ function App() {
       setLoginError(null);
       const response = await login({ username, password });
       setSession(response.session);
-      setActiveSection("calendar");
+      setActiveSection(getDefaultSectionForViewport());
       setError(null);
       setLoginForm({
         username: response.session.username,
@@ -295,7 +316,8 @@ function App() {
       await logout();
     } finally {
       setSession(null);
-      setActiveSection("calendar");
+      setActiveSection(getDefaultSectionForViewport());
+      setMobileNavOpen(false);
       setPayload(null);
       setSelectedBooking(null);
       setSelectedClient(null);
@@ -536,6 +558,16 @@ function App() {
     startTransition(() => {
       setSelectedDate((current) => addDays(current, delta));
     });
+  }
+
+  function handleSelectSection(section: AppSection) {
+    setActiveSection(section);
+    setMobileNavOpen(false);
+  }
+
+  function handleSelectDate(date: string) {
+    setSelectedDate(date);
+    setMobileNavOpen(false);
   }
 
   function openEmployeeEditor(employee: EmployeeRow) {
@@ -841,13 +873,31 @@ function App() {
         business={payload?.business ?? null}
         activeSection={activeSection}
         anchorDate={selectedDate}
-        onSelectSection={setActiveSection}
-        onSelectDate={setSelectedDate}
+        mobileOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        onSelectSection={handleSelectSection}
+        onSelectDate={handleSelectDate}
+      />
+      <button
+        type="button"
+        className={`mobile-nav-backdrop ${mobileNavOpen ? "is-open" : ""}`}
+        aria-label="Закрыть меню"
+        onClick={() => setMobileNavOpen(false)}
       />
 
       <main className="crm-main">
         <header className="topbar">
-          <div>
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-label="Открыть меню CRM"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            ☰
+          </button>
+
+          <div className="topbar__title">
             <p className="eyebrow">{topbarEyebrow}</p>
             <h1>{topbarTitle}</h1>
           </div>

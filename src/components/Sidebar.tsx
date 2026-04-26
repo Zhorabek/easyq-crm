@@ -29,19 +29,46 @@ type SidebarProps = {
   business: BusinessProfile | null;
   activeSection: AppSection;
   anchorDate: string;
+  mobileOpen?: boolean;
+  onClose?: () => void;
   onSelectSection: (section: AppSection) => void;
   onSelectDate: (date: string) => void;
 };
 
-export function Sidebar({ business, activeSection, anchorDate, onSelectSection, onSelectDate }: SidebarProps) {
+export function Sidebar({
+  business,
+  activeSection,
+  anchorDate,
+  mobileOpen = false,
+  onClose,
+  onSelectSection,
+  onSelectDate,
+}: SidebarProps) {
   const days = getMonthMatrix(anchorDate);
 
+  function selectSection(section: AppSection) {
+    onSelectSection(section);
+    onClose?.();
+  }
+
+  function selectDate(date: string) {
+    onSelectDate(date);
+    onClose?.();
+  }
+
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${mobileOpen ? "is-open" : ""}`}>
+      <div className="sidebar__mobile-head">
+        <strong>Меню CRM</strong>
+        <button type="button" className="ghost-button sidebar__close" aria-label="Закрыть меню" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+
       <button
         type="button"
         className={`sidebar__brand sidebar__brand-button ${activeSection === "profile" ? "is-active" : ""}`}
-        onClick={() => onSelectSection("profile")}
+        onClick={() => selectSection("profile")}
       >
         <div className="sidebar__logo">E</div>
         <div>
@@ -71,7 +98,7 @@ export function Sidebar({ business, activeSection, anchorDate, onSelectSection, 
               key={day.iso}
               type="button"
               className={`sidebar__day ${day.iso === anchorDate ? "is-active" : ""} ${day.outside ? "is-outside" : ""}`}
-              onClick={() => onSelectDate(day.iso)}
+              onClick={() => selectDate(day.iso)}
             >
               {day.label}
             </button>
@@ -85,7 +112,7 @@ export function Sidebar({ business, activeSection, anchorDate, onSelectSection, 
             key={section.id}
             type="button"
             className={`sidebar__nav-item ${activeSection === section.id ? "is-active" : ""}`}
-            onClick={() => onSelectSection(section.id)}
+            onClick={() => selectSection(section.id)}
           >
             {section.label}
           </button>

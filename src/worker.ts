@@ -27,8 +27,10 @@ import type {
 import {
   clearSessionCookie,
   createSessionCookie,
+  generateCrmTempPassword,
   hashCrmPassword,
   isValidCrmUsername,
+  normalizeCrmUsernameBase,
   normalizeCrmUsername,
   readSession,
   verifyCrmPassword,
@@ -576,6 +578,120 @@ async function logout(request: Request) {
       },
     }
   );
+}
+
+// Top-level (form-POST) login that sets the session cookie first-party and redirects into the CRM.
+// Used by the landing's /signup "Open CRM" button so a fresh signup lands in its OWN account,
+// overwriting any stale session (e.g. a previously logged-in business).
+async function sessionLogin(env: Env, request: Request) {
+  const form = await request.formData().catch(() => null);
+  const username = normalizeCrmUsername(String(form?.get("username") ?? ""));
+  const password = String(form?.get("password") ?? "");
+
+  if (username && password) {
+    const row = await env.DB
+      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password FROM businesses WHERE crm_username = ? LIMIT 1")
+      .bind(username)
+      .first<LoginRow>();
+    if (row && (await verifyCrmPassword(password, row.crm_password_hash))) {
+      const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+        businessId: row.id,
+        username: row.crm_username ?? username,
+      });
+      return new Response(null, { status: 303, headers: { location: "/", "set-cookie": cookie } });
+    }
+  }
+
+  // Bad/missing creds → clear any stale session and land on the login screen.
+  return new Response(null, { status: 303, headers: { location: "/", "set-cookie": clearSessionCookie(request) } });
+}
+
+// Public sign-up endpoint — called cross-origin by the static landing's /signup wizard.
+// Fetch sends no credentials, so a permissive CORS allow-list is sufficient.
+const SIGNUP_CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
+
+type SignupInput = {
+  name?: string;
+  type?: string;
+  address?: string;
+  phone?: string;
+  lang?: string;
+  code?: string;
+};
+
+async function crmUsernameExists(db: D1Database, username: string) {
+  const row = await db.prepare("SELECT 1 AS x FROM businesses WHERE crm_username = ? LIMIT 1").bind(username).first();
+  return Boolean(row);
+}
+
+async function signupBusiness(env: Env, request: Request) {
+  const input = (await request.json().catch(() => ({}))) as SignupInput;
+  const name = (input.name ?? "").trim();
+  const type = (input.type ?? "").trim() || "other";
+  const address = (input.address ?? "").trim() || "—";
+  const phone = (input.phone ?? "").trim();
+  const code = String(input.code ?? "");
+  const language = input.lang === "ru" || input.lang === "uz" ? input.lang : null;
+
+  if (code !== "1111") {
+    return json({ error: "Invalid verification code." }, { status: 400, headers: SIGNUP_CORS });
+  }
+  if (name.length < 2) {
+    return json({ error: "Business name is required." }, { status: 400, headers: SIGNUP_CORS });
+  }
+  if (phone.replace(/\D/g, "").length < 9) {
+    return json({ error: "A valid phone number is required." }, { status: 400, headers: SIGNUP_CORS });
+  }
+
+  // Web sign-ups have no Telegram account, but users.telegram_id is NOT NULL UNIQUE.
+  // Use a synthetic negative id (real Telegram ids are positive) and retry on the rare collision.
+  let userId = 0;
+  for (let attempt = 0; attempt < 4 && !userId; attempt += 1) {
+    const syntheticTelegramId = -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+    try {
+      const res = await env.DB
+        .prepare("INSERT INTO users (telegram_id, language) VALUES (?, ?)")
+        .bind(syntheticTelegramId, language)
+        .run();
+      userId = Number(res.meta.last_row_id ?? 0);
+    } catch {
+      userId = 0;
+    }
+  }
+  if (!userId) {
+    return json({ error: "Could not create the account. Please try again." }, { status: 500, headers: SIGNUP_CORS });
+  }
+
+  const insertBiz = await env.DB
+    .prepare("INSERT INTO businesses (user_id, name, type, address, phone, schedule) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(userId, name, type, address, phone, "09:00 - 19:00")
+    .run();
+  const businessId =
+    Number(insertBiz.meta.last_row_id ?? 0) ||
+    Number((await env.DB.prepare("SELECT id FROM businesses WHERE user_id = ? LIMIT 1").bind(userId).first<{ id: number }>())?.id ?? 0);
+  if (!businessId) {
+    return json({ error: "The business was created but could not be loaded." }, { status: 500, headers: SIGNUP_CORS });
+  }
+
+  const base = normalizeCrmUsernameBase(name);
+  let username = `${base}_${businessId}`;
+  for (let suffix = 1; await crmUsernameExists(env.DB, username); suffix += 1) {
+    username = `${base}_${businessId}_${suffix}`;
+  }
+  const tempPassword = generateCrmTempPassword();
+  const passwordHash = await hashCrmPassword(tempPassword);
+  await env.DB
+    .prepare(
+      "UPDATE businesses SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, crm_credentials_updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(username, passwordHash, tempPassword, businessId)
+    .run();
+
+  return json({ ok: true, username, password: tempPassword, businessName: name }, { status: 201, headers: SIGNUP_CORS });
 }
 
 async function updateBusinessCredentials(env: Env, request: Request, business: BusinessRow, input: UpdateCrmCredentialsInput) {
@@ -1594,8 +1710,20 @@ export default {
         return login(env, request);
       }
 
+      if (url.pathname === "/api/auth/session-login" && request.method === "POST") {
+        return sessionLogin(env, request);
+      }
+
       if (url.pathname === "/api/auth/logout" && request.method === "POST") {
         return logout(request);
+      }
+
+      if (url.pathname === "/api/signup" && request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: SIGNUP_CORS });
+      }
+
+      if (url.pathname === "/api/signup" && request.method === "POST") {
+        return signupBusiness(env, request);
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {

@@ -103,6 +103,27 @@ export function isValidCrmUsername(value: string) {
   return /^[a-z0-9](?:[a-z0-9._-]{2,30}[a-z0-9])$/.test(value);
 }
 
+const CRM_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+export function generateCrmTempPassword(length = 10) {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  let password = "";
+  for (const byte of bytes) {
+    password += CRM_PASSWORD_ALPHABET[byte % CRM_PASSWORD_ALPHABET.length];
+  }
+  return password;
+}
+
+export function normalizeCrmUsernameBase(name: string) {
+  const normalized = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+
+  return normalized || "easyq";
+}
+
 export async function hashCrmPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey(

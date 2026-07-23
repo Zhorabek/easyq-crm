@@ -91,6 +91,19 @@ export const CRM_T: Record<Lang, any> = {
       mins: ['15 daqiqa', '30 daqiqa', '1 soat', '2 soat', '1 kun oldin'],
       credentials: 'CRM kirish', credentialsSub: 'Login va parolni yangilang', username: 'Login', currentPassword: 'Joriy parol', newPassword: 'Yangi parol', confirmPassword: 'Parolni takrorlang', credentialsSave: 'Kirishni saqlash', tempPassword: 'Vaqtinchalik parol ishlatilmoqda',
     },
+    tour: {
+      next: 'Keyingi', back: 'Orqaga', skip: 'O‘tkazib yuborish', done: 'Boshladik!', goServices: 'Xizmat qo‘shishga o‘tish', replay: 'Qo‘llanma', stepOf: '{n}/{total}',
+      steps: [
+        { title: 'EasyQ CRM’ga xush kelibsiz', body: 'Keling, asosiy imkoniyatlar bilan bir daqiqada tanishamiz.' },
+        { title: 'Biznesingiz', body: 'Bu yerda biznesingiz nomi va turi ko‘rinadi — profilingizdan olinadi.' },
+        { title: 'Jadval', body: 'Barcha navbatlaringiz — kun, hafta va usta bo‘yicha shu yerda.' },
+        { title: 'Xodimlar', body: 'Jamoangizni qo‘shing va har bir usta uchun ish vaqtini belgilang.' },
+        { title: 'Xizmatlar', body: 'Xizmatlar, narx va davomiylikni qo‘shing — mijozlar shularni band qiladi.' },
+        { title: 'Sozlamalar', body: 'Navbat havolangiz, QR-kod va CRM login ma’lumotlari shu yerda.' },
+        { title: 'Til, mavzu va yordam', body: 'Tilni almashtiring, tungi rejimni yoqing va bu qo‘llanmani “?” tugmasi orqali qayta oching.' },
+        { title: 'Tayyor!', body: 'Boshlash uchun birinchi xizmatingizni qo‘shing.' },
+      ],
+    },
   },
 
   ru: {
@@ -171,6 +184,19 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Сохранить', saved: 'Настройки сохранены', logout: 'Выйти из аккаунта', closed: 'Закрыто', hoursPerWeek: 'ч/неделю',
       mins: ['15 минут', '30 минут', '1 час', '2 часа', 'за 1 день'],
       credentials: 'Доступ в CRM', credentialsSub: 'Обновите логин и пароль', username: 'Логин', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Повторите пароль', credentialsSave: 'Сохранить доступ', tempPassword: 'Используется временный пароль',
+    },
+    tour: {
+      next: 'Далее', back: 'Назад', skip: 'Пропустить', done: 'Начать!', goServices: 'Перейти к услугам', replay: 'Обучение', stepOf: '{n}/{total}',
+      steps: [
+        { title: 'Добро пожаловать в EasyQ CRM', body: 'Давайте за минуту познакомимся с основными возможностями.' },
+        { title: 'Ваш бизнес', body: 'Здесь отображается название и тип бизнеса — из вашего профиля.' },
+        { title: 'Расписание', body: 'Все ваши записи — по дню, неделе и мастеру.' },
+        { title: 'Сотрудники', body: 'Добавьте команду и задайте часы работы для каждого мастера.' },
+        { title: 'Услуги', body: 'Добавьте услуги, цены и длительность — клиенты записываются на них.' },
+        { title: 'Настройки', body: 'Здесь ваша ссылка для записи, QR-код и данные для входа в CRM.' },
+        { title: 'Язык, тема и помощь', body: 'Меняйте язык, включайте тёмную тему и открывайте это обучение снова кнопкой «?».' },
+        { title: 'Готово!', body: 'Начните с добавления первой услуги.' },
+      ],
     },
   },
 
@@ -253,6 +279,19 @@ export const CRM_T: Record<Lang, any> = {
       mins: ['15 minutes', '30 minutes', '1 hour', '2 hours', '1 day before'],
       credentials: 'CRM access', credentialsSub: 'Update your login and password', username: 'Username', currentPassword: 'Current password', newPassword: 'New password', confirmPassword: 'Repeat password', credentialsSave: 'Save access', tempPassword: 'A temporary password is in use',
     },
+    tour: {
+      next: 'Next', back: 'Back', skip: 'Skip', done: 'Get started!', goServices: 'Go to Services', replay: 'Take the tour', stepOf: '{n}/{total}',
+      steps: [
+        { title: 'Welcome to EasyQ CRM', body: 'Let’s take a one-minute tour of the essentials.' },
+        { title: 'Your business', body: 'Your business name and type show here — pulled from your profile.' },
+        { title: 'Schedule', body: 'All your bookings — by day, week and specialist.' },
+        { title: 'Staff', body: 'Add your team and set each specialist’s working hours.' },
+        { title: 'Services', body: 'Add your services, prices and durations — clients book these.' },
+        { title: 'Settings', body: 'Your booking link, QR code and CRM login live here.' },
+        { title: 'Language, theme & help', body: 'Switch language, toggle dark mode, and reopen this tour anytime with the “?” button.' },
+        { title: 'All set!', body: 'Start by adding your first service.' },
+      ],
+    },
   },
 };
 
@@ -309,6 +348,8 @@ export type CRMContextValue = {
   m: any;
   bizName: string;
   bizType: string;
+  /** true only in the public landing embed (?embed=1) — gates all demo/mock UI. */
+  demo: boolean;
   setLang: (l: Lang) => void;
   theme: Theme;
   setTheme: (th: Theme) => void;
@@ -322,6 +363,7 @@ export type CRMContextValue = {
   navOpen: boolean;
   setNavOpen: (open: boolean) => void;
   logout: () => void;
+  startTour: () => void;
 };
 
 export const CRMCtx = createContext<CRMContextValue | null>(null);

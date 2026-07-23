@@ -44,6 +44,7 @@ export const CI: Record<string, string> = {
   inventory: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
   box: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
 };
 
 export function Ic({

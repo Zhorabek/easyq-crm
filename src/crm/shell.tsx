@@ -20,7 +20,7 @@ const NAV_ITEMS: Array<[string, string]> = [
 ];
 
 export function Sidebar({ active, setActive, navOpen }: { active: string; setActive: (s: string) => void; navOpen: boolean }) {
-  const { t, lang, setLang, branch, setBranch, role, setRole, allowed, bizName, setNavOpen, logout } = useCRM();
+  const { t, lang, setLang, branch, setBranch, role, setRole, allowed, bizName, bizType, demo, setNavOpen, logout } = useCRM();
   const [branchOpen, setBranchOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const bRef = useRef<HTMLDivElement>(null);
@@ -51,7 +51,18 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
         </button>
       </div>
 
-      {/* branch switcher (cosmetic — one real business per login) */}
+      {/* business header — a static header for real businesses; the branch switcher is demo-only */}
+      {!demo ? (
+        <div data-tour="biz-header" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: 'rgba(255,255,255,.05)', marginBottom: 16 }}>
+          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--accent-ink)' }}>
+            <Ic name="grid" size={17} stroke={2} />
+          </span>
+          <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</div>
+            <div style={{ fontSize: 11, color: 'var(--on-sidebar-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizType}</div>
+          </div>
+        </div>
+      ) : (
       <div ref={bRef} style={{ position: 'relative', marginBottom: 16 }}>
         <button onClick={() => setBranchOpen((o) => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: branchOpen ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.05)', textAlign: 'left' }}>
           <span style={{ width: 34, height: 34, borderRadius: 9, background: curBranch ? 'linear-gradient(135deg,#CBA988,#9c7a58)' : 'var(--accent)', display: 'grid', placeItems: 'center', flex: 'none', color: curBranch ? '#2a1d10' : 'var(--accent-ink)' }}>
@@ -85,6 +96,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
           </div>
         )}
       </div>
+      )}
 
       <nav className="crm-navscroll" style={{ display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 }}>
         {items.map(([key]) => {
@@ -92,6 +104,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
           return (
             <button
               key={key}
+              data-tour={`nav-${key}`}
               onClick={() => setActive(key)}
               className={`crm-navbtn${on ? ' crm-navbtn--on' : ''}`}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, textAlign: 'left', fontSize: 14.5, fontWeight: on ? 800 : 600, color: on ? 'var(--accent-ink)' : 'var(--on-sidebar-2)', background: on ? 'var(--accent)' : 'transparent', transition: 'color .15s', flex: 'none' }}
@@ -115,12 +128,13 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
           })}
         </div>
         {settingsAllowed && (
-          <button onClick={() => setActive('settings')} className="crm-navbtn crm-navbtn--on2" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, fontSize: 14.5, fontWeight: 600, color: active === 'settings' ? '#fff' : 'var(--on-sidebar-2)', background: active === 'settings' ? 'rgba(255,255,255,.06)' : 'transparent' }}>
+          <button data-tour="nav-settings" onClick={() => setActive('settings')} className="crm-navbtn crm-navbtn--on2" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, fontSize: 14.5, fontWeight: 600, color: active === 'settings' ? '#fff' : 'var(--on-sidebar-2)', background: active === 'settings' ? 'rgba(255,255,255,.06)' : 'transparent' }}>
             <Ic name="settings" size={19} />
             {t.nav.settings}
           </button>
         )}
-        {/* role switcher */}
+        {/* profile / role switcher — "View as" is demo-only */}
+        {demo ? (
         <div ref={rRef} style={{ position: 'relative', marginTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 8 }}>
           <button onClick={() => setRoleOpen((o) => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px', borderRadius: 11, textAlign: 'left', background: roleOpen ? 'rgba(255,255,255,.06)' : 'transparent' }}>
             <Avatar name="Sardor Karimov" color="#B4D94E" size={34} />
@@ -156,6 +170,20 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
             </div>
           )}
         </div>
+        ) : (
+          <div style={{ marginTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px', borderRadius: 11 }}>
+              <Avatar name={bizName || 'EasyQ'} color="#B4D94E" size={34} />
+              <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--on-sidebar-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.roles.owner}</div>
+              </div>
+              <button onClick={logout} title={t.set.logout} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.06)', color: 'var(--on-sidebar-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
+                <Ic name="logout" size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -170,12 +198,13 @@ const NOTIF_META: Record<string, { icon: string; c: string; t: string }> = {
 };
 
 function NotifBell() {
-  const { t } = useCRM();
+  const { t, demo } = useCRM();
   const n = t.notif;
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<any[]>(() => n.items.map((x: any) => ({ ...x })));
+  // Real businesses start with no notifications; the sample feed is demo-only.
+  const [items, setItems] = useState<any[]>(() => (demo ? n.items.map((x: any) => ({ ...x })) : []));
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { setItems(n.items.map((x: any) => ({ ...x }))); }, [t]);
+  useEffect(() => { setItems(demo ? n.items.map((x: any) => ({ ...x })) : []); }, [t, demo]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -198,6 +227,9 @@ function NotifBell() {
             {unread > 0 && <button onClick={() => setItems(items.map((x) => ({ ...x, unread: false })))} style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-deep)' }}>{n.markAll}</button>}
           </div>
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+            {items.length === 0 && (
+              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600 }}>{n.empty}</div>
+            )}
             {items.map((it, i) => {
               const meta = NOTIF_META[it.type] || NOTIF_META.booking;
               return (
@@ -224,7 +256,7 @@ function NotifBell() {
 }
 
 export function Topbar({ title, sub, action, onMenu, extra }: { title: string; sub?: string | null; action?: { label: string; onClick: () => void } | null; onMenu: () => void; extra?: React.ReactNode }) {
-  const { t, lang, setLang, theme, setTheme } = useCRM();
+  const { t, lang, setLang, theme, setTheme, demo, startTour } = useCRM();
   return (
     <header className="crm-topbar" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '20px 28px', borderBottom: '1px solid var(--line)', background: 'var(--panel)', position: 'sticky', top: 0, zIndex: 20 }}>
       <button className="crm-burger" onClick={onMenu} style={{ display: 'none', width: 40, height: 40, borderRadius: 11, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', placeItems: 'center', flex: 'none' }}>
@@ -240,8 +272,13 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
         <input placeholder={t.search} style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13.5, color: 'var(--ink)', width: '100%' }} />
       </div>
 
-      <div className="crm-topctl" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="crm-topctl" data-tour="topbar" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
         {extra}
+        {!demo && (
+          <button onClick={startTour} data-tour="help" className="crm-iconbtn" title={t.tour.replay} aria-label={t.tour.replay} style={iconBtn as CSSProperties}>
+            <Ic name="help" size={18} />
+          </button>
+        )}
         <div className="crm-langsw" style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 999, padding: 3, gap: 2 }}>
           {CRM_LANGS.map((L) => {
             const on = L.code === lang;

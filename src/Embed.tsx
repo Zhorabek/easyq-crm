@@ -125,6 +125,8 @@ export default function EmbedApp() {
     m: CRM_M[lang],
     bizName: payload.business.name,
     bizType: payload.business.type,
+    demo: true,
+    startTour: () => {},
     setLang,
     theme,
     setTheme,

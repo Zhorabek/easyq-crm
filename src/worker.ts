@@ -694,6 +694,48 @@ async function signupBusiness(env: Env, request: Request) {
   return json({ ok: true, username, password: tempPassword, businessName: name }, { status: 201, headers: SIGNUP_CORS });
 }
 
+// Public feedback endpoints — called cross-origin by the static landing page. GET is read-only
+// (approved rows only); POST stores a submission for moderation (approved = 0 until reviewed).
+const FEEDBACK_CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
+
+type FeedbackInput = { name?: string; text?: string; rating?: number | null };
+type FeedbackRow = { id: number; name: string; text: string; rating: number | null; created_at: string };
+
+async function submitFeedback(env: Env, request: Request) {
+  const input = (await request.json().catch(() => ({}))) as FeedbackInput;
+  const name = (input.name ?? "").trim().slice(0, 80);
+  const text = (input.text ?? "").trim().slice(0, 1000);
+  let rating: number | null = null;
+  if (typeof input.rating === "number" && input.rating >= 1 && input.rating <= 5) {
+    rating = Math.round(input.rating);
+  }
+
+  if (name.length < 2) {
+    return json({ error: "Name is required." }, { status: 400, headers: FEEDBACK_CORS });
+  }
+  if (text.length < 2) {
+    return json({ error: "Feedback text is required." }, { status: 400, headers: FEEDBACK_CORS });
+  }
+
+  const res = await env.DB
+    .prepare("INSERT INTO landing_feedback (name, text, rating) VALUES (?, ?, ?)")
+    .bind(name, text, rating)
+    .run();
+
+  return json({ ok: true, id: Number(res.meta.last_row_id ?? 0) }, { status: 201, headers: FEEDBACK_CORS });
+}
+
+async function listFeedback(env: Env) {
+  const res = await env.DB
+    .prepare("SELECT id, name, text, rating, created_at FROM landing_feedback WHERE approved = 1 ORDER BY created_at DESC, id DESC LIMIT 20")
+    .all<FeedbackRow>();
+  return json({ items: res.results ?? [] }, { headers: FEEDBACK_CORS });
+}
+
 async function updateBusinessCredentials(env: Env, request: Request, business: BusinessRow, input: UpdateCrmCredentialsInput) {
   const username = normalizeCrmUsername(input.username ?? "");
   const currentPassword = String(input.currentPassword ?? "");
@@ -1724,6 +1766,18 @@ export default {
 
       if (url.pathname === "/api/signup" && request.method === "POST") {
         return signupBusiness(env, request);
+      }
+
+      if (url.pathname === "/api/feedback" && request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: FEEDBACK_CORS });
+      }
+
+      if (url.pathname === "/api/feedback" && request.method === "POST") {
+        return submitFeedback(env, request);
+      }
+
+      if (url.pathname === "/api/feedback" && request.method === "GET") {
+        return listFeedback(env);
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {

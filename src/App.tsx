@@ -33,9 +33,9 @@ import './crm/crm.css';
 import { CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role, type Theme } from './crm/i18n';
 import { DataCtx, type DataValue } from './crm/data';
 import { Toast } from './crm/ui';
+import { Tour } from './crm/Tour';
 import { Sidebar, Topbar } from './crm/shell';
 import { Analytics, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
-import { Automations, Inventory, Loyalty, Marketing, Payroll, Reviews } from './crm/screens-mock';
 import {
   BookingDetailModal,
   BusinessModal,
@@ -48,26 +48,26 @@ import {
   StaffEditModal,
 } from './crm/modals';
 
+// The real, authenticated CRM only exposes screens with live backend data, so a new
+// business starts from an authentic empty setup (no demo/mock screens). The demo-only
+// screens (Inventory, Loyalty, Payroll, Reviews, Marketing, Automations) live in the
+// landing embed (Embed.tsx) instead.
 const SCREEN_COMPONENTS: Record<string, FC> = {
   dashboard: Dashboard,
   calendar: Calendar,
   customers: Customers,
   staff: Staff,
   services: Services,
-  inventory: Inventory,
   finance: Finance,
-  loyalty: Loyalty,
-  payroll: Payroll,
-  reviews: Reviews,
-  marketing: Marketing,
-  automations: Automations,
   analytics: Analytics,
   settings: Settings,
 };
 
+const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'];
+
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
-  receptionist: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'settings'],
+  receptionist: ['dashboard', 'calendar', 'customers', 'services', 'settings'],
   specialist: ['dashboard', 'calendar', 'customers', 'settings'],
 };
 
@@ -116,6 +116,8 @@ export default function App() {
   const [serviceEditor, setServiceEditor] = useState<{ initial: ServiceCatalogItem | null } | null>(null);
   const [businessEditor, setBusinessEditor] = useState(false);
   const [credentialsEditor, setCredentialsEditor] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const tourAutoShown = useRef(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const t = CRM_T[lang] || CRM_T.uz;
@@ -139,6 +141,14 @@ export default function App() {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = orig; };
   }, [navOpen]);
+  // First-run guided tour: auto-open once the CRM has loaded, unless already seen.
+  useEffect(() => {
+    if (!payload || tourAutoShown.current) return;
+    tourAutoShown.current = true;
+    let seen = false;
+    try { seen = localStorage.getItem('easyq_crm_tour_done') === '1'; } catch {}
+    if (!seen) setTourOpen(true);
+  }, [payload]);
 
   function setLang(c: Lang) { setLangState(c); try { localStorage.setItem('easyq_crm_lang', c); } catch {} }
   function setTheme(th: Theme) { setThemeState(th); try { localStorage.setItem('easyq_crm_theme', th); } catch {} }
@@ -333,17 +343,18 @@ export default function App() {
   }
 
   // ---- authed shell ----
-  const allowed = ROLE_SCREENS[role];
-  const effActive = allowed && !allowed.includes(active) ? 'dashboard' : active;
+  const roleAllowed = ROLE_SCREENS[role];
+  const allowed = REAL_SCREENS.filter((s) => !roleAllowed || roleAllowed.includes(s));
+  const effActive = allowed.includes(active) ? active : 'dashboard';
   const ScreenComp = SCREEN_COMPONENTS[effActive] || Dashboard;
 
   const bizName = payload?.business.name || t.biz;
   const bizType = payload?.business.type || t.bizType;
 
   const titles: Record<string, { title: string; sub?: string | null; action?: { label: string; run: () => void } | null }> = {
-    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: { label: t.newBooking, run: () => setModal({ type: 'booking' }) } },
-    calendar: { title: t.nav.calendar, sub: null, action: { label: t.newBooking, run: () => setModal({ type: 'booking' }) } },
-    customers: { title: t.cust.title, sub: `${payload?.clients.length ?? 0} ${t.cust.count}`, action: { label: t.cust.add, run: () => setModal({ type: 'customer' }) } },
+    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: null },
+    calendar: { title: t.nav.calendar, sub: null, action: null },
+    customers: { title: t.cust.title, sub: `${payload?.clients.length ?? 0} ${t.cust.count}`, action: null },
     staff: { title: t.staff.title, sub: null, action: { label: t.staff.add, run: () => setStaffCreateOpen(true) } },
     services: { title: t.serv.title, sub: null, action: { label: t.serv.add, run: () => setServiceEditor({ initial: null }) } },
     inventory: { title: t.nav.inventory, sub: t.inv.sub, action: { label: t.inv.add, run: () => setModal({ type: 'product' }) } },
@@ -359,10 +370,11 @@ export default function App() {
   const meta = titles[effActive] || titles.dashboard;
 
   const crmValue: CRMContextValue = {
-    lang, t, m: CRM_M[lang], bizName, bizType, setLang, theme, setTheme, branch, setBranch, role, setRole, allowed, navOpen, setNavOpen,
+    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, setRole, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),
+    startTour: () => setTourOpen(true),
   };
 
   const dataValue: DataValue = {
@@ -416,6 +428,7 @@ export default function App() {
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 
         <Toast msg={toast} />
+        <Tour open={tourOpen} onClose={() => setTourOpen(false)} setActive={setActive} />
       </DataCtx.Provider>
     </CRMCtx.Provider>
   );

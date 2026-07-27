@@ -23,6 +23,8 @@ export interface AuthSession {
   businessName: string;
   username: string;
   isTemporaryPassword: boolean;
+  /** Subdomain label — this business's CRM lives at `<slug>.easyq.uz`. */
+  slug: string | null;
 }
 
 export interface KpiCard {

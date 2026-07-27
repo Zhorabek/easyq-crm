@@ -35,6 +35,8 @@ import {
   readSession,
   verifyCrmPassword,
 } from "./server/auth";
+import { issueCaptcha, verifyCaptcha } from "./server/captcha";
+import { slugProblem, type SlugProblem } from "./shared/slug";
 
 interface Env {
   DB: D1Database;
@@ -46,6 +48,11 @@ interface Env {
   CLIENT_BOT_USERNAME?: string;
   BUSINESS_BOT_USERNAME?: string;
   BUSINESS_BOT_TOKEN?: string;
+  /**
+   * Comma-separated roots under which `<slug>.<root>` resolves to a business CRM.
+   * Not in wrangler.toml (which carries no [vars] block) — this is only an override.
+   */
+  TENANT_ROOT_DOMAINS?: string;
 }
 
 type BusinessRow = {
@@ -63,6 +70,7 @@ type BusinessRow = {
   crm_password_hash: string | null;
   crm_temp_password: string | null;
   crm_credentials_updated_at: string | null;
+  slug: string | null;
 };
 
 type LoginRow = {
@@ -71,6 +79,7 @@ type LoginRow = {
   crm_username: string | null;
   crm_password_hash: string | null;
   crm_temp_password: string | null;
+  slug: string | null;
 };
 
 type ServiceRow = {
@@ -211,6 +220,7 @@ function toAuthSession(business: BusinessRow): AuthSession {
     businessName: business.name,
     username: business.crm_username ?? "",
     isTemporaryPassword: Boolean(business.crm_temp_password),
+    slug: business.slug ?? null,
   };
 }
 
@@ -232,7 +242,8 @@ async function getBusinessById(db: D1Database, businessId: number) {
            crm_username,
            crm_password_hash,
            crm_temp_password,
-           crm_credentials_updated_at
+           crm_credentials_updated_at,
+           slug
          FROM businesses
          WHERE id = ?
          LIMIT 1`
@@ -454,12 +465,125 @@ function sumPaymentsInRange(payments: PaymentRow[], predicate: (payment: Payment
     );
 }
 
-async function requireAuthenticatedBusiness(env: Env, request: Request): Promise<BusinessRow> {
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-tenant hosts: `<slug>.easyq.uz` serves that business's CRM.
+//
+// Everything else — crm.easyq.uz, *.workers.dev, localhost — resolves to `null`
+// and takes exactly the code path it took before this feature existed. That is
+// what makes this safe to ship to a live production CRM.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_TENANT_ROOTS = "easyq.uz,localhost";
+
+/**
+ * Host labels the platform serves itself; these never resolve to a business.
+ * Distinct from RESERVED_SLUGS (claim-time) — `business-<id>` must stay routable
+ * because the migration assigns it, even though nobody may claim it at signup.
+ */
+const RESERVED_HOST_LABELS = new Set(["crm", "www", "api", "app", "admin", "assets", "static", "cdn", "mail"]);
+
+type TenantContext = { slug: string; businessId: number; businessName: string };
+
+function tenantLabelFromHost(hostname: string, roots: string[]): string | null {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") return null;
+  if (host.endsWith(".workers.dev")) return null;
+
+  for (const root of roots) {
+    if (host === root) return null; // apex
+    if (!host.endsWith(`.${root}`)) continue;
+    const label = host.slice(0, -(root.length + 1));
+    if (!label || label.includes(".")) return null; // deeper than one level
+    return label;
+  }
+  return null; // unrecognized host → behave like the apex
+}
+
+function tenantRoots(env: Env): string[] {
+  return (env.TENANT_ROOT_DOMAINS ?? DEFAULT_TENANT_ROOTS)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Public origin for a business's own CRM, e.g. https://vidok-barber.easyq.uz */
+function tenantOrigin(slug: string, env: Env): string {
+  const root = tenantRoots(env).find((value) => value !== "localhost" && value !== "127.0.0.1") ?? "easyq.uz";
+  return `https://${slug}.${root}/`;
+}
+
+async function getTenantBySlug(db: D1Database, slug: string): Promise<TenantContext | null> {
+  const row = await db
+    .prepare("SELECT id, name, slug FROM businesses WHERE slug = ? LIMIT 1")
+    .bind(slug)
+    .first<{ id: number; name: string; slug: string }>();
+  return row ? { slug: row.slug, businessId: row.id, businessName: row.name } : null;
+}
+
+/**
+ * A subdomain nobody owns. Critically this must NOT fall through to
+ * env.ASSETS.fetch — that would serve a fully working CRM login screen on every
+ * random subdomain once the wildcard route is live.
+ */
+function unknownWorkspaceResponse(url: URL): Response {
+  if (url.pathname.startsWith("/api/")) {
+    return json({ error: "Unknown workspace", code: "unknown_tenant" }, { status: 404 });
+  }
+
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EasyQ — адрес не найден</title>
+<style>
+  :root { color-scheme: light }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:#F6F7F5;
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12140F }
+  .card { max-width:420px; padding:40px 32px; text-align:center }
+  h1 { font-size:22px; font-weight:800; letter-spacing:-.02em; margin:0 0 10px }
+  p { font-size:15px; line-height:1.55; color:#5B6053; margin:0 0 24px }
+  code { background:#E9EBE4; padding:2px 7px; border-radius:6px; font-size:14px }
+  a { display:inline-block; background:#B4D94E; color:#12140F; font-weight:800; font-size:15px;
+      padding:13px 24px; border-radius:12px; text-decoration:none }
+</style></head><body><div class="card">
+  <h1>Здесь пока никого нет</h1>
+  <p>Адрес <code>${url.hostname.replace(/[<>&"]/g, "")}</code> не принадлежит ни одному бизнесу на EasyQ.</p>
+  <a href="https://easyq.uz">Перейти на easyq.uz</a>
+</div></body></html>`;
+
+  return new Response(html, {
+    status: 404,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
+async function requireAuthenticatedBusiness(
+  env: Env,
+  request: Request,
+  tenant: TenantContext | null
+): Promise<BusinessRow> {
   const session = await readSession(request, env.CRM_SESSION_SECRET);
   if (!session) {
     throw new HttpResponseError(
       json(
         { error: "Authentication required" },
+        {
+          status: 401,
+          headers: {
+            "set-cookie": clearSessionCookie(request),
+          },
+        }
+      )
+    );
+  }
+
+  // The session HMAC secret is shared across all hosts, so a token minted on one
+  // host is cryptographically valid on another. HttpOnly stops scripts reading the
+  // cookie but not the owner copying it out of DevTools, so the host↔business bond
+  // has to be enforced here. Clearing is safe: the cookie carries no Domain= (see
+  // buildCookie in ./server/auth.ts), so this only clears the copy on THIS host.
+  if (tenant && session.businessId !== tenant.businessId) {
+    throw new HttpResponseError(
+      json(
+        { error: "This session belongs to a different workspace. Please sign in again.", code: "wrong_workspace" },
         {
           status: 401,
           headers: {
@@ -488,11 +612,25 @@ async function requireAuthenticatedBusiness(env: Env, request: Request): Promise
   return business;
 }
 
-async function getSessionState(env: Env, request: Request) {
+async function getSessionState(env: Env, request: Request, tenant: TenantContext | null) {
   const session = await readSession(request, env.CRM_SESSION_SECRET);
   if (!session) {
     return json(
       { error: "Authentication required" },
+      {
+        status: 401,
+        headers: {
+          "set-cookie": clearSessionCookie(request),
+        },
+      }
+    );
+  }
+
+  // Same host↔business bond as requireAuthenticatedBusiness, so the SPA's boot
+  // check reports "signed out" rather than flashing another business's name.
+  if (tenant && session.businessId !== tenant.businessId) {
+    return json(
+      { error: "This session belongs to a different workspace. Please sign in again.", code: "wrong_workspace" },
       {
         status: 401,
         headers: {
@@ -518,7 +656,7 @@ async function getSessionState(env: Env, request: Request) {
   return json(toAuthSession(business));
 }
 
-async function login(env: Env, request: Request) {
+async function login(env: Env, request: Request, tenant: TenantContext | null) {
   const input = (await request.json().catch(() => ({}))) as { username?: string; password?: string };
   const username = normalizeCrmUsername(input.username ?? "");
   const password = String(input.password ?? "");
@@ -534,7 +672,8 @@ async function login(env: Env, request: Request) {
          name,
          crm_username,
          crm_password_hash,
-         crm_temp_password
+         crm_temp_password,
+         slug
        FROM businesses
        WHERE crm_username = ?
        LIMIT 1`
@@ -543,6 +682,12 @@ async function login(env: Env, request: Request) {
     .first<LoginRow>();
 
   if (!row || !(await verifyCrmPassword(password, row.crm_password_hash))) {
+    return json({ error: "Неверный логин или пароль." }, { status: 401 });
+  }
+
+  // Deliberately AFTER the password check, and with the identical error string, so
+  // a tenant host cannot be used to probe which logins exist elsewhere.
+  if (tenant && row.id !== tenant.businessId) {
     return json({ error: "Неверный логин или пароль." }, { status: 401 });
   }
 
@@ -583,17 +728,19 @@ async function logout(request: Request) {
 // Top-level (form-POST) login that sets the session cookie first-party and redirects into the CRM.
 // Used by the landing's /signup "Open CRM" button so a fresh signup lands in its OWN account,
 // overwriting any stale session (e.g. a previously logged-in business).
-async function sessionLogin(env: Env, request: Request) {
+async function sessionLogin(env: Env, request: Request, tenant: TenantContext | null) {
   const form = await request.formData().catch(() => null);
   const username = normalizeCrmUsername(String(form?.get("username") ?? ""));
   const password = String(form?.get("password") ?? "");
 
   if (username && password) {
     const row = await env.DB
-      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password FROM businesses WHERE crm_username = ? LIMIT 1")
+      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password, slug FROM businesses WHERE crm_username = ? LIMIT 1")
       .bind(username)
       .first<LoginRow>();
-    if (row && (await verifyCrmPassword(password, row.crm_password_hash))) {
+    // The tenant check rides along with the credential check: a mismatch falls
+    // through to the same "bad creds" redirect below, revealing nothing.
+    if (row && (await verifyCrmPassword(password, row.crm_password_hash)) && (!tenant || row.id === tenant.businessId)) {
       const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
         businessId: row.id,
         username: row.crm_username ?? username,
@@ -614,6 +761,10 @@ const SIGNUP_CORS: Record<string, string> = {
   "access-control-allow-headers": "content-type",
 };
 
+const PUBLIC_GET_CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+};
+
 type SignupInput = {
   name?: string;
   type?: string;
@@ -621,11 +772,50 @@ type SignupInput = {
   phone?: string;
   lang?: string;
   code?: string;
+  slug?: string;
+  captchaToken?: string;
+  captchaAnswer?: string;
+  acceptedTerms?: boolean;
 };
 
 async function crmUsernameExists(db: D1Database, username: string) {
   const row = await db.prepare("SELECT 1 AS x FROM businesses WHERE crm_username = ? LIMIT 1").bind(username).first();
   return Boolean(row);
+}
+
+async function slugExists(db: D1Database, slug: string) {
+  const row = await db.prepare("SELECT 1 AS x FROM businesses WHERE slug = ? LIMIT 1").bind(slug).first();
+  return Boolean(row);
+}
+
+/**
+ * Live "is this subdomain free?" probe for the landing wizard.
+ *
+ * Always 200 — this is a lookup, not a failure. Syntax is checked in CPU before
+ * D1 is touched, so malformed input never becomes a query. It is not an
+ * enumeration risk worth worrying about: slugs are public DNS names, so anyone
+ * could already probe `https://x.easyq.uz` directly.
+ */
+async function checkSubdomain(env: Env, url: URL) {
+  const slug = (url.searchParams.get("slug") ?? "").trim().toLowerCase();
+
+  const problem: SlugProblem | null = slugProblem(slug);
+  if (problem) {
+    return json({ slug, available: false, reason: problem }, { headers: PUBLIC_GET_CORS });
+  }
+
+  const taken = await slugExists(env.DB, slug);
+  return json(
+    { slug, available: !taken, reason: taken ? "taken" : null },
+    { headers: PUBLIC_GET_CORS }
+  );
+}
+
+async function getCaptcha(env: Env, request: Request) {
+  const captcha = await issueCaptcha(request, env.CRM_SESSION_SECRET);
+  return json(captcha, {
+    headers: { ...PUBLIC_GET_CORS, "cache-control": "no-store" },
+  });
 }
 
 async function signupBusiness(env: Env, request: Request) {
@@ -636,6 +826,32 @@ async function signupBusiness(env: Env, request: Request) {
   const phone = (input.phone ?? "").trim();
   const code = String(input.code ?? "");
   const language = input.lang === "ru" || input.lang === "uz" ? input.lang : null;
+  const slug = String(input.slug ?? "").trim().toLowerCase();
+
+  // Captcha first: it is the cheapest way to turn a bot away before any row is written.
+  const captcha = await verifyCaptcha(
+    env.DB,
+    request,
+    String(input.captchaToken ?? ""),
+    String(input.captchaAnswer ?? ""),
+    env.CRM_SESSION_SECRET
+  );
+  if (!captcha.ok) {
+    const message =
+      captcha.code === "captcha_expired"
+        ? "The captcha expired. Please try the new one."
+        : captcha.code === "captcha_replay"
+          ? "That captcha was already used. Please try the new one."
+          : "The captcha answer is incorrect.";
+    return json({ error: message, code: captcha.code }, { status: 400, headers: SIGNUP_CORS });
+  }
+
+  if (input.acceptedTerms !== true) {
+    return json(
+      { error: "You must accept the Terms and the Privacy Policy.", code: "terms_required" },
+      { status: 400, headers: SIGNUP_CORS }
+    );
+  }
 
   if (code !== "1111") {
     return json({ error: "Invalid verification code." }, { status: 400, headers: SIGNUP_CORS });
@@ -645,6 +861,17 @@ async function signupBusiness(env: Env, request: Request) {
   }
   if (phone.replace(/\D/g, "").length < 9) {
     return json({ error: "A valid phone number is required." }, { status: 400, headers: SIGNUP_CORS });
+  }
+
+  const slugIssue = slugProblem(slug);
+  if (slugIssue) {
+    return json(
+      { error: "That subdomain can't be used.", code: slugIssue === "reserved" ? "slug_reserved" : "slug_invalid" },
+      { status: 400, headers: SIGNUP_CORS }
+    );
+  }
+  if (await slugExists(env.DB, slug)) {
+    return json({ error: "That subdomain is already taken.", code: "slug_taken" }, { status: 409, headers: SIGNUP_CORS });
   }
 
   // Web sign-ups have no Telegram account, but users.telegram_id is NOT NULL UNIQUE.
@@ -666,10 +893,24 @@ async function signupBusiness(env: Env, request: Request) {
     return json({ error: "Could not create the account. Please try again." }, { status: 500, headers: SIGNUP_CORS });
   }
 
-  const insertBiz = await env.DB
-    .prepare("INSERT INTO businesses (user_id, name, type, address, phone, schedule) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(userId, name, type, address, phone, "09:00 - 19:00")
-    .run();
+  // The slug is claimed in the INSERT, not in the credentials UPDATE below, so the
+  // partial unique index rejects a concurrent duplicate atomically. Losing that race
+  // after the row exists would leave an orphaned business.
+  let insertBiz;
+  try {
+    insertBiz = await env.DB
+      .prepare("INSERT INTO businesses (user_id, name, type, address, phone, schedule, slug) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(userId, name, type, address, phone, "09:00 - 19:00", slug)
+      .run();
+  } catch (error) {
+    // Someone claimed this slug between the check above and here.
+    await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run().catch(() => undefined);
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("UNIQUE") || message.includes("constraint")) {
+      return json({ error: "That subdomain is already taken.", code: "slug_taken" }, { status: 409, headers: SIGNUP_CORS });
+    }
+    throw error;
+  }
   const businessId =
     Number(insertBiz.meta.last_row_id ?? 0) ||
     Number((await env.DB.prepare("SELECT id FROM businesses WHERE user_id = ? LIMIT 1").bind(userId).first<{ id: number }>())?.id ?? 0);
@@ -691,7 +932,17 @@ async function signupBusiness(env: Env, request: Request) {
     .bind(username, passwordHash, tempPassword, businessId)
     .run();
 
-  return json({ ok: true, username, password: tempPassword, businessName: name }, { status: 201, headers: SIGNUP_CORS });
+  return json(
+    {
+      ok: true,
+      username,
+      password: tempPassword,
+      businessName: name,
+      slug,
+      crmUrl: tenantOrigin(slug, env),
+    },
+    { status: 201, headers: SIGNUP_CORS }
+  );
 }
 
 // Public feedback endpoints — called cross-origin by the static landing page. GET is read-only
@@ -1744,20 +1995,62 @@ export default {
         );
       }
 
+      // ── Per-tenant host resolution ──────────────────────────────────────────
+      // `tenant` stays null for crm.easyq.uz, *.workers.dev and localhost, so every
+      // existing host keeps taking exactly the path it took before this feature.
+      const hostLabel = tenantLabelFromHost(url.hostname, tenantRoots(env));
+
+      // The wildcard route also captures www.easyq.uz — send it to the marketing site.
+      if (hostLabel === "www") {
+        return Response.redirect(`https://easyq.uz${url.pathname}${url.search}`, 301);
+      }
+
+      let tenant: TenantContext | null = null;
+      if (hostLabel && !RESERVED_HOST_LABELS.has(hostLabel) && hasD1Binding(env)) {
+        // Hashed build assets are host-agnostic and high-volume; don't spend a D1
+        // read resolving the tenant just to serve one.
+        const isBuildAsset =
+          !url.pathname.startsWith("/api/") &&
+          (url.pathname.startsWith("/assets/") || /\.[a-z0-9]{2,5}$/i.test(url.pathname));
+        if (!isBuildAsset) {
+          tenant = await getTenantBySlug(env.DB, hostLabel);
+          if (!tenant) return unknownWorkspaceResponse(url);
+        }
+      }
+
+      // The signup funnel lives on one origin. Tenant hosts are not write endpoints.
+      if (
+        tenant &&
+        (url.pathname === "/api/signup" ||
+          url.pathname === "/api/feedback" ||
+          url.pathname === "/api/captcha" ||
+          url.pathname === "/api/subdomain/check")
+      ) {
+        return json({ error: "Not found" }, { status: 404 });
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       if (url.pathname === "/api/auth/session" && request.method === "GET") {
-        return getSessionState(env, request);
+        return getSessionState(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/login" && request.method === "POST") {
-        return login(env, request);
+        return login(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/session-login" && request.method === "POST") {
-        return sessionLogin(env, request);
+        return sessionLogin(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/logout" && request.method === "POST") {
         return logout(request);
+      }
+
+      // Public identity of the current tenant host, so the login screen can name the
+      // business instead of showing a bare generic form.
+      if (url.pathname === "/api/tenant" && request.method === "GET") {
+        if (!tenant) return json({ error: "Not found" }, { status: 404 });
+        return json({ slug: tenant.slug, businessName: tenant.businessName });
       }
 
       if (url.pathname === "/api/signup" && request.method === "OPTIONS") {
@@ -1766,6 +2059,14 @@ export default {
 
       if (url.pathname === "/api/signup" && request.method === "POST") {
         return signupBusiness(env, request);
+      }
+
+      if (url.pathname === "/api/subdomain/check" && request.method === "GET") {
+        return checkSubdomain(env, url);
+      }
+
+      if (url.pathname === "/api/captcha" && request.method === "GET") {
+        return getCaptcha(env, request);
       }
 
       if (url.pathname === "/api/feedback" && request.method === "OPTIONS") {
@@ -1781,79 +2082,79 @@ export default {
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const payload = await getCrmPayload(env, business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
         return json(payload);
       }
 
       if (url.pathname.startsWith("/api/bookings/") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const bookingId = Number(url.pathname.split("/")[3]);
         return updateBookingStatus(env, business, bookingId, await readJson<UpdateBookingStatusInput>(request));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && url.pathname.endsWith("/payments") && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const bookingId = Number(url.pathname.split("/")[3]);
         return createBookingPayment(env, business, bookingId, await readJson<CreatePaymentInput>(request));
       }
 
       if (url.pathname === "/api/employees" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return addEmployee(env, business, await readJson<AddEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
         return updateEmployee(env, business, staffId, await readJson<UpdateEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "DELETE") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
         return deleteEmployee(env, business, staffId);
       }
 
       if (url.pathname === "/api/services" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return createService(env, business, await readJson<UpsertServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/services/") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const serviceId = Number(url.pathname.split("/")[3]);
         return updateService(env, business, serviceId, await readJson<UpdateServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && url.pathname.endsWith("/slots") && request.method === "PUT") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
         return updateEmployeeSlots(env, business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
       }
 
       if (url.pathname === "/api/business" && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return updateBusinessProfile(env, business, await readJson<UpdateBusinessProfileInput>(request));
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return updateBusinessCredentials(env, request, business, await readJson<UpdateCrmCredentialsInput>(request));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return uploadBusinessPhoto(env, business, request);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "DELETE") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return deleteBusinessPhoto(env, business);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {
-        const business = await requireAuthenticatedBusiness(env, request);
+        const business = await requireAuthenticatedBusiness(env, request, tenant);
         return proxyBusinessPhoto(env, business);
       }
 

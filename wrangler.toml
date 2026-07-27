@@ -2,9 +2,20 @@ name = "easyq-crm"
 main = "src/worker.ts"
 compatibility_date = "2026-04-06"
 
+# Routing is managed in the Cloudflare dashboard, deliberately not here, so a
+# routine code deploy can never reshuffle live hostnames:
+#   Custom domain : crm.easyq.uz
+#   Route         : *.easyq.uz/*   (zone easyq.uz)  → per-tenant business CRMs
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+# REQUIRED for per-tenant subdomains. By default the asset router answers any
+# request matching a file in ./dist *before* the Worker runs, so `/` on an
+# unclaimed subdomain would serve the CRM login SPA instead of the Worker's
+# unknown-workspace 404. Running the Worker first is what lets it vet the
+# hostname. Non-tenant hosts still fall through to env.ASSETS.fetch() unchanged.
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"

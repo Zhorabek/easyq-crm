@@ -22,6 +22,15 @@ type SessionPayload = {
   role?: ActorRole;
   /** Set only for staff sessions; the owner has no staff row. */
   staffId?: number;
+  /**
+   * Value of the credential row's `session_version` when this cookie was minted.
+   *
+   * Bumping the row invalidates every cookie issued before it, which is what makes a
+   * password change evict the person's other devices. Absent in cookies predating the
+   * feature; readSession reads that as 0, matching the column default, so those sessions
+   * keep working rather than everyone being logged out on deploy.
+   */
+  sv?: number;
 };
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -202,7 +211,7 @@ export async function verifyCrmPassword(password: string, storedHash: string | n
 export async function createSessionCookie(
   request: Request,
   secret: string | undefined,
-  input: { businessId: number; username: string; ttlDays?: number; role?: ActorRole; staffId?: number }
+  input: { businessId: number; username: string; ttlDays?: number; role?: ActorRole; staffId?: number; sessionVersion?: number }
 ) {
   const ttlDays = input.ttlDays ?? 14;
   const exp = Date.now() + ttlDays * 24 * 60 * 60 * 1000;
@@ -212,6 +221,7 @@ export async function createSessionCookie(
     exp,
     role: input.role ?? "owner",
     ...(input.staffId ? { staffId: input.staffId } : {}),
+    sv: input.sessionVersion ?? 0,
   };
   const payloadSegment = toBase64Url(JSON.stringify(payload));
   const signature = await signValue(payloadSegment, getSessionSecret(request, secret));
@@ -219,8 +229,11 @@ export async function createSessionCookie(
   return buildCookie(request, token, new Date(exp));
 }
 
-/** A verified session. `role` is always resolved here, so callers never handle undefined. */
-export type ResolvedSession = SessionPayload & { role: ActorRole };
+/**
+ * A verified session. `role` and `sv` are always resolved here, so callers never handle
+ * undefined for either.
+ */
+export type ResolvedSession = SessionPayload & { role: ActorRole; sv: number };
 
 export async function readSession(request: Request, secret: string | undefined): Promise<ResolvedSession | null> {
   const token = parseCookies(request).get(COOKIE_NAME);
@@ -264,7 +277,9 @@ export async function readSession(request: Request, secret: string | undefined):
       return null;
     }
 
-    return { ...payload, role };
+    // A missing sv is 0, which is what the column defaults to — so a cookie from before
+    // session versioning existed still matches its row and keeps working.
+    return { ...payload, role, sv: Number(payload.sv ?? 0) };
   } catch {
     return null;
   }

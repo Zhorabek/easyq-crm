@@ -17,6 +17,8 @@
     "db:migrate:remote:staff-role": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-staff-role-phone.sql",
     "db:migrate:local:staff-access": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-staff-access.sql",
     "db:migrate:remote:staff-access": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-staff-access.sql",
+    "db:migrate:local:session-version": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-session-version.sql",
+    "db:migrate:remote:session-version": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-session-version.sql",
     "build": "vite build",
     "typecheck": "tsc --noEmit && vite build",
     "preview": "vite preview",

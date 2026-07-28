@@ -2,7 +2,8 @@ import { createContext, useContext } from 'react';
 
 export type Lang = 'uz' | 'ru' | 'en';
 export type Theme = 'light' | 'dark';
-export type Role = 'owner' | 'receptionist' | 'specialist';
+/** Mirrors ActorRole in src/server/permissions.ts. One vocabulary end to end. */
+export type Role = 'owner' | 'manager' | 'specialist';
 
 export const CRM_LANGS: Array<{ code: Lang; label: string }> = [
   { code: 'uz', label: 'O‘z' },
@@ -35,7 +36,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Sartaroshxona · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulug‘bek', type: 'Sartaroshxona · M. Ulug‘bek', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Egasi', receptionist: 'Administrator', specialist: 'Usta', viewAs: 'Ko‘rinish:', roleDesc: { owner: 'To‘liq kirish', receptionist: 'Navbat va mijozlar', specialist: 'Faqat o‘z jadvali' } },
+    roles: { owner: 'Egasi', manager: 'Menejer', specialist: 'Usta', viewAs: 'Ko‘rinish:', roleDesc: { owner: 'To‘liq kirish', manager: 'Navbat, to‘lov va jadval', specialist: 'Faqat o‘z jadvali' } },
     auto: {
       sub: 'Avtomatik eslatma va kampaniyalar', add: 'Qoida qo‘shish', active: 'Faol', sent: 'yuborilgan', trigger: 'Shart', channel: 'Kanal', enabled: 'Yoqilgan', toastOn: 'Qoida yoqildi', toastOff: 'Qoida o‘chirildi',
       rules: [
@@ -91,6 +92,13 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Saqlash', saved: 'Sozlamalar saqlandi', logout: 'Hisobdan chiqish', closed: 'Yopiq', hoursPerWeek: 'soat/hafta',
       mins: ['15 daqiqa', '30 daqiqa', '1 soat', '2 soat', '1 kun oldin'],
       credentials: 'CRM kirish', credentialsSub: 'Login va parolni yangilang', username: 'Login', currentPassword: 'Joriy parol', newPassword: 'Yangi parol', confirmPassword: 'Parolni takrorlang', credentialsSave: 'Kirishni saqlash', tempPassword: 'Vaqtinchalik parol ishlatilmoqda',
+      team: 'Jamoa va kirish', teamSub: 'Xodimlarga CRM kirish huquqini bering',
+      roleManager: 'Menejer', roleSpecialist: 'Usta', roleOwner: 'Egasi',
+      roleManagerHint: 'Navbatlar, to‘lovlar, jadval va xizmatlar', roleSpecialistHint: 'Faqat o‘z jadvali',
+      grant: 'Kirish berish', resetPass: 'Parolni tiklash', revoke: 'Kirishni o‘chirish', noAccess: 'Kirish yo‘q',
+      accessOn: 'Faol', accessOff: 'O‘chirilgan', loginLabel: 'Login', newPassLabel: 'Yangi parol',
+      copyCreds: 'Nusxa olish', credsWarn: 'Bu parol boshqa ko‘rsatilmaydi — xodimga hozir yuboring.',
+      confirmRevoke: 'Bu xodimning kirishini o‘chirasizmi?', ownerOnly: 'Faqat egasi uchun',
     },
     tour: {
       next: 'Keyingi', back: 'Orqaga', skip: 'O‘tkazib yuborish', done: 'Boshladik!', goServices: 'Xizmat qo‘shishga o‘tish', replay: 'Qo‘llanma', stepOf: '{n}/{total}',
@@ -130,7 +138,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Чиланзар', type: 'Барбершоп · Чиланзар', staff: 3, today: 12 },
       { name: 'Мирзо Улугбек', type: 'Барбершоп · М. Улугбек', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Владелец', receptionist: 'Администратор', specialist: 'Мастер', viewAs: 'Просмотр:', roleDesc: { owner: 'Полный доступ', receptionist: 'Записи и клиенты', specialist: 'Только своё расписание' } },
+    roles: { owner: 'Владелец', manager: 'Менеджер', specialist: 'Мастер', viewAs: 'Просмотр:', roleDesc: { owner: 'Полный доступ', manager: 'Записи, платежи и график', specialist: 'Только своё расписание' } },
     auto: {
       sub: 'Автонапоминания и кампании', add: 'Добавить правило', active: 'Активно', sent: 'отправлено', trigger: 'Условие', channel: 'Канал', enabled: 'Включено', toastOn: 'Правило включено', toastOff: 'Правило выключено',
       rules: [
@@ -186,6 +194,13 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Сохранить', saved: 'Настройки сохранены', logout: 'Выйти из аккаунта', closed: 'Закрыто', hoursPerWeek: 'ч/неделю',
       mins: ['15 минут', '30 минут', '1 час', '2 часа', 'за 1 день'],
       credentials: 'Доступ в CRM', credentialsSub: 'Обновите логин и пароль', username: 'Логин', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Повторите пароль', credentialsSave: 'Сохранить доступ', tempPassword: 'Используется временный пароль',
+      team: 'Команда и доступ', teamSub: 'Выдайте сотрудникам доступ в CRM',
+      roleManager: 'Менеджер', roleSpecialist: 'Мастер', roleOwner: 'Владелец',
+      roleManagerHint: 'Записи, платежи, график и услуги', roleSpecialistHint: 'Только свой график',
+      grant: 'Выдать доступ', resetPass: 'Сбросить пароль', revoke: 'Отключить доступ', noAccess: 'Нет доступа',
+      accessOn: 'Активен', accessOff: 'Отключён', loginLabel: 'Логин', newPassLabel: 'Новый пароль',
+      copyCreds: 'Скопировать', credsWarn: 'Этот пароль больше не будет показан — отправьте его сотруднику сейчас.',
+      confirmRevoke: 'Отключить доступ этому сотруднику?', ownerOnly: 'Только для владельца',
     },
     tour: {
       next: 'Далее', back: 'Назад', skip: 'Пропустить', done: 'Начать!', goServices: 'Перейти к услугам', replay: 'Обучение', stepOf: '{n}/{total}',
@@ -225,7 +240,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Barbershop · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulugbek', type: 'Barbershop · M. Ulugbek', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Owner', receptionist: 'Receptionist', specialist: 'Specialist', viewAs: 'View as:', roleDesc: { owner: 'Full access', receptionist: 'Bookings & customers', specialist: 'Own schedule only' } },
+    roles: { owner: 'Owner', manager: 'Manager', specialist: 'Specialist', viewAs: 'View as:', roleDesc: { owner: 'Full access', manager: 'Bookings, payments & schedules', specialist: 'Own schedule only' } },
     auto: {
       sub: 'Automated reminders & campaigns', add: 'Add rule', active: 'Active', sent: 'sent', trigger: 'Trigger', channel: 'Channel', enabled: 'Enabled', toastOn: 'Rule enabled', toastOff: 'Rule disabled',
       rules: [
@@ -281,6 +296,13 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Save changes', saved: 'Settings saved', logout: 'Log out', closed: 'Closed', hoursPerWeek: 'h/week',
       mins: ['15 minutes', '30 minutes', '1 hour', '2 hours', '1 day before'],
       credentials: 'CRM access', credentialsSub: 'Update your login and password', username: 'Username', currentPassword: 'Current password', newPassword: 'New password', confirmPassword: 'Repeat password', credentialsSave: 'Save access', tempPassword: 'A temporary password is in use',
+      team: 'Team & access', teamSub: 'Give your staff access to the CRM',
+      roleManager: 'Manager', roleSpecialist: 'Specialist', roleOwner: 'Owner',
+      roleManagerHint: 'Bookings, payments, schedules and services', roleSpecialistHint: 'Their own schedule only',
+      grant: 'Give access', resetPass: 'Reset password', revoke: 'Turn off access', noAccess: 'No access',
+      accessOn: 'Active', accessOff: 'Turned off', loginLabel: 'Username', newPassLabel: 'New password',
+      copyCreds: 'Copy', credsWarn: 'This password will not be shown again — send it to your staff member now.',
+      confirmRevoke: 'Turn off access for this employee?', ownerOnly: 'Owner only',
     },
     tour: {
       next: 'Next', back: 'Back', skip: 'Skip', done: 'Get started!', goServices: 'Go to Services', replay: 'Take the tour', stepOf: '{n}/{total}',
@@ -361,7 +383,9 @@ export type CRMContextValue = {
   branch: number;
   setBranch: (b: number) => void;
   role: Role;
-  setRole: (r: Role) => void;
+  staffName: string | null;
+  /** Demo only. The real CRM's role comes from the signed session and is not settable. */
+  setRole?: (r: Role) => void;
   allowed: string[] | null;
   navOpen: boolean;
   setNavOpen: (open: boolean) => void;

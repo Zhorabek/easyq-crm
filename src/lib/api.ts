@@ -141,6 +141,30 @@ export function deleteBusinessPhoto() {
   });
 }
 
+/**
+ * Grant CRM access, or reset the password of someone who already has it. Both issue a NEW
+ * temporary password, returned once in the response — it is never readable again.
+ */
+export function grantStaffAccess(staffId: number, accessRole: 'manager' | 'specialist') {
+  return request<{ ok: true; username: string; password: string; accessRole: string }>(
+    `/api/employees/${staffId}/access`,
+    { method: 'POST', body: JSON.stringify({ accessRole }) },
+  );
+}
+
+/** Change the role without touching the password. */
+export function updateStaffAccessRole(staffId: number, accessRole: 'manager' | 'specialist') {
+  return request<{ ok: true; accessRole: string }>(`/api/employees/${staffId}/access`, {
+    method: 'PATCH',
+    body: JSON.stringify({ accessRole }),
+  });
+}
+
+/** Takes effect immediately, including for a session already open. */
+export function revokeStaffAccess(staffId: number) {
+  return request<{ ok: true }>(`/api/employees/${staffId}/access`, { method: 'DELETE' });
+}
+
 export function updateCrmCredentials(input: UpdateCrmCredentialsInput) {
   return request<{ ok: true; session: AuthSession }>("/api/business/credentials", {
     method: "PATCH",

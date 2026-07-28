@@ -17,6 +17,7 @@ import type {
   PaymentMethod,
   PaymentSummary,
   ServiceCatalogItem,
+  StaffAccessRow,
   UpdateCrmCredentialsInput,
   UpdateBusinessProfileInput,
   UpdateBookingStatusInput,
@@ -25,6 +26,8 @@ import type {
   UpdateEmployeeSlotsInput,
   UpsertServiceInput,
 } from "./types";
+import type { ActorRole } from "./server/auth";
+import { can, isScopedToOwnBookings, type Capability } from "./server/permissions";
 import {
   clearSessionCookie,
   createSessionCookie,
@@ -101,6 +104,10 @@ type StaffRow = {
   name: string;
   role: string | null;
   phone: string | null;
+  crm_username: string | null;
+  crm_temp_password: string | null;
+  access_role: string | null;
+  access_enabled: number;
 };
 
 type StaffServiceRow = {
@@ -227,6 +234,9 @@ function toAuthSession(business: BusinessRow): AuthSession {
     username: business.crm_username ?? "",
     isTemporaryPassword: Boolean(business.crm_temp_password),
     slug: business.slug ?? null,
+    role: "owner",
+    staffId: null,
+    staffName: null,
   };
 }
 
@@ -579,11 +589,39 @@ function unknownWorkspaceResponse(url: URL): Response {
   });
 }
 
+/**
+ * Who is making the request, and what they may do.
+ *
+ * `business` is the tenant; `role` is the permission level; `staffId` identifies which
+ * staff member for non-owner sessions. Handlers take this rather than a bare BusinessRow
+ * so a capability check cannot be forgotten by accident — every mutating endpoint has to
+ * name the capability it needs.
+ */
+type Actor = {
+  business: BusinessRow;
+  role: ActorRole;
+  staffId: number | null;
+};
+
+function forbidden(capability: Capability) {
+  return new HttpResponseError(
+    json(
+      { error: "Your role does not allow this action.", code: "forbidden", capability },
+      { status: 403 }
+    )
+  );
+}
+
+/** Throws unless the actor holds `capability`. */
+function requireCapability(actor: Actor, capability: Capability) {
+  if (!can(actor.role, capability)) throw forbidden(capability);
+}
+
 async function requireAuthenticatedBusiness(
   env: Env,
   request: Request,
   tenant: TenantContext | null
-): Promise<BusinessRow> {
+): Promise<Actor> {
   const session = await readSession(request, env.CRM_SESSION_SECRET);
   if (!session) {
     throw new HttpResponseError(
@@ -633,7 +671,33 @@ async function requireAuthenticatedBusiness(
     );
   }
 
-  return business;
+  // A staff session is only as good as the access still granted to that row. Revoking
+  // access must take effect immediately, not in 14 days when the cookie expires — so the
+  // staff row is re-read and re-checked on every request rather than trusted from the
+  // signed cookie. The role is taken from the DB too, so a demotion applies at once.
+  if (session.role !== "owner") {
+    const member = await env.DB
+      .prepare("SELECT id, access_role, access_enabled FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+      .bind(session.staffId, business.id)
+      .first<{ id: number; access_role: string | null; access_enabled: number }>();
+
+    if (!member || Number(member.access_enabled) !== 1) {
+      throw new HttpResponseError(
+        json(
+          { error: "Your access has been turned off. Please contact the business owner.", code: "access_revoked" },
+          { status: 401, headers: { "set-cookie": clearSessionCookie(request) } }
+        )
+      );
+    }
+
+    return {
+      business,
+      role: member.access_role === "manager" ? "manager" : "specialist",
+      staffId: Number(member.id),
+    };
+  }
+
+  return { business, role: "owner", staffId: null };
 }
 
 async function getSessionState(env: Env, request: Request, tenant: TenantContext | null) {
@@ -677,6 +741,32 @@ async function getSessionState(env: Env, request: Request, tenant: TenantContext
     );
   }
 
+  // A staff session must report its own role and name, not the owner's. The role comes
+  // from the staff row rather than the cookie, so a demotion or revocation applies on the
+  // very next page load instead of when the cookie expires.
+  if (session.role !== "owner") {
+    const member = await env.DB
+      .prepare("SELECT id, name, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+      .bind(session.staffId, business.id)
+      .first<{ id: number; name: string; crm_username: string | null; crm_temp_password: string | null; access_role: string | null; access_enabled: number }>();
+
+    if (!member || Number(member.access_enabled) !== 1) {
+      return json(
+        { error: "Your access has been turned off. Please contact the business owner.", code: "access_revoked" },
+        { status: 401, headers: { "set-cookie": clearSessionCookie(request) } }
+      );
+    }
+
+    return json({
+      ...toAuthSession(business),
+      username: member.crm_username ?? "",
+      isTemporaryPassword: Boolean(member.crm_temp_password),
+      role: staffAccessRole(member.access_role),
+      staffId: Number(member.id),
+      staffName: member.name,
+    } satisfies AuthSession);
+  }
+
   return json(toAuthSession(business));
 }
 
@@ -705,8 +795,11 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
     .bind(username)
     .first<LoginRow>();
 
+  // Staff share one username namespace with businesses (see the unique index in
+  // migrations/2026-07-28-staff-access.sql), so this is a fallback, not an alternative
+  // path: a name resolves to exactly one account of one kind.
   if (!row || !(await verifyCrmPassword(password, row.crm_password_hash))) {
-    return json({ error: "Неверный логин или пароль." }, { status: 401 });
+    return await loginStaff(env, request, tenant, username, password);
   }
 
   // Deliberately AFTER the password check, and with the identical error string, so
@@ -723,6 +816,7 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
   const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
     businessId: business.id,
     username: business.crm_username ?? username,
+    role: "owner",
   });
 
   return json(
@@ -736,6 +830,180 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
       },
     }
   );
+}
+
+// ───────────────────────────────────────────────────── Staff logins (owner-managed)
+//
+// The owner is the business account. Managers and specialists are staff rows that the
+// owner has granted a login to; their permissions live in server/permissions.ts and are
+// enforced on every request, not in the browser.
+
+type StaffLoginRow = {
+  id: number;
+  business_id: number;
+  name: string;
+  crm_username: string | null;
+  crm_password_hash: string | null;
+  crm_temp_password: string | null;
+  access_role: string | null;
+  access_enabled: number;
+};
+
+function staffAccessRole(value: string | null): ActorRole {
+  // Anything unrecognized is the least privileged, never the most.
+  return value === "manager" ? "manager" : "specialist";
+}
+
+/**
+ * Second half of `login`. Reached only when no BUSINESS matched those credentials, and it
+ * returns the identical error string in every failure case so the response cannot be used
+ * to work out whether a username exists, or whether it belongs to a business or a person.
+ */
+async function loginStaff(
+  env: Env,
+  request: Request,
+  tenant: TenantContext | null,
+  username: string,
+  password: string
+) {
+  const invalid = json({ error: "Неверный логин или пароль." }, { status: 401 });
+
+  const member = await env.DB
+    .prepare(
+      `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password,
+              access_role, access_enabled
+       FROM staff WHERE crm_username = ? LIMIT 1`
+    )
+    .bind(username)
+    .first<StaffLoginRow>();
+
+  if (!member || !(await verifyCrmPassword(password, member.crm_password_hash))) {
+    return invalid;
+  }
+
+  // Checked after the password so a revoked account is indistinguishable from a wrong one.
+  if (Number(member.access_enabled) !== 1) return invalid;
+  if (tenant && member.business_id !== tenant.businessId) return invalid;
+
+  const business = await getBusinessById(env.DB, member.business_id);
+  if (!business) return invalid;
+
+  const role = staffAccessRole(member.access_role);
+  const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+    businessId: business.id,
+    username: member.crm_username ?? username,
+    role,
+    staffId: member.id,
+  });
+
+  return json(
+    {
+      ok: true,
+      session: {
+        businessId: business.id,
+        businessName: business.name,
+        username: member.crm_username ?? username,
+        isTemporaryPassword: Boolean(member.crm_temp_password),
+        slug: business.slug ?? null,
+        role,
+        staffId: member.id,
+        staffName: member.name,
+      } satisfies AuthSession,
+    },
+    { headers: { "set-cookie": cookie } }
+  );
+}
+
+/** Free username for a staff member, unique across BOTH tables (one login namespace). */
+async function allocateStaffUsername(db: D1Database, name: string, staffId: number) {
+  const base = normalizeCrmUsernameBase(name);
+  let candidate = `${base}${staffId}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const [biz, member] = await Promise.all([
+      db.prepare("SELECT 1 AS x FROM businesses WHERE crm_username = ? LIMIT 1").bind(candidate).first(),
+      db.prepare("SELECT 1 AS x FROM staff WHERE crm_username = ? AND id != ? LIMIT 1").bind(candidate, staffId).first(),
+    ]);
+    if (!biz && !member) return candidate;
+    candidate = `${base}${staffId}_${suffix}`;
+  }
+}
+
+type StaffAccessInput = { accessRole?: string; enabled?: boolean };
+
+/**
+ * Grant access, change the role, or reset the password — one endpoint because from the
+ * owner's side it is one screen, and each variant needs the same ownership check.
+ *
+ * Returns the temp password exactly once, in the response. It is stored in the clear
+ * alongside the hash only so the owner can read it out; login always goes through the
+ * hash, and the plaintext is cleared the moment the person sets their own.
+ */
+async function grantStaffAccess(env: Env, actor: Actor, staffId: number, input: StaffAccessInput) {
+  const member = await env.DB
+    .prepare("SELECT id, name, crm_username FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(staffId, actor.business.id)
+    .first<{ id: number; name: string; crm_username: string | null }>();
+
+  if (!member) {
+    return json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  const accessRole = input.accessRole === "manager" ? "manager" : "specialist";
+  const username = member.crm_username ?? (await allocateStaffUsername(env.DB, member.name, member.id));
+  const tempPassword = generateCrmTempPassword();
+  const passwordHash = await hashCrmPassword(tempPassword);
+
+  await env.DB
+    .prepare(
+      `UPDATE staff
+       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, access_role = ?,
+           access_enabled = 1, access_updated_at = datetime('now')
+       WHERE id = ? AND business_id = ?`
+    )
+    .bind(username, passwordHash, tempPassword, accessRole, staffId, actor.business.id)
+    .run();
+
+  return json({ ok: true, username, password: tempPassword, accessRole }, { status: 201 });
+}
+
+/** Change the role without touching the password. */
+async function updateStaffAccessRole(env: Env, actor: Actor, staffId: number, input: StaffAccessInput) {
+  const accessRole = input.accessRole === "manager" ? "manager" : "specialist";
+
+  const result = await env.DB
+    .prepare(
+      `UPDATE staff SET access_role = ?, access_updated_at = datetime('now')
+       WHERE id = ? AND business_id = ? AND crm_username IS NOT NULL`
+    )
+    .bind(accessRole, staffId, actor.business.id)
+    .run();
+
+  if (Number(result.meta.changes ?? 0) !== 1) {
+    return json({ error: "This employee does not have CRM access yet." }, { status: 400 });
+  }
+
+  return json({ ok: true, accessRole });
+}
+
+/**
+ * Turn access off. The username and hash are kept: requireAuthenticatedBusiness re-reads
+ * access_enabled on every request, so this takes effect immediately even for someone
+ * already signed in, and re-granting later does not have to reissue the username.
+ */
+async function revokeStaffAccess(env: Env, actor: Actor, staffId: number) {
+  const result = await env.DB
+    .prepare(
+      `UPDATE staff SET access_enabled = 0, crm_temp_password = NULL, access_updated_at = datetime('now')
+       WHERE id = ? AND business_id = ?`
+    )
+    .bind(staffId, actor.business.id)
+    .run();
+
+  if (Number(result.meta.changes ?? 0) !== 1) {
+    return json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  return json({ ok: true });
 }
 
 async function logout(request: Request) {
@@ -1207,7 +1475,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       .bind(business.id)
       .all<ServiceRow>(),
     env.DB
-      .prepare("SELECT id, business_id, name, role, phone FROM staff WHERE business_id = ? ORDER BY name ASC")
+      .prepare("SELECT id, business_id, name, role, phone, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE business_id = ? ORDER BY name ASC")
       .bind(business.id)
       .all<StaffRow>(),
     env.DB
@@ -1708,13 +1976,93 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       totalCancelledVisits: bookings.filter((booking) => booking.status === "cancelled").length,
     },
     bookingLinks,
+    // Login state per staff member, for the owner's Team & access screen. Redacted for
+    // everyone else in redactPayloadFor — who can sign in is not a specialist's business.
+    staffAccess: staff.map((person) => ({
+      staffId: person.id,
+      name: person.name,
+      username: person.crm_username,
+      accessRole: person.access_role === "manager" ? "manager" : person.access_role === "specialist" ? "specialist" : null,
+      enabled: Number(person.access_enabled) === 1,
+      hasTemporaryPassword: Boolean(person.crm_temp_password),
+    })) satisfies StaffAccessRow[],
   };
 }
 
-async function updateBookingStatus(env: Env, business: BusinessRow, bookingId: number, input: UpdateBookingStatusInput) {
+/**
+ * Strip a payload down to what the actor may see.
+ *
+ * A capability check answers "may they call this endpoint"; it says nothing about which
+ * rows come back. A specialist holds crm:read because they need their own day — but the
+ * unredacted payload carries every client, every colleague's revenue and the shop's
+ * finances, so returning it would make the role meaningless.
+ *
+ * Owners and managers run the business and get everything.
+ */
+function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
+  if (actor.role !== "specialist" || !actor.staffId) return payload;
+
+  const mine = actor.staffId;
+  const isMine = (staffId: number | null) => staffId === mine;
+
+  return {
+    ...payload,
+    // Money is the owner's business, not a line on someone's own calendar.
+    kpis: [],
+    analytics: {
+      employeeRevenue: [],
+      monthlyRevenue: 0,
+      totalRevenue: 0,
+      collectedToday: 0,
+      refundsToday: 0,
+      totalOutstanding: 0,
+      totalCompletedVisits: 0,
+      totalCancelledVisits: 0,
+    },
+    // The client book is a business asset; a specialist sees who is in front of them today
+    // through the calendar instead.
+    clients: [],
+    reservationsToday: payload.reservationsToday.filter((booking) =>
+      payload.calendar.bookings.some((card) => card.id === booking.id && isMine(card.staffId))
+    ),
+    calendar: {
+      ...payload.calendar,
+      columns: payload.calendar.columns.filter((column) => column.id === mine),
+      bookings: payload.calendar.bookings.filter((card) => isMine(card.staffId)),
+      dayRevenue: 0,
+    },
+    employees: payload.employees
+      .filter((employee) => employee.id === mine)
+      .map((employee) => ({
+        ...employee,
+        completedRevenue: 0,
+        todayRevenue: 0,
+        outstandingRevenue: 0,
+      })),
+    // Sharing links are the owner's to hand out.
+    bookingLinks: [],
+    staffAccess: [],
+  };
+}
+
+async function updateBookingStatus(env: Env, actor: Actor, bookingId: number, input: UpdateBookingStatusInput) {
+  const business = actor.business;
   const allowed = ["pending", "confirmed", "done", "cancelled"];
   if (!allowed.includes(input.status)) {
     return json({ error: "Invalid booking status" }, { status: 400 });
+  }
+
+  // Holding booking:status is not the same as owning the booking. Without this a
+  // specialist could cancel a colleague's appointments, which the capability check alone
+  // does not prevent.
+  if (isScopedToOwnBookings(actor.role)) {
+    const own = await env.DB
+      .prepare("SELECT id FROM bookings WHERE id = ? AND business_id = ? AND staff_id = ? LIMIT 1")
+      .bind(bookingId, business.id, actor.staffId)
+      .first<{ id: number }>();
+    if (!own) {
+      return json({ error: "This booking is not yours.", code: "forbidden" }, { status: 403 });
+    }
   }
 
   await env.DB
@@ -2262,80 +2610,114 @@ export default {
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        const payload = await getCrmPayload(env, business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
-        return json(payload);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "crm:read");
+        const payload = await getCrmPayload(env, actor.business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
+        return json(redactPayloadFor(actor, payload));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "booking:status");
         const bookingId = Number(url.pathname.split("/")[3]);
-        return await updateBookingStatus(env, business, bookingId, await readJson<UpdateBookingStatusInput>(request));
+        return await updateBookingStatus(env, actor, bookingId, await readJson<UpdateBookingStatusInput>(request));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && url.pathname.endsWith("/payments") && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "payment:write");
         const bookingId = Number(url.pathname.split("/")[3]);
-        return await createBookingPayment(env, business, bookingId, await readJson<CreatePaymentInput>(request));
+        return await createBookingPayment(env, actor.business, bookingId, await readJson<CreatePaymentInput>(request));
+      }
+
+      // ── Staff CRM access (owner only) ───────────────────────────────────────
+      // access:manage is owner-exclusive in the matrix. A manager who could grant access
+      // could promote themselves, which would make the role distinction decorative.
+      if (url.pathname.match(/^\/api\/employees\/\d+\/access$/)) {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "access:manage");
+        const staffId = Number(url.pathname.split("/")[3]);
+
+        if (request.method === "POST") {
+          return await grantStaffAccess(env, actor, staffId, await readJson<StaffAccessInput>(request));
+        }
+        if (request.method === "PATCH") {
+          return await updateStaffAccessRole(env, actor, staffId, await readJson<StaffAccessInput>(request));
+        }
+        if (request.method === "DELETE") {
+          return await revokeStaffAccess(env, actor, staffId);
+        }
+        return json({ error: "Not found" }, { status: 404 });
       }
 
       if (url.pathname === "/api/employees" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await addEmployee(env, business, await readJson<AddEmployeeInput>(request));
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "staff:write");
+        return await addEmployee(env, actor.business, await readJson<AddEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "staff:write");
         const staffId = Number(url.pathname.split("/")[3]);
-        return await updateEmployee(env, business, staffId, await readJson<UpdateEmployeeInput>(request));
+        return await updateEmployee(env, actor.business, staffId, await readJson<UpdateEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "DELETE") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "staff:write");
         const staffId = Number(url.pathname.split("/")[3]);
-        return await deleteEmployee(env, business, staffId);
+        return await deleteEmployee(env, actor.business, staffId);
       }
 
       if (url.pathname === "/api/services" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await createService(env, business, await readJson<UpsertServiceInput>(request));
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "service:write");
+        return await createService(env, actor.business, await readJson<UpsertServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/services/") && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "service:write");
         const serviceId = Number(url.pathname.split("/")[3]);
-        return await updateService(env, business, serviceId, await readJson<UpdateServiceInput>(request));
+        return await updateService(env, actor.business, serviceId, await readJson<UpdateServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && url.pathname.endsWith("/slots") && request.method === "PUT") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "schedule:write");
         const staffId = Number(url.pathname.split("/")[3]);
-        return await updateEmployeeSlots(env, business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
+        return await updateEmployeeSlots(env, actor.business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
       }
 
       if (url.pathname === "/api/business" && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await updateBusinessProfile(env, business, await readJson<UpdateBusinessProfileInput>(request));
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "business:write");
+        return await updateBusinessProfile(env, actor.business, await readJson<UpdateBusinessProfileInput>(request));
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await updateBusinessCredentials(env, request, business, await readJson<UpdateCrmCredentialsInput>(request));
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "credentials:write");
+        return await updateBusinessCredentials(env, request, actor.business, await readJson<UpdateCrmCredentialsInput>(request));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "POST") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await uploadBusinessPhoto(env, business, request);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "business:write");
+        return await uploadBusinessPhoto(env, actor.business, request);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "DELETE") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await deleteBusinessPhoto(env, business);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "business:write");
+        return await deleteBusinessPhoto(env, actor.business);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {
-        const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return await proxyBusinessPhoto(env, business);
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "crm:read");
+        return await proxyBusinessPhoto(env, actor.business);
       }
 
       if (url.pathname.startsWith("/api/")) {

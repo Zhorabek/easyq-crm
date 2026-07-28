@@ -20,7 +20,7 @@ const NAV_ITEMS: Array<[string, string]> = [
 ];
 
 export function Sidebar({ active, setActive, navOpen }: { active: string; setActive: (s: string) => void; navOpen: boolean }) {
-  const { t, lang, setLang, branch, setBranch, role, setRole, allowed, bizName, bizType, demo, setNavOpen, logout } = useCRM();
+  const { t, lang, setLang, branch, setBranch, role, staffName, setRole, allowed, bizName, bizType, demo, setNavOpen, logout } = useCRM();
   const [branchOpen, setBranchOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const bRef = useRef<HTMLDivElement>(null);
@@ -39,7 +39,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
   const curBranch = branch < 0 ? null : t.branches[branch];
   const headName = curBranch ? bizName + ' · ' + curBranch.name : bizName;
   const headSub = curBranch ? curBranch.type : t.branchAll;
-  const roleNames: Record<Role, string> = { owner: t.roles.owner, receptionist: t.roles.receptionist, specialist: t.roles.specialist };
+  const roleNames: Record<Role, string> = { owner: t.roles.owner, manager: t.roles.manager, specialist: t.roles.specialist };
   const settingsAllowed = !allowed || allowed.includes('settings');
 
   return (
@@ -147,12 +147,12 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
           {roleOpen && (
             <div style={{ position: 'absolute', bottom: 50, left: 0, right: 0, background: 'var(--sidebar-2)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 12, padding: 6, zIndex: 30, boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
               <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--on-sidebar-2)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 10px 4px' }}>{t.roles.viewAs}</div>
-              {(['owner', 'receptionist', 'specialist'] as Role[]).map((r) => {
+              {(['owner', 'manager', 'specialist'] as Role[]).map((r) => {
                 const on = role === r;
                 return (
-                  <button key={r} onClick={() => { setRole(r); setRoleOpen(false); setActive('dashboard'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 9, textAlign: 'left', background: on ? 'rgba(180,217,78,.16)' : 'transparent' }}>
+                  <button key={r} onClick={() => { setRole?.(r); setRoleOpen(false); setActive('dashboard'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 9, textAlign: 'left', background: on ? 'rgba(180,217,78,.16)' : 'transparent' }}>
                     <span style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(255,255,255,.08)', color: on ? 'var(--accent)' : '#fff', display: 'grid', placeItems: 'center', flex: 'none' }}>
-                      <Ic name={r === 'owner' ? 'loyalty' : r === 'receptionist' ? 'customers' : 'staff'} size={14} stroke={2} />
+                      <Ic name={r === 'owner' ? 'loyalty' : r === 'manager' ? 'customers' : 'staff'} size={14} stroke={2} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--accent)' : '#fff', whiteSpace: 'nowrap' }}>{roleNames[r]}</div>
@@ -173,10 +173,10 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
         ) : (
           <div style={{ marginTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px', borderRadius: 11 }}>
-              <Avatar name={bizName || 'EasyQ'} color="#B4D94E" size={34} />
+              <Avatar name={staffName || bizName || 'EasyQ'} color="#B4D94E" size={34} />
               <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--on-sidebar-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.roles.owner}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffName || bizName}</div>
+                <div style={{ fontSize: 10.5, color: role === 'owner' ? 'var(--on-sidebar-2)' : 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}>{roleNames[role]}</div>
               </div>
               <button onClick={logout} title={t.set.logout} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.06)', color: 'var(--on-sidebar-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
                 <Ic name="logout" size={16} />

@@ -36,7 +36,7 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
 
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
-  receptionist: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'settings'],
+  manager: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'settings'],
   specialist: ['dashboard', 'calendar', 'customers', 'settings'],
 };
 
@@ -134,6 +134,8 @@ export default function EmbedApp() {
     setBranch,
     role,
     setRole,
+    // Demo has no signed-in person, so the sidebar falls back to the business name.
+    staffName: null,
     allowed,
     navOpen,
     setNavOpen,

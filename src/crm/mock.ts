@@ -303,5 +303,13 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },
       { id: 'business-admin', titleKey: 'ownerBot', url: 'https://t.me/easyqueue_business_bot', kind: 'admin' },
     ],
+    staffAccess: employees.map((e, i) => ({
+      staffId: e.id,
+      name: e.name,
+      username: i === 0 ? 'sardor1' : i === 1 ? 'kamola2' : null,
+      accessRole: i === 0 ? 'manager' : i === 1 ? 'specialist' : null,
+      enabled: i < 2,
+      hasTemporaryPassword: i === 1,
+    })),
   };
 }

@@ -65,10 +65,13 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
 
 const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'];
 
+// Which screens each role sees. This MIRRORS server/permissions.ts to keep the nav tidy —
+// it is NOT the enforcement. Hiding a button stops nobody; the worker rejects the call.
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
-  receptionist: ['dashboard', 'calendar', 'customers', 'services', 'settings'],
-  specialist: ['dashboard', 'calendar', 'customers', 'settings'],
+  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'],
+  // No customers screen: the client book is redacted out of a specialist's payload anyway.
+  specialist: ['dashboard', 'calendar', 'settings'],
 };
 
 const LOGIN_LABEL: Record<Lang, string> = { uz: 'Kirish', ru: 'Войти', en: 'Sign in' };
@@ -94,7 +97,6 @@ export default function App() {
   const [theme, setThemeState] = useState<Theme>(() => (lsGet('easyq_crm_theme', 'light') === 'dark' ? 'dark' : 'light'));
   const [active, setActiveState] = useState<string>(() => lsGet('easyq_crm_screen', 'dashboard'));
   const [branch, setBranchState] = useState<number>(() => parseInt(lsGet('easyq_crm_branch', '-1'), 10));
-  const [role, setRoleState] = useState<Role>(() => lsGet('easyq_crm_role', 'owner') as Role);
   const [navOpen, setNavOpen] = useState(false);
 
   // ---- data ----
@@ -154,7 +156,6 @@ export default function App() {
   function setTheme(th: Theme) { setThemeState(th); try { localStorage.setItem('easyq_crm_theme', th); } catch {} }
   function setActive(s: string) { setActiveState(s); try { localStorage.setItem('easyq_crm_screen', s); } catch {} setNavOpen(false); }
   function setBranch(b: number) { setBranchState(b); try { localStorage.setItem('easyq_crm_branch', String(b)); } catch {} }
-  function setRole(r: Role) { setRoleState(r); try { localStorage.setItem('easyq_crm_role', r); } catch {} }
   function setSelectedDate(d: string) { setSelectedDateState(d); }
   const notify = (msg?: string) => setToast(msg || CRM_T[lang].set.saved);
 
@@ -343,6 +344,9 @@ export default function App() {
   }
 
   // ---- authed shell ----
+  // The role is whatever the SESSION says. It used to be read from localStorage, so the
+  // user picked their own permissions — harmless while nothing was enforced, wrong now.
+  const role: Role = session.role;
   const roleAllowed = ROLE_SCREENS[role];
   const allowed = REAL_SCREENS.filter((s) => !roleAllowed || roleAllowed.includes(s));
   const effActive = allowed.includes(active) ? active : 'dashboard';
@@ -370,7 +374,7 @@ export default function App() {
   const meta = titles[effActive] || titles.dashboard;
 
   const crmValue: CRMContextValue = {
-    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, setRole, allowed, navOpen, setNavOpen,
+    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),

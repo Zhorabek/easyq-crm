@@ -18,6 +18,9 @@ export interface BusinessProfile {
   crmHasTemporaryPassword: boolean;
 }
 
+/** Permission level. The owner is the business account; the rest are staff logins. */
+export type ActorRole = "owner" | "manager" | "specialist";
+
 export interface AuthSession {
   businessId: number;
   businessName: string;
@@ -25,6 +28,25 @@ export interface AuthSession {
   isTemporaryPassword: boolean;
   /** Subdomain label — this business's CRM lives at `<slug>.easyq.uz`. */
   slug: string | null;
+  /**
+   * Resolved server-side from the signed cookie and re-checked against the staff row on
+   * every request. The UI uses it to hide what the user cannot do — but the hiding is
+   * cosmetic; server/permissions.ts is what actually enforces it.
+   */
+  role: ActorRole;
+  /** Null for the owner, who has no staff row. */
+  staffId: number | null;
+  staffName: string | null;
+}
+
+/** One staff member's CRM access, for the owner's Team & access screen. */
+export interface StaffAccessRow {
+  staffId: number;
+  name: string;
+  username: string | null;
+  accessRole: "manager" | "specialist" | null;
+  enabled: boolean;
+  hasTemporaryPassword: boolean;
 }
 
 export interface KpiCard {
@@ -251,6 +273,8 @@ export interface CrmPayload {
     totalCancelledVisits: number;
   };
   bookingLinks: BookingLinkItem[];
+  /** Owner-only; empty for managers and specialists. */
+  staffAccess: StaffAccessRow[];
 }
 
 export interface UpdateBookingStatusInput {

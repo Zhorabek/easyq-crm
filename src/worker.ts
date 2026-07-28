@@ -79,6 +79,7 @@ type BusinessRow = {
   crm_temp_password: string | null;
   crm_credentials_updated_at: string | null;
   slug: string | null;
+  session_version: number;
 };
 
 type LoginRow = {
@@ -88,6 +89,7 @@ type LoginRow = {
   crm_password_hash: string | null;
   crm_temp_password: string | null;
   slug: string | null;
+  session_version: number;
 };
 
 type ServiceRow = {
@@ -260,7 +262,8 @@ async function getBusinessById(db: D1Database, businessId: number) {
            crm_password_hash,
            crm_temp_password,
            crm_credentials_updated_at,
-           slug
+           slug,
+           session_version
          FROM businesses
          WHERE id = ?
          LIMIT 1`
@@ -325,7 +328,10 @@ function getTimePart(datetime: string) {
 function formatMoney(amount: number) {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
-    currency: "KZT",
+    // UZS, not KZT. This is an Uzbek product (+998 numbers, easyq.uz, Tashkent addresses)
+    // and the tenge was a leftover — the dashboard was quoting takings in Kazakh currency.
+    // Every other money display in the UI already labels itself UZS via fmtSom.
+    currency: "UZS",
     maximumFractionDigits: 0,
   }).format(amount);
 }
@@ -664,6 +670,7 @@ async function requireAuthenticatedBusiness(
         { error: "Your CRM session is no longer valid. Please sign in again." },
         {
           status: 401,
+
           headers: {
             "set-cookie": clearSessionCookie(request),
           },
@@ -672,15 +679,31 @@ async function requireAuthenticatedBusiness(
     );
   }
 
+  /**
+   * Every cookie carries the credential row's `session_version` from when it was minted.
+   * A mismatch means the password has been changed since — on this device or another — so
+   * the cookie is retired. This is what makes changing a password actually evict a session
+   * somebody else is holding, rather than leaving it live until the 14-day expiry.
+   */
+  const staleSession = (currentVersion: number) => {
+    if (session.sv === currentVersion) return null;
+    return new HttpResponseError(
+      json(
+        { error: "Your password was changed. Please sign in again.", code: "session_stale" },
+        { status: 401, headers: { "set-cookie": clearSessionCookie(request) } }
+      )
+    );
+  };
+
   // A staff session is only as good as the access still granted to that row. Revoking
   // access must take effect immediately, not in 14 days when the cookie expires — so the
   // staff row is re-read and re-checked on every request rather than trusted from the
   // signed cookie. The role is taken from the DB too, so a demotion applies at once.
   if (session.role !== "owner") {
     const member = await env.DB
-      .prepare("SELECT id, access_role, access_enabled FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+      .prepare("SELECT id, access_role, access_enabled, session_version FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
       .bind(session.staffId, business.id)
-      .first<{ id: number; access_role: string | null; access_enabled: number }>();
+      .first<{ id: number; access_role: string | null; access_enabled: number; session_version: number }>();
 
     if (!member || Number(member.access_enabled) !== 1) {
       throw new HttpResponseError(
@@ -691,12 +714,18 @@ async function requireAuthenticatedBusiness(
       );
     }
 
+    const stale = staleSession(Number(member.session_version ?? 0));
+    if (stale) throw stale;
+
     return {
       business,
       role: member.access_role === "manager" ? "manager" : "specialist",
       staffId: Number(member.id),
     };
   }
+
+  const stale = staleSession(Number(business.session_version ?? 0));
+  if (stale) throw stale;
 
   return { business, role: "owner", staffId: null };
 }
@@ -788,7 +817,8 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
          crm_username,
          crm_password_hash,
          crm_temp_password,
-         slug
+         slug,
+         session_version
        FROM businesses
        WHERE crm_username = ?
        LIMIT 1`
@@ -818,6 +848,7 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
     businessId: business.id,
     username: business.crm_username ?? username,
     role: "owner",
+    sessionVersion: Number(business.session_version ?? 0),
   });
 
   return json(
@@ -848,6 +879,7 @@ type StaffLoginRow = {
   crm_temp_password: string | null;
   access_role: string | null;
   access_enabled: number;
+  session_version: number;
 };
 
 function staffAccessRole(value: string | null): ActorRole {
@@ -872,7 +904,7 @@ async function loginStaff(
   const member = await env.DB
     .prepare(
       `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password,
-              access_role, access_enabled
+              access_role, access_enabled, session_version
        FROM staff WHERE crm_username = ? LIMIT 1`
     )
     .bind(username)
@@ -895,6 +927,7 @@ async function loginStaff(
     username: member.crm_username ?? username,
     role,
     staffId: member.id,
+    sessionVersion: Number(member.session_version ?? 0),
   });
 
   return json(
@@ -958,7 +991,8 @@ async function grantStaffAccess(env: Env, actor: Actor, staffId: number, input: 
     .prepare(
       `UPDATE staff
        SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, access_role = ?,
-           access_enabled = 1, access_updated_at = datetime('now')
+           access_enabled = 1, session_version = session_version + 1,
+           access_updated_at = datetime('now')
        WHERE id = ? AND business_id = ?`
     )
     .bind(username, passwordHash, tempPassword, accessRole, staffId, actor.business.id)
@@ -1028,7 +1062,7 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
 
   if (username && password) {
     const row = await env.DB
-      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password, slug FROM businesses WHERE crm_username = ? LIMIT 1")
+      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password, slug, session_version FROM businesses WHERE crm_username = ? LIMIT 1")
       .bind(username)
       .first<LoginRow>();
     // The tenant check rides along with the credential check: a mismatch falls
@@ -1037,6 +1071,11 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
       const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
         businessId: row.id,
         username: row.crm_username ?? username,
+        role: "owner",
+        // Must carry the CURRENT version. Defaulting to 0 would mint a cookie that
+        // requireAuthenticatedBusiness immediately rejects as stale for any business that
+        // has ever changed its password — a 401 loop straight out of the signup flow.
+        sessionVersion: Number(row.session_version ?? 0),
       });
       return new Response(null, { status: 303, headers: { location: "/", "set-cookie": cookie } });
     }
@@ -1124,6 +1163,7 @@ async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
   const today = getTodayIso(timeZone);
   const date = url.searchParams.get("date") ?? "";
   const staffId = Number(url.searchParams.get("staffId") ?? 0);
+  const serviceId = Number(url.searchParams.get("serviceId") ?? 0);
 
   if (!isIsoDate(date) || !Number.isInteger(staffId) || staffId <= 0) {
     return json({ error: "A date and staffId are required." }, { status: 400 });
@@ -1132,12 +1172,25 @@ async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
     return json({ date, staffId, slots: [] });
   }
 
+  // The duration is looked up rather than taken from the query string: a client could
+  // otherwise claim a 15-minute service and be offered slots a 90-minute one would overrun.
+  // Scoped to this business and to active services, like every other public lookup.
+  let serviceDuration: number | null = null;
+  if (Number.isInteger(serviceId) && serviceId > 0) {
+    const service = await env.DB
+      .prepare("SELECT duration FROM services WHERE id = ? AND business_id = ? AND is_active = 1 LIMIT 1")
+      .bind(serviceId, tenant.businessId)
+      .first<{ duration: number }>();
+    serviceDuration = service ? Number(service.duration || 0) : null;
+  }
+
   const slots = await getPublicSlots(
     env.DB,
     tenant.businessId,
     staffId,
     date,
-    date === today ? getNowMinuteInTimeZone(timeZone) : null
+    date === today ? getNowMinuteInTimeZone(timeZone) : null,
+    serviceDuration
   );
 
   // Never cached: a slot list is stale the moment somebody else books.
@@ -1368,6 +1421,7 @@ const MIN_PASSWORD_LENGTH = 8;
  */
 async function changeOwnPassword(
   env: Env,
+  request: Request,
   actor: Actor,
   input: { currentPassword?: string; newPassword?: string }
 ) {
@@ -1394,17 +1448,33 @@ async function changeOwnPassword(
       return json({ error: "Текущий пароль указан неверно.", code: "wrong_password" }, { status: 400 });
     }
 
+    // Bumping session_version retires every cookie minted before now, which is the point:
+    // other devices, and anyone holding a stolen session, are signed out.
     await env.DB
       .prepare(
         `UPDATE businesses
-         SET crm_password_hash = ?, crm_temp_password = NULL, crm_credentials_updated_at = datetime('now')
+         SET crm_password_hash = ?, crm_temp_password = NULL, session_version = session_version + 1,
+             crm_credentials_updated_at = datetime('now')
          WHERE id = ?`
       )
       .bind(nextHash, actor.business.id)
       .run();
 
     const refreshed = await getBusinessById(env.DB, actor.business.id);
-    return json({ ok: true, session: refreshed ? toAuthSession(refreshed) : null });
+    if (!refreshed) {
+      return json({ error: "Не удалось перечитать бизнес после смены пароля." }, { status: 500 });
+    }
+
+    // ...including the cookie in THIS request, so it has to be re-issued or the person who
+    // just changed their password would be the first one logged out.
+    const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+      businessId: refreshed.id,
+      username: refreshed.crm_username ?? "",
+      role: "owner",
+      sessionVersion: Number(refreshed.session_version ?? 0),
+    });
+
+    return json({ ok: true, session: toAuthSession(refreshed) }, { headers: { "set-cookie": cookie } });
   }
 
   // Staff: the hash is re-read here rather than carried on the Actor, because Actor holds
@@ -1427,26 +1497,42 @@ async function changeOwnPassword(
   await env.DB
     .prepare(
       `UPDATE staff
-       SET crm_password_hash = ?, crm_temp_password = NULL, access_updated_at = datetime('now')
+       SET crm_password_hash = ?, crm_temp_password = NULL, session_version = session_version + 1,
+           access_updated_at = datetime('now')
        WHERE id = ? AND business_id = ?`
     )
     .bind(nextHash, member.id, actor.business.id)
     .run();
 
-  // NOTE: sessions carry no password version, so any OTHER session this person has open
-  // stays valid until it expires. Invalidating them needs a version column on the row and
-  // a check in readSession — worth doing, but it is a schema change, not part of this fix.
-  return json({
-    ok: true,
-    session: {
-      ...toAuthSession(actor.business),
-      username: member.crm_username ?? "",
-      isTemporaryPassword: false,
-      role: actor.role,
-      staffId: member.id,
-      staffName: member.name,
-    } satisfies AuthSession,
+  const bumped = await env.DB
+    .prepare("SELECT session_version FROM staff WHERE id = ? LIMIT 1")
+    .bind(member.id)
+    .first<{ session_version: number }>();
+
+  // Re-issued for the same reason as the owner path: the bump above invalidated this
+  // request's own cookie too.
+  const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+    businessId: actor.business.id,
+    username: member.crm_username ?? "",
+    role: actor.role,
+    staffId: member.id,
+    sessionVersion: Number(bumped?.session_version ?? 0),
   });
+
+  return json(
+    {
+      ok: true,
+      session: {
+        ...toAuthSession(actor.business),
+        username: member.crm_username ?? "",
+        isTemporaryPassword: false,
+        role: actor.role,
+        staffId: member.id,
+        staffName: member.name,
+      } satisfies AuthSession,
+    },
+    { headers: { "set-cookie": cookie } }
+  );
 }
 
 async function updateBusinessCredentials(env: Env, request: Request, business: BusinessRow, input: UpdateCrmCredentialsInput) {
@@ -1495,10 +1581,12 @@ async function updateBusinessCredentials(env: Env, request: Request, business: B
   await env.DB
     .prepare(
       `UPDATE businesses
-       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, crm_credentials_updated_at = datetime('now')
+       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?,
+           session_version = session_version + CASE WHEN ? THEN 1 ELSE 0 END,
+           crm_credentials_updated_at = datetime('now')
        WHERE id = ?`
     )
-    .bind(username, nextPasswordHash, nextTempPassword, business.id)
+    .bind(username, nextPasswordHash, nextTempPassword, newPassword ? 1 : 0, business.id)
     .run();
 
   const refreshed = await getBusinessById(env.DB, business.id);
@@ -1506,9 +1594,12 @@ async function updateBusinessCredentials(env: Env, request: Request, business: B
     return json({ error: "Не удалось перечитать бизнес после обновления данных доступа." }, { status: 500 });
   }
 
+  // Carries the post-bump version so this session survives its own password change.
   const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
     businessId: refreshed.id,
     username: refreshed.crm_username ?? username,
+    role: "owner",
+    sessionVersion: Number(refreshed.session_version ?? 0),
   });
 
   return json(
@@ -2827,7 +2918,7 @@ export default {
       // actor, so there is nothing here to escalate with.
       if (url.pathname === "/api/me/password" && request.method === "PATCH") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
-        return await changeOwnPassword(env, actor, await readJson<ChangeOwnPasswordInput>(request));
+        return await changeOwnPassword(env, request, actor, await readJson<ChangeOwnPasswordInput>(request));
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {

@@ -152,10 +152,6 @@ export function statusLabel(status: string) {
   return "Ожидает";
 }
 
-export function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "KZT",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
+// formatCurrency was removed: nothing imported it, and it carried the same KZT mistake as
+// the worker's formatMoney. Money in the UI goes through fmtSom in src/crm/data.tsx, which
+// formats the number and lets the caller label the unit.

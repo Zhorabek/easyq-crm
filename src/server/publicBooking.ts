@@ -12,7 +12,7 @@
 
 import { bookableSlots, type ExistingBooking } from "../shared/availability";
 import { isValidPhone, toStoragePhone } from "../shared/phone";
-import { DEFAULT_BRAND_COLOR, normalizeBrandColor } from "../shared/brand";
+import { DEFAULT_BRAND_COLOR, normalizeBrandColor, resolveBrandTheme } from "../shared/brand";
 import type {
   CreatePublicBookingInput,
   PublicBusinessPayload,
@@ -78,7 +78,7 @@ export async function getPublicBusiness(
 ): Promise<PublicBusinessPayload | null> {
   const business = await db
     .prepare(
-      `SELECT name, type, address, phone, schedule, description, photo_file_id, brand_color
+      `SELECT name, type, address, phone, schedule, description, photo_file_id, brand_color, brand_theme
        FROM businesses WHERE id = ? LIMIT 1`
     )
     .bind(businessId)
@@ -91,6 +91,7 @@ export async function getPublicBusiness(
       description: string | null;
       photo_file_id: string | null;
       brand_color: string | null;
+      brand_theme: string | null;
     }>();
 
   if (!business) return null;
@@ -165,6 +166,9 @@ export async function getPublicBusiness(
     hasPhoto: Boolean(business.photo_file_id),
     // Resolved here so the page never has to decide what "no colour" means.
     brandColor: normalizeBrandColor(business.brand_color ?? "") ?? DEFAULT_BRAND_COLOR,
+    // Falls back through theme -> accent on the default page -> easyQ, so a business that
+    // picked a colour before themes existed renders exactly as it did.
+    brandTheme: resolveBrandTheme(business.brand_theme, business.brand_color),
     services: publicServices,
     staff: publicStaff,
     timeZone,

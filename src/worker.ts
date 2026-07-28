@@ -44,7 +44,7 @@ import {
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
-import { normalizeBrandColor } from "./shared/brand";
+import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
 import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
 
@@ -91,6 +91,7 @@ type BusinessRow = {
   slug: string | null;
   session_version: number;
   brand_color: string | null;
+  brand_theme: string | null;
 };
 
 type LoginRow = {
@@ -276,7 +277,8 @@ async function getBusinessById(db: D1Database, businessId: number) {
            crm_credentials_updated_at,
            slug,
            session_version,
-           brand_color
+           brand_color,
+           brand_theme
          FROM businesses
          WHERE id = ?
          LIMIT 1`
@@ -2406,6 +2408,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       crmUsername: business.crm_username,
       crmHasTemporaryPassword: Boolean(business.crm_temp_password),
       brandColor: business.brand_color,
+      brandTheme: parseBrandTheme(business.brand_theme),
     },
     generatedAt: new Date().toISOString(),
     selectedDate,
@@ -2790,6 +2793,34 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
     }
   }
 
+  // A theme carries its own accent, so saving one also writes `brand_color`: the two
+  // Telegram bots and any deploy still mid-rollout read that column, and leaving it on the
+  // previous accent would make the booking page and the bots disagree about the brand.
+  //
+  // The readability rule is normalizeBrandTheme's, which is the same function the settings
+  // screen disables its save button with — a contrast check that lives only in the client
+  // is not a check. It cannot be auto-corrected the way accentInk is: nudging text the
+  // owner deliberately chose is a worse answer than refusing it and saying why.
+  let nextBrandTheme = business.brand_theme;
+  if (input.brandTheme !== undefined) {
+    if (input.brandTheme === null) {
+      nextBrandTheme = null;
+    } else {
+      const theme = normalizeBrandTheme(input.brandTheme);
+      if (!theme) {
+        return json(
+          {
+            error: "Theme colours must be hex values, and the text must reach 4.5:1 contrast against the background",
+            code: "invalid_brand_theme",
+          },
+          { status: 400 }
+        );
+      }
+      nextBrandTheme = serializeBrandTheme(theme);
+      nextBrandColor = theme.accent;
+    }
+  }
+
   if (!nextName) {
     return json({ error: "Business name is required" }, { status: 400 });
   }
@@ -2813,10 +2844,10 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
   await env.DB
     .prepare(
       `UPDATE businesses
-       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?, brand_color = ?
+       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?, brand_color = ?, brand_theme = ?
        WHERE id = ?`
     )
-    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, nextBrandColor, business.id)
+    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, nextBrandColor, nextBrandTheme, business.id)
     .run();
 
   return json({ ok: true });

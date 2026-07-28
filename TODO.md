@@ -9,6 +9,12 @@ Items are ordered within each section by what I'd do first.
 
 Nothing here can be done from the repo.
 
+- [ ] **Apply `2026-07-28-brand-theme.sql` before the branding page deploys.** One additive
+      column, `businesses.brand_theme`. Migrate first, deploy second — `getBusinessById`
+      selects the column on every authenticated request, so deploying first 500s the whole
+      CRM. Verify with
+      `SELECT name FROM pragma_table_info('businesses') WHERE name = 'brand_theme';`
+      before pushing, not the console's report that it ran.
 - [ ] **Delete two test bookings** on `barber.easyq.uz`, both Thu 30 Jul:
       `11:00 — TEST - please delete` and `09:00 — Outage probe`. They are holding real
       slots in Jorabek's calendar.
@@ -18,9 +24,13 @@ Nothing here can be done from the repo.
       list, no other staff. This is the one path that cannot be tested without a login.
 - [ ] **Give `barber777` a roster.** It has staff but no weekly slots, so its booking page
       will always read "No free times". Jadval → the staff member → set hours.
-- [ ] **Spot-check the new brand picker.** Settings → Brand colour. Try `#ffff00` — button
-      text should come out black — and `#111827`, which should come out white. If either
-      looks wrong the contrast derivation in `src/shared/brand.ts` is at fault.
+- [ ] **Spot-check the branding page.** Settings → Branding, once
+      `2026-07-28-brand-theme.sql` is applied. Pick **Midnight**, save, and open the public
+      booking page: the whole page should be dark, not a dark button on a white page. Then
+      set a custom background of `#ffffff` with text `#f5f5f5` — Save must be disabled and
+      the contrast strip must read about 1.1:1. Button text is derived, so `#ffff00` should
+      come out black and `#111827` white. If any of that is wrong the derivation in
+      `src/shared/brand.ts` is at fault.
 
 ---
 
@@ -84,6 +94,23 @@ Replaces the hard-coded `"1111"` signup code with Telegram contact sharing — t
 taps a deep link and shares their number, so there is no code to intercept.
 
 `main` still has the `1111` bypass, so production is unaffected until this merges.
+
+> **This section is out of date and the gap is dangerous.** `main` already contains
+> `src/server/verification.ts`, `migrations/2026-07-28-signup-verification.sql`, and the
+> *call sites* in `worker.ts` — but `worker.ts` has **no import** for them. Thirteen names
+> (`generateNonce`, `createVerification`, `getVerification`, `isUsable`, `markVerified`,
+> `consumeVerification`, `releaseVerification`, `contactBelongsToSender`,
+> `parseStartPayload`, `TelegramUpdate`, …) are undefined identifiers on `main` right now.
+> `tsc --noEmit` reports all of them. The Typecheck step in `deploy.yml` has no
+> `continue-on-error`, and it runs *before* Build and Deploy — so **`main` has almost
+> certainly not deployed since that merge landed**, and production is running whatever was
+> live before it. Confirm in the Actions tab before assuming any recent work is live.
+>
+> Production survives only because `startVerification` returns 503 before reaching
+> `generateNonce()` while `VERIFY_BOT_TOKEN` is unset. **Step 2 below removes that
+> shield:** the moment the secret exists, signup reaches the undefined call and throws a
+> ReferenceError instead of working. Add the import and get CI red-on-type-error *before*
+> touching the secrets.
 
 To resume, in this order:
 
@@ -170,4 +197,5 @@ All in `migrations/`, all applied as of 2026-07-28:
 | `2026-07-28-staff-access.sql` | staff login columns + username index |
 | `2026-07-28-session-version.sql` | `session_version` on `businesses` and `staff` |
 | `2026-07-28-brand-color.sql` | `businesses.brand_color` |
+| `2026-07-28-brand-theme.sql` | `businesses.brand_theme` — **not applied yet** |
 | `2026-07-28-signup-verification.sql` | **not applied** — belongs to the `telegram-otp` branch |

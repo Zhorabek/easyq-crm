@@ -275,6 +275,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       crmUsername: 'barber_house',
       crmHasTemporaryPassword: false,
       brandColor: null,
+      brandTheme: null,
     },
     generatedAt: `${date}T08:00:00`,
     selectedDate: date,

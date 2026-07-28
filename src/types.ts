@@ -18,6 +18,18 @@ export interface BusinessProfile {
   crmHasTemporaryPassword: boolean;
   /** Chosen accent as `#rrggbb`, or null to use the easyQ default. */
   brandColor: string | null;
+  /**
+   * Chosen page theme, or null when the business has never picked one — in which case
+   * `brandColor` on the default page is still the answer. Resolved by resolveBrandTheme.
+   */
+  brandTheme: BrandThemeValue | null;
+}
+
+/** Mirror of `BrandTheme` in shared/brand.ts, kept here so types.ts imports nothing. */
+export interface BrandThemeValue {
+  bg: string;
+  ink: string;
+  accent: string;
 }
 
 /** Permission level. The owner is the business account; the rest are staff logins. */
@@ -226,6 +238,8 @@ export interface PublicBusinessPayload {
   hasPhoto: boolean;
   /** Resolved accent for this business; never null, falls back to the easyQ green. */
   brandColor: string;
+  /** Resolved page theme; never null, so the page never has to decide what "unset" means. */
+  brandTheme: BrandThemeValue;
   services: PublicService[];
   staff: PublicStaff[];
   /** IANA zone the business runs on, so the client page agrees about "today". */
@@ -360,6 +374,8 @@ export interface UpdateBusinessProfileInput {
   schedule?: string;
   description?: string | null;
   brandColor?: string | null;
+  /** Null clears the theme back to easyQ's. Omitted leaves it untouched. */
+  brandTheme?: BrandThemeValue | null;
 }
 
 export interface LoginInput {

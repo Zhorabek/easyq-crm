@@ -6,7 +6,7 @@ import type {
   PublicStaff,
 } from '../types';
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
-import { brandPalette } from '../shared/brand';
+import { brandTokens } from '../shared/brand';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -124,18 +124,43 @@ export default function BookingApp() {
     if (biz) document.title = `${t.book} · ${biz.name}`;
   }, [biz, t.book]);
 
-  // Repaint the accent tokens from the business's colour. Set on the root element rather
-  // than injected as a <style> block so it overrides crm.css by specificity without a
+  // Repaint every token from the business's theme. Set on the root element rather than
+  // injected as a <style> block so it overrides crm.css by specificity without a
   // stylesheet race, and so a business that has chosen nothing simply inherits the
   // defaults already in the file.
+  //
+  // This is the whole set, not just the accent, because a themed page is the point: an
+  // accent on an off-white page that the owner did not choose still looks like our
+  // product. booking.css is documented light-only — it never sets [data-theme] — and that
+  // stays true. A dark theme here is not the CRM's dark mode, it is eleven tokens whose
+  // values happen to be dark, all of them derived from the owner's background so the
+  // contrast holds without a second stylesheet.
   useEffect(() => {
     if (!biz) return;
-    const palette = brandPalette(biz.brandColor);
+    const tokens = brandTokens(biz.brandTheme);
     const root = document.documentElement;
-    root.style.setProperty('--accent', palette.accent);
-    root.style.setProperty('--accent-deep', palette.accentDeep);
-    root.style.setProperty('--accent-tint', palette.accentTint);
-    root.style.setProperty('--accent-ink', palette.accentInk);
+    root.style.setProperty('--bg', tokens.bg);
+    root.style.setProperty('--panel', tokens.panel);
+    root.style.setProperty('--panel-2', tokens.panel2);
+    root.style.setProperty('--ink', tokens.ink);
+    root.style.setProperty('--ink-2', tokens.ink2);
+    root.style.setProperty('--ink-3', tokens.ink3);
+    root.style.setProperty('--line', tokens.line);
+    root.style.setProperty('--line-2', tokens.line2);
+    root.style.setProperty('--accent', tokens.accent);
+    root.style.setProperty('--accent-deep', tokens.accentDeep);
+    root.style.setProperty('--accent-tint', tokens.accentTint);
+    root.style.setProperty('--accent-ink', tokens.accentInk);
+    // The light shadows are tuned for dark ink on a pale page and are invisible on a dark
+    // one, where depth has to come from a heavier drop instead.
+    if (tokens.isDark) {
+      root.style.setProperty('--shadow-sm', '0 1px 2px rgba(0, 0, 0, 0.4)');
+      root.style.setProperty('--shadow', '0 10px 26px -14px rgba(0, 0, 0, 0.6)');
+      root.style.setProperty('--shadow-lg', '0 24px 50px -22px rgba(0, 0, 0, 0.7)');
+    }
+    // Tells the phone to paint its own chrome — the URL bar and the overscroll gutter —
+    // to match. Without it a dark booking page sits in a white frame.
+    root.style.colorScheme = tokens.isDark ? 'dark' : 'light';
   }, [biz]);
 
   // Staff who can actually perform the chosen service. A service with no linked staff

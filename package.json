@@ -20,6 +20,8 @@
     "db:migrate:local:session-version": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-session-version.sql",
     "db:migrate:local:brand": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-brand-color.sql",
     "db:migrate:remote:brand": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-brand-color.sql",
+    "db:migrate:local:brand-theme": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-brand-theme.sql",
+    "db:migrate:remote:brand-theme": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-brand-theme.sql",
     "db:migrate:remote:session-version": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-session-version.sql",
     "build": "vite build",
     "typecheck": "tsc --noEmit && vite build",

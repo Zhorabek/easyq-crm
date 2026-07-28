@@ -1,0 +1,32 @@
+-- Full brand theme for the public booking page: page background and text, not just the
+-- accent.
+--
+-- `brand_color` themed the buttons and left the page itself on easyQ's grey-blue, so a
+-- shop whose brand is dark and warm still sent clients to something that looked like our
+-- product with their logo on it. The three things an owner can judge by eye — background,
+-- text, button — are now all theirs. The other nine tokens (panels, borders, muted text,
+-- the accent's deep and tint shades) stay derived in src/shared/brand.ts, and are derived
+-- background-aware so a dark page does not get the light theme's near-white chips.
+--
+-- Stored as one JSON object, `{"bg":"#rrggbb","ink":"#rrggbb","accent":"#rrggbb"}`, rather
+-- than three columns: the three are meaningless apart — a background without its text
+-- colour is not a half-configured theme, it is an unreadable one — and one column means
+-- one migration the next time the set grows.
+--
+-- `brand_color` is kept and still written on every save, holding whatever the theme's
+-- accent is. It is not dead: the two Telegram bots and any older deploy mid-rollout read
+-- that column, and a business that has never opened the new screen has no `brand_theme`
+-- at all. resolveBrandTheme() falls back through theme -> accent-on-default-page ->
+-- easyQ, so every business keeps exactly the look it had.
+--
+-- Written only after the text/background pair clears WCAG AA (4.5:1), enforced in the
+-- worker by the same shared function the settings screen disables its save button with.
+-- Unlike the accent's text colour this pair cannot be auto-corrected — quietly darkening
+-- text an owner deliberately chose is worse than refusing it.
+--
+-- Nullable and additive, so the two Telegram bots sharing this table are unaffected.
+--
+-- NOT idempotent: SQLite has no ADD COLUMN IF NOT EXISTS. A duplicate-column error means
+-- it is already applied and is safe to ignore.
+
+ALTER TABLE businesses ADD COLUMN brand_theme TEXT;

@@ -81,6 +81,15 @@ function darken(rgb: Rgb, amount: number): Rgb {
   return { r: rgb.r * (1 - amount), g: rgb.g * (1 - amount), b: rgb.b * (1 - amount) };
 }
 
+/** `a` moved `amount` (0–1) of the way toward `b`. */
+function mix(a: Rgb, b: Rgb, amount: number): Rgb {
+  return {
+    r: a.r + (b.r - a.r) * amount,
+    g: a.g + (b.g - a.g) * amount,
+    b: a.b + (b.b - a.b) * amount,
+  };
+}
+
 /** Toward white by `amount` (0–1). */
 function lighten(rgb: Rgb, amount: number): Rgb {
   return {
@@ -118,6 +127,228 @@ export function brandPalette(color: string | null | undefined): BrandPalette {
     accentInk: toHex(contrastRatio(rgb, NEAR_BLACK) >= contrastRatio(rgb, NEAR_WHITE) ? NEAR_BLACK : NEAR_WHITE),
   };
 }
+
+// ------------------------------------------------------------------ full theme
+//
+// The accent alone leaves the page itself off-white, so a business whose brand is a dark
+// room with warm light gets easyQ's grey-blue no matter what it picks. The theme adds two
+// more choices — page background and text — and derives the other nine tokens from them.
+//
+// Three fields, not twelve, and the same reasoning as accentInk: the ones an owner can
+// judge by eye are background, text and button. Panels, borders and muted text are
+// relationships between those, and a barber choosing them by hand will get them wrong.
+//
+// Everything derived here is background-aware, which is the part the accent-only palette
+// could not do. `accentTint` lightened unconditionally, so on a dark page it painted a
+// near-white slab; `accentDeep` darkened unconditionally, so on a dark page it walked the
+// accent toward the background until it vanished. Both now move in whichever direction
+// increases contrast with the page.
+
+/** What the owner actually picks. Everything else is computed from these three. */
+export type BrandTheme = {
+  /** Page background. */
+  bg: string;
+  /** Body text on that background. */
+  ink: string;
+  /** Buttons and highlights. */
+  accent: string;
+};
+
+/** easyQ's own look — the light tokens from crm.css, so "reset" lands exactly on stock. */
+export const DEFAULT_BRAND_THEME: BrandTheme = {
+  bg: "#f4f6fa",
+  ink: "#0f172a",
+  accent: DEFAULT_BRAND_COLOR,
+};
+
+/** The full token set applied to the booking page. Mirrors the names in crm.css. */
+export type BrandTokens = BrandPalette & {
+  bg: string;
+  panel: string;
+  panel2: string;
+  ink: string;
+  ink2: string;
+  ink3: string;
+  line: string;
+  line2: string;
+  /** True when the derived set is a dark theme. Callers use it to pick a shadow strength. */
+  isDark: boolean;
+};
+
+/**
+ * WCAG AA for body text. Enforced on ink-against-background, which is the pair an owner
+ * can actually make unreadable — every other pairing is derived and clamped below.
+ */
+export const MIN_TEXT_CONTRAST = 4.5;
+
+/**
+ * WCAG AA for large text and UI, applied to the muted labels — timestamps, field captions,
+ * the avatar initial. Holding those to 4.5 would flatten them into the body text and lose
+ * the hierarchy they exist to carry.
+ */
+export const MIN_MUTED_CONTRAST = 3;
+
+/**
+ * Nudge `color` toward black or white until it clears `target` against `against`.
+ *
+ * Used instead of a fixed lighten/darken step because the required move depends on both
+ * colours: a mid-grey accent on a mid-grey background needs a long walk, and the same
+ * accent on white needs none. Steps toward whichever pole is *away* from the background,
+ * so the result stays as close to the chosen colour as the contrast floor allows.
+ */
+function ensureContrast(color: Rgb, against: Rgb, target: number): Rgb {
+  if (contrastRatio(color, against) >= target) return color;
+  // Whichever pole actually contrasts better, measured — not inferred from a luminance
+  // threshold. A mid-grey page reads as "dark" by luminance (0.22) while black still
+  // contrasts with it nearly 35% better than white does, so a threshold sends the walk
+  // toward the pole that can never reach the target and it gives up at the ceiling.
+  const toward = contrastRatio(NEAR_BLACK, against) >= contrastRatio(NEAR_WHITE, against) ? NEAR_BLACK : NEAR_WHITE;
+  const STEPS = 24;
+  for (let step = 1; step <= STEPS; step++) {
+    const candidate = mix(color, toward, step / STEPS);
+    if (contrastRatio(candidate, against) >= target) return candidate;
+  }
+  // Unreachable in practice — NEAR_BLACK on NEAR_WHITE is 19:1 — but a saturated target
+  // against a mid-luminance background can fall short, and returning the pole is still
+  // the most readable answer available.
+  return toward;
+}
+
+/** A theme is dark when its background is dark, which flips every derivation below. */
+function isDarkBackground(bg: Rgb) {
+  return relativeLuminance(bg) < 0.22;
+}
+
+export function brandTokens(input: Partial<BrandTheme> | null | undefined): BrandTokens {
+  const bg = parseHexColor(input?.bg ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.bg)!;
+  const ink = parseHexColor(input?.ink ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.ink)!;
+  const accent = parseHexColor(input?.accent ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.accent)!;
+  const dark = isDarkBackground(bg);
+
+  // Cards lift off the page by getting lighter — on a dark theme too, where raising a
+  // surface reads as nearer and darkening it reads as a hole. The step is much smaller on
+  // a dark page because the same distance is far more visible against near-black.
+  //
+  // The exception is a page that is already white: there is no lighter left, so the
+  // surface separates by going very slightly toward the ink instead. Without this branch
+  // a #ffffff theme derives panel === bg and every card on the booking page dissolves
+  // into it, held together by the border alone.
+  const nearWhite = !dark && relativeLuminance(bg) > 0.82;
+  const panel = dark ? lighten(bg, 0.08) : nearWhite ? mix(bg, ink, 0.045) : lighten(bg, 0.7);
+  // Always the same direction as the panel, at roughly half the distance, so the three
+  // surfaces stay in a consistent order however the page was derived.
+  const panel2 = mix(bg, panel, 0.45);
+
+  // Borders and muted text are the ink bled into the background, so they stay in the
+  // owner's colour family instead of falling back to a grey that clashes with a warm or
+  // cool page.
+  const line = mix(bg, ink, 0.12);
+  const line2 = mix(bg, ink, 0.2);
+
+  // Both muted inks carry a floor, measured against the panel rather than the page: cards
+  // are the surface furthest from the ink in every theme this derives, so clearing it
+  // there clears it everywhere. A fixed fraction alone is not enough — a mid-tone ink like
+  // sand's brown is still readable at full strength but washes out past ~40% toward a pale
+  // page, and secondary text is where an owner would notice it last.
+  //
+  // Clamping these is not the auto-correction refused for `ink` itself: the owner chose
+  // that colour and it stands, whereas these two are ours and nobody picked them.
+  const ink2 = ensureContrast(mix(ink, bg, 0.3), panel, MIN_TEXT_CONTRAST);
+  const ink3 = ensureContrast(mix(ink, bg, 0.48), panel, MIN_MUTED_CONTRAST);
+
+  // 0.28 for a dark brand, up to ~0.55 for a very pale one — as before, but only on a
+  // light page. On a dark page the same intent means going lighter.
+  const deepBase = dark
+    ? lighten(accent, 0.22)
+    : darken(accent, 0.28 + Math.min(0.27, relativeLuminance(accent) * 0.4));
+
+  return {
+    bg: toHex(bg),
+    panel: toHex(panel),
+    panel2: toHex(panel2),
+    ink: toHex(ink),
+    ink2: toHex(ink2),
+    ink3: toHex(ink3),
+    line: toHex(line),
+    line2: toHex(line2),
+    accent: toHex(accent),
+    // accentDeep is used as text on the page, so it carries the same floor as body text.
+    accentDeep: toHex(ensureContrast(deepBase, bg, MIN_TEXT_CONTRAST)),
+    // Chips and section fills: a wash of the accent over the page, in whichever direction
+    // keeps it distinguishable from the panels sitting on top of it.
+    accentTint: toHex(dark ? mix(bg, accent, 0.16) : lighten(accent, 0.86)),
+    accentInk: toHex(contrastRatio(accent, NEAR_BLACK) >= contrastRatio(accent, NEAR_WHITE) ? NEAR_BLACK : NEAR_WHITE),
+    isDark: dark,
+  };
+}
+
+/** Contrast of body text against the page — the number the settings screen shows. */
+export function themeTextContrast(theme: Partial<BrandTheme> | null | undefined) {
+  const bg = parseHexColor(theme?.bg ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.bg)!;
+  const ink = parseHexColor(theme?.ink ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.ink)!;
+  return contrastRatio(ink, bg);
+}
+
+/**
+ * Every field a valid hex, and the text readable on the background.
+ *
+ * Shared by the settings screen and the worker so the button that is disabled in the UI
+ * is the same rule that returns 400 — a check that lives only in the client is not a
+ * check. Unlike the accent, this pair cannot be auto-corrected: silently darkening text
+ * the owner deliberately chose is worse than telling them it will not be readable.
+ */
+export function normalizeBrandTheme(input: unknown): BrandTheme | null {
+  if (!input || typeof input !== "object") return null;
+  const raw = input as Record<string, unknown>;
+  const bg = normalizeBrandColor(String(raw.bg ?? ""));
+  const ink = normalizeBrandColor(String(raw.ink ?? ""));
+  const accent = normalizeBrandColor(String(raw.accent ?? ""));
+  if (!bg || !ink || !accent) return null;
+  if (contrastRatio(parseHexColor(ink)!, parseHexColor(bg)!) < MIN_TEXT_CONTRAST) return null;
+  return { bg, ink, accent };
+}
+
+/** Stored as JSON in one column. Unparseable or stale JSON reads as "not chosen". */
+export function parseBrandTheme(raw: string | null | undefined): BrandTheme | null {
+  if (!raw) return null;
+  try {
+    return normalizeBrandTheme(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function serializeBrandTheme(theme: BrandTheme): string {
+  return JSON.stringify({ bg: theme.bg, ink: theme.ink, accent: theme.accent });
+}
+
+/**
+ * The theme to actually render.
+ *
+ * Falls back through: stored theme → stored accent on the default page → all defaults.
+ * The middle rung is what keeps every business that picked a colour before themes existed
+ * looking exactly as it did.
+ */
+export function resolveBrandTheme(storedTheme: string | null | undefined, storedAccent: string | null | undefined): BrandTheme {
+  const theme = parseBrandTheme(storedTheme);
+  if (theme) return theme;
+  return { ...DEFAULT_BRAND_THEME, accent: normalizeBrandColor(storedAccent ?? "") ?? DEFAULT_BRAND_COLOR };
+}
+
+/**
+ * Ready-made themes. Most owners should never touch a hex field — picking one of these
+ * and stopping is the expected path, and each is checked to clear MIN_TEXT_CONTRAST.
+ */
+export const BRAND_THEME_PRESETS: Array<{ id: string; theme: BrandTheme }> = [
+  { id: "easyq", theme: DEFAULT_BRAND_THEME },
+  { id: "paper", theme: { bg: "#ffffff", ink: "#111827", accent: "#1d4ed8" } },
+  { id: "sand", theme: { bg: "#fbf7f0", ink: "#3a2f22", accent: "#b45309" } },
+  { id: "mint", theme: { bg: "#f2faf5", ink: "#123122", accent: "#15803d" } },
+  { id: "rose", theme: { bg: "#fdf4f5", ink: "#3d1620", accent: "#be123c" } },
+  { id: "midnight", theme: { bg: "#0f172a", ink: "#e8edf4", accent: "#60a5fa" } },
+  { id: "noir", theme: { bg: "#131313", ink: "#f0ece6", accent: "#d4b483" } },
+  { id: "forest", theme: { bg: "#0e1b16", ink: "#e3f0e8", accent: "#5ec98a" } },
+];
 
 /** Ready-made options, so most owners never touch the hex field. */
 export const BRAND_PRESETS: string[] = [

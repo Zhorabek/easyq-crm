@@ -6,7 +6,10 @@ import { avatarColor, colorForId, dayPayments, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
-import { BRAND_PRESETS, DEFAULT_BRAND_COLOR, brandPalette, isValidBrandColor, normalizeBrandColor } from '../shared/brand';
+import {
+  BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
+  brandTokens, isValidBrandColor, normalizeBrandColor, normalizeBrandTheme, themeTextContrast,
+} from '../shared/brand';
 import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ServiceCatalogItem } from '../types';
 
 const PALETTE = ['#84A92E', '#3B82F6', '#8B5CF6', '#F59E0B', '#14B8A6', '#F43F5E'];
@@ -821,6 +824,109 @@ function QRBlock({ link }: { link: string }) {
   );
 }
 
+/**
+ * One colour of the theme: native picker, hex field, and optional quick swatches.
+ *
+ * Module scope, not nested in Settings — a component declared inside another is a new type
+ * on every render, so React unmounts and remounts it and the hex input loses focus after
+ * the first keystroke.
+ */
+function BrandField({ label, value, swatches, onChange }: {
+  label: string;
+  value: string;
+  swatches?: string[];
+  onChange: (value: string) => void;
+}) {
+  const valid = isValidBrandColor(value);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 168 }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* The native picker writes a valid hex by construction; the text field beside it
+            is for pasting a colour out of a style guide. */}
+        <input
+          type="color"
+          value={valid ? normalizeBrandColor(value)! : '#000000'}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ width: 44, height: 40, padding: 0, border: '1px solid var(--line-2)', borderRadius: 10, background: 'none', flex: 'none' }}
+        />
+        <input value={value} onChange={(e) => onChange(e.target.value)} className="mono" style={{ ...setInput, width: 112 }} />
+      </div>
+      {swatches && (
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          {swatches.map((swatch) => (
+            <button
+              key={swatch}
+              onClick={() => onChange(swatch)}
+              title={swatch}
+              style={{
+                width: 20, height: 20, borderRadius: 6, background: swatch, flex: 'none',
+                border: valid && normalizeBrandColor(value) === swatch ? '2px solid var(--ink)' : '1px solid var(--line-2)',
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A miniature of the public booking page in the chosen theme.
+ *
+ * Every colour is inline rather than a CSS variable: this is rendered inside the CRM,
+ * which has its own tokens and its own light/dark toggle, so reading `var(--panel)` here
+ * would show the owner's admin theme instead of the one they are editing.
+ */
+function BrandPreview({ tokens, name, schedule, serviceLabel, bookLabel }: {
+  tokens: ReturnType<typeof brandTokens>;
+  name: string;
+  schedule: string;
+  serviceLabel: string;
+  bookLabel: string;
+}) {
+  const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ background: tokens.bg, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', background: tokens.panel2, border: `1px solid ${tokens.line}`, display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: 800, color: tokens.ink3 }}>
+            {name.slice(0, 1).toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 800, color: tokens.ink, ...ellipsis }}>{name}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: tokens.ink3, ...ellipsis }}>{schedule}</div>
+          </div>
+        </div>
+
+        <div style={{ background: tokens.panel, border: `1px solid ${tokens.line}`, borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: tokens.ink2 }}>{serviceLabel}</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+            {['10:00', '11:30', '14:00'].map((time, i) => (
+              <span
+                key={time}
+                className="mono"
+                style={{
+                  fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 9,
+                  background: i === 0 ? tokens.accent : tokens.accentTint,
+                  color: i === 0 ? tokens.accentInk : tokens.accentDeep,
+                  border: `1px solid ${i === 0 ? tokens.accent : tokens.line}`,
+                }}
+              >
+                {time}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <button style={{ padding: '12px 18px', borderRadius: 12, fontSize: 14.5, fontWeight: 800, background: tokens.accent, color: tokens.accentInk, border: 0 }}>
+          {bookLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const { t, lang, setLang, theme, setTheme, role, notify, isTemporaryPassword } = useCRM();
   const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor, uploadBusinessPhoto, deleteBusinessPhoto, reload } = useData();
@@ -829,14 +935,38 @@ export function Settings() {
   // Credentials are returned by the API exactly once, so they live in component state
   // and are never refetched. A reload loses them, which is correct.
   const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
-  // Draft is a raw string, not a validated colour: the owner may be mid-way through
+  // Draft holds raw strings, not validated colours: the owner may be mid-way through
   // typing a hex, and snapping it to a valid value on every keystroke fights them.
-  const [brandDraft, setBrandDraft] = useState(payload?.business.brandColor ?? DEFAULT_BRAND_COLOR);
-  const brandPreview = brandPalette(isValidBrandColor(brandDraft) ? brandDraft : DEFAULT_BRAND_COLOR);
-  const onSaveBrand = async (value: string) => {
+  //
+  // A business that picked an accent before themes existed has no stored theme, so it
+  // opens on that accent over the default page — which is exactly what its booking page
+  // renders today, so the preview is not lying about the current state.
+  const [themeDraft, setThemeDraft] = useState(() => ({
+    ...DEFAULT_BRAND_THEME,
+    accent: payload?.business.brandColor ?? DEFAULT_BRAND_COLOR,
+    ...(payload?.business.brandTheme ?? {}),
+  }));
+  const setThemePart = (key: 'bg' | 'ink' | 'accent') => (value: string) =>
+    setThemeDraft((draft) => ({ ...draft, [key]: value }));
+  // Preview falls back per field, so one half-typed hex does not blank the whole preview.
+  const themeSafe = {
+    bg: isValidBrandColor(themeDraft.bg) ? themeDraft.bg : DEFAULT_BRAND_THEME.bg,
+    ink: isValidBrandColor(themeDraft.ink) ? themeDraft.ink : DEFAULT_BRAND_THEME.ink,
+    accent: isValidBrandColor(themeDraft.accent) ? themeDraft.accent : DEFAULT_BRAND_THEME.accent,
+  };
+  const brandPreview = brandTokens(themeSafe);
+  const brandHexInvalid = !isValidBrandColor(themeDraft.bg) || !isValidBrandColor(themeDraft.ink) || !isValidBrandColor(themeDraft.accent);
+  const brandContrast = themeTextContrast(themeSafe);
+  // The worker rejects with this same function, so a disabled button and a 400 can never
+  // disagree about what is saveable.
+  const canSaveBrand = normalizeBrandTheme(themeDraft) !== null;
+  const onSaveBrand = async () => {
+    const theme = normalizeBrandTheme(themeDraft);
+    if (!theme) return;
     try {
-      // Empty clears it back to the easyQ default, which is what the reset button sends.
-      await updateBusinessProfile({ brandColor: value.trim() ? value.trim() : null });
+      // Only the theme is sent: the worker writes brand_color from its accent, so the
+      // Telegram bots and any deploy still mid-rollout keep reading the right colour.
+      await updateBusinessProfile({ brandTheme: theme });
       notify();
       await reload();
     } catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
@@ -1067,81 +1197,99 @@ export function Settings() {
             <Panel>
               <SetHead title={s.brand} sub={s.brandSub} />
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 18 }}>
-                {BRAND_PRESETS.map((preset) => {
-                  const on = (brandDraft || DEFAULT_BRAND_COLOR).toLowerCase() === preset.toLowerCase();
+              {/* Picking one of these and stopping is the expected path. Each one is a
+                  coordinated background/text/button set that clears AA, so an owner who
+                  never opens the hex fields cannot produce an unreadable page. */}
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 18, marginBottom: 9 }}>{s.brandThemes}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(124px, 1fr))', gap: 9 }}>
+                {BRAND_THEME_PRESETS.map((preset) => {
+                  const on =
+                    normalizeBrandColor(themeDraft.bg) === preset.theme.bg &&
+                    normalizeBrandColor(themeDraft.ink) === preset.theme.ink &&
+                    normalizeBrandColor(themeDraft.accent) === preset.theme.accent;
+                  const tokens = brandTokens(preset.theme);
                   return (
                     <button
-                      key={preset}
-                      onClick={() => setBrandDraft(preset)}
-                      title={preset}
+                      key={preset.id}
+                      onClick={() => setThemeDraft({ ...preset.theme })}
                       style={{
-                        width: 40, height: 40, borderRadius: 11, background: preset, flex: 'none',
-                        border: on ? '3px solid var(--ink)' : '1px solid var(--line-2)',
-                        display: 'grid', placeItems: 'center',
+                        textAlign: 'left', padding: 11, borderRadius: 12, background: tokens.bg,
+                        border: on ? '2px solid var(--ink)' : `1px solid var(--line-2)`,
+                        display: 'flex', flexDirection: 'column', gap: 9,
                       }}
                     >
-                      {on && <Ic name="check" size={17} stroke={3} style={{ color: brandPalette(preset).accentInk }} />}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: tokens.ink }}>
+                          {s.brandThemeNames[preset.id] ?? preset.id}
+                        </span>
+                        {on && <Ic name="check" size={15} stroke={3} style={{ color: tokens.accentDeep }} />}
+                      </div>
+                      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                        <span style={{ flex: 1, height: 16, borderRadius: 5, background: tokens.panel, border: `1px solid ${tokens.line}` }} />
+                        <span style={{ width: 30, height: 16, borderRadius: 5, background: tokens.accent }} />
+                      </div>
                     </button>
                   );
                 })}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{s.brandCustom}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {/* The native picker writes a valid hex by construction; the text field
-                        beside it is for pasting a brand colour from a style guide. */}
-                    <input
-                      type="color"
-                      value={isValidBrandColor(brandDraft) ? normalizeBrandColor(brandDraft)! : DEFAULT_BRAND_COLOR}
-                      onChange={(e) => setBrandDraft(e.target.value)}
-                      style={{ width: 46, height: 42, padding: 0, border: '1px solid var(--line-2)', borderRadius: 10, background: 'none' }}
-                    />
-                    <input
-                      value={brandDraft}
-                      onChange={(e) => setBrandDraft(e.target.value)}
-                      placeholder={DEFAULT_BRAND_COLOR}
-                      className="mono"
-                      style={{ ...setInput, width: 132 }}
-                    />
-                  </div>
-                </label>
-                <button onClick={() => setBrandDraft(DEFAULT_BRAND_COLOR)} style={btnGhost}>{s.brandReset}</button>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 20, marginBottom: 10 }}>{s.brandCustom}</div>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                <BrandField label={s.brandBg} value={themeDraft.bg} onChange={setThemePart('bg')} />
+                <BrandField label={s.brandInk} value={themeDraft.ink} onChange={setThemePart('ink')} />
+                <BrandField label={s.brandAccent} value={themeDraft.accent} onChange={setThemePart('accent')} swatches={BRAND_PRESETS} />
               </div>
 
-              {brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) && (
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 10 }}>{s.brandInvalid}</div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                <button onClick={() => setThemeDraft({ ...DEFAULT_BRAND_THEME })} style={{ ...btnGhost, flex: 'none', padding: '9px 15px' }}>{s.brandReset}</button>
+              </div>
+
+              {brandHexInvalid && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 12 }}>{s.brandInvalid}</div>
               )}
 
-              {/* Live preview of the derived palette, so the owner sees the button text
-                  colour that gets picked for them rather than discovering it on the
-                  client-facing page. */}
+              {/* The contrast number is shown, not just a pass/fail, because an owner who
+                  is 0.2 short needs to know they are close rather than guessing which of
+                  the two colours to move. Below AA the save button is disabled — the
+                  worker refuses it anyway, and a button that submits and fails is worse
+                  than one that explains itself. */}
+              {!brandHexInvalid && (
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 11,
+                    background: canSaveBrand ? 'var(--panel-2)' : 'var(--rose-t)',
+                    border: `1px solid ${canSaveBrand ? 'var(--line)' : 'var(--rose)'}`,
+                  }}
+                >
+                  <Ic name={canSaveBrand ? 'check' : 'bell'} size={15} stroke={2.2} style={{ color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)', flex: 'none' }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)' }}>
+                    {s.brandContrast}: {brandContrast.toFixed(1)}:1 · {canSaveBrand ? s.brandContrastOk : s.brandContrastLow}
+                  </span>
+                </div>
+              )}
+
+              {/* Live preview of the derived tokens, so the owner sees the panel, border
+                  and button-text colours that get picked for them rather than discovering
+                  them on the client-facing page. */}
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
-                <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 18, background: brandPreview.accentTint }}>
-                  <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--ink)' }}>{b.name}</div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: brandPreview.accentDeep, marginTop: 3 }}>{b.schedule}</div>
-                  <button
-                    style={{
-                      marginTop: 14, padding: '12px 18px', borderRadius: 12, fontSize: 14.5, fontWeight: 800,
-                      background: brandPreview.accent, color: brandPreview.accentInk, border: 0,
-                    }}
-                  >
-                    {s.brandBook}
-                  </button>
-                </div>
+                <BrandPreview
+                  tokens={brandPreview}
+                  name={b.name}
+                  schedule={b.schedule}
+                  serviceLabel={payload.services.find((sv) => sv.isActive)?.name ?? t.nav.services}
+                  bookLabel={s.brandBook}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
                 <button
-                  onClick={() => void onSaveBrand(brandDraft)}
-                  disabled={brandDraft.trim() !== '' && !isValidBrandColor(brandDraft)}
+                  onClick={() => void onSaveBrand()}
+                  disabled={!canSaveBrand}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
                     color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
-                    opacity: brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) ? 0.5 : 1,
+                    opacity: canSaveBrand ? 1 : 0.5,
                   }}
                 >
                   <Ic name="check" size={16} stroke={2.4} />{s.save}

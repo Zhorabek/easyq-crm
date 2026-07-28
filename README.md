@@ -12,6 +12,8 @@ React + TypeScript CRM dashboard for EasyQueue businesses, backed by the shared 
 - Client list with visit history and spend totals
 - Revenue leaderboard and basic analytics
 - Online booking links to the current Telegram bots
+- Per-business branding for the public booking page — background, text and button colours,
+  with panels, borders and muted text derived from those three
 
 ## Install
 
@@ -122,6 +124,18 @@ subdomains, because the migrations that created them live in the bot repo:
 npm run db:migrate:local:crm
 ```
 
+Booking-page branding stores its colours on `businesses`, in two additive columns added at
+different times. Both are nullable, so skipping them only means every booking page renders
+in the stock easyQ palette:
+
+```bash
+npm run db:migrate:local:brand
+```
+
+```bash
+npm run db:migrate:local:brand-theme
+```
+
 Deploy:
 
 ```bash
@@ -136,4 +150,8 @@ npm run deploy
 - Earnings and finance analytics now come from the shared `payments` ledger, not only from booking status.
 - `wrangler dev` uses a local D1 by default, so it will be empty until you initialize it.
 - It does not store Telegram bot tokens in the source tree.
+- Booking-page branding derives eleven CSS tokens from three stored colours. The text and
+  background pair must clear WCAG AA (4.5:1) or the save is refused — `src/shared/brand.ts`
+  holds that rule, and both the settings screen and the Worker call the same function, so
+  the disabled button and the 400 cannot disagree.
 - Client phone/WhatsApp data is not available from the current bot schema, so the CRM currently focuses on booking history and spend analytics.

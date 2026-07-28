@@ -2316,6 +2316,16 @@ export default {
       }
       console.error("CRM worker error", error);
       const message = error instanceof Error ? error.message : "Unknown CRM error";
+
+      // Public endpoints get a generic message. Echoing the raw error there hands a
+      // stranger our schema — an un-run migration was answering booking requests with
+      // "no such column: client_phone". The detail is in the log above, where it belongs.
+      // CRM routes still return it: those callers are the authenticated owner or a
+      // developer running locally, and the text is what makes the hint below useful.
+      if (url.pathname.startsWith("/api/public/")) {
+        return json({ error: "Something went wrong. Please try again.", code: "server_error" }, { status: 500 });
+      }
+
       const hint = message.includes("no such table: businesses")
         ? "Your local D1 database is empty. Run `npm run db:init:local` for a local schema or start the CRM with `npm run dev:worker:remote` to use your shared remote D1."
         : undefined;

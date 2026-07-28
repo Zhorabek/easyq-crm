@@ -9,6 +9,7 @@ import type {
   ClientRow,
   CreatePaymentInput,
   ChangeOwnPasswordInput,
+  CreateCrmBookingInput,
   CreatePublicBookingInput,
   CrmPayload,
   EmployeeRevenueItem,
@@ -152,6 +153,7 @@ type BookingRow = {
   price_snapshot: number;
   duration_snapshot: number | null;
   notes: string | null;
+  client_phone: string | null;
 };
 
 type PaymentRow = {
@@ -1699,7 +1701,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       .all<StaffUnavailabilityRow>(),
     env.DB
       .prepare(
-        `SELECT id, business_id, user_id, service_id, staff_id, client_name, service_name, staff_name, datetime, status, price_snapshot, duration_snapshot, notes
+        `SELECT id, business_id, user_id, service_id, staff_id, client_name, client_phone, service_name, staff_name, datetime, status, price_snapshot, duration_snapshot, notes
          FROM bookings
          WHERE business_id = ?
          ORDER BY datetime DESC`
@@ -1981,11 +1983,24 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
 
   const clientsMap = new Map<string, ClientRow>();
   for (const booking of bookings) {
-    const key = booking.user_id ? `user:${booking.user_id}` : `name:${booking.client_name}`;
+    // Identity is the PHONE where there is one. Keying on user_id or name split the same
+    // person into several clients the moment they booked once on the web and once by
+    // phone — different user_id, or a name typed slightly differently. The number is the
+    // one thing that stays the same, and it is stored canonically so it compares cleanly.
+    //
+    // Telegram bookings carry no phone (the bots do not populate the column), so they
+    // still key on user_id and will not merge with a web booking by the same person.
+    // Closing that needs the bots to record a phone.
+    const key = booking.client_phone
+      ? `phone:${booking.client_phone}`
+      : booking.user_id
+        ? `user:${booking.user_id}`
+        : `name:${booking.client_name}`;
     const existing = clientsMap.get(key) ?? {
       key,
       name: booking.client_name,
       userId: booking.user_id,
+      phone: booking.client_phone,
       totalVisits: 0,
       completedVisits: 0,
       upcomingVisits: 0,
@@ -1995,6 +2010,10 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       favoriteStaff: "—",
       history: [],
     };
+
+    // Bookings arrive newest-first, so an existing entry already holds the most recent
+    // spelling of the name; only fill a blank phone from an older row.
+    if (!existing.phone && booking.client_phone) existing.phone = booking.client_phone;
 
     existing.totalVisits += 1;
     if (booking.status === "done") {
@@ -2260,6 +2279,89 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
   }
 
   return visible;
+}
+
+/**
+ * Take a booking by hand — someone phones up, or a walk-in needs recording.
+ *
+ * Deliberately more permissive than the public endpoint, because the person entering it
+ * works there and can see the room:
+ *  - PAST dates are allowed. Half of what gets typed here is "she came in this morning",
+ *    and refusing it would push that history out of the CRM entirely.
+ *  - Availability is NOT enforced. Squeezing a regular into a full slot is a normal thing
+ *    for an owner to do; the modal shows which slots are free as guidance, not as a gate.
+ *  - No per-phone rate limit. That exists to stop strangers flooding a public form.
+ *
+ * What it keeps: everything is scoped to the actor's own business, and the service and
+ * staff must belong to it — the same rule that stops one shop writing into another's book.
+ */
+async function createCrmBooking(env: Env, actor: Actor, input: CreateCrmBookingInput) {
+  const business = actor.business;
+  const clientName = String(input.clientName ?? "").trim().slice(0, 80);
+  if (clientName.length < 2) {
+    return json({ error: "Client name is required", code: "invalid_name" }, { status: 400 });
+  }
+
+  const date = String(input.date ?? "");
+  if (!isIsoDate(date)) {
+    return json({ error: "A valid date is required", code: "invalid_date" }, { status: 400 });
+  }
+
+  const time = normalizeTime(String(input.time ?? ""));
+  if (!time) {
+    return json({ error: "A valid time is required", code: "invalid_time" }, { status: 400 });
+  }
+
+  // Optional here, unlike the public form — a walk-in may not leave a number. But a
+  // half-typed one is rejected rather than stored, or it would never match a client again.
+  const rawPhone = String(input.clientPhone ?? "").trim();
+  let clientPhone: string | null = null;
+  if (rawPhone) {
+    clientPhone = toStoragePhone(rawPhone);
+    if (!clientPhone) {
+      return json({ error: "Client phone number is not valid", code: "invalid_phone" }, { status: 400 });
+    }
+  }
+
+  const [service, staff] = await Promise.all([
+    env.DB
+      .prepare("SELECT id, name, price, duration FROM services WHERE id = ? AND business_id = ? LIMIT 1")
+      .bind(Number(input.serviceId), business.id)
+      .first<{ id: number; name: string; price: number; duration: number }>(),
+    env.DB
+      .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+      .bind(Number(input.staffId), business.id)
+      .first<{ id: number; name: string }>(),
+  ]);
+
+  if (!service) return json({ error: "Service not found", code: "invalid_service" }, { status: 400 });
+  if (!staff) return json({ error: "Employee not found", code: "invalid_staff" }, { status: 400 });
+
+  // 'confirmed', not 'pending': somebody at the shop just took this booking, so there is
+  // nobody left to confirm it.
+  const insert = await env.DB
+    .prepare(
+      `INSERT INTO bookings
+         (business_id, user_id, service_id, staff_id, client_name, client_phone, service_name, staff_name,
+          datetime, status, price_snapshot, duration_snapshot, notes)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)`
+    )
+    .bind(
+      business.id,
+      service.id,
+      staff.id,
+      clientName,
+      clientPhone,
+      service.name,
+      staff.name,
+      `${date} ${time}:00`,
+      Number(service.price || 0),
+      Number(service.duration || 0) || null,
+      String(input.notes ?? "").trim().slice(0, 500) || null
+    )
+    .run();
+
+  return json({ ok: true, bookingId: Number(insert.meta.last_row_id ?? 0) }, { status: 201 });
 }
 
 async function updateBookingStatus(env: Env, actor: Actor, bookingId: number, input: UpdateBookingStatusInput) {
@@ -2831,6 +2933,12 @@ export default {
         requireCapability(actor, "crm:read");
         const payload = await getCrmPayload(env, actor.business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
         return json(redactPayloadFor(actor, payload));
+      }
+
+      if (url.pathname === "/api/bookings" && request.method === "POST") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "booking:create");
+        return await createCrmBooking(env, actor, await readJson<CreateCrmBookingInput>(request));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && request.method === "PATCH") {

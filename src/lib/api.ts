@@ -2,6 +2,7 @@ import type {
   AddEmployeeInput,
   AuthSession,
   ChangeOwnPasswordInput,
+  CreateCrmBookingInput,
   BookingStatus,
   CreatePaymentInput,
   CrmPayload,
@@ -62,6 +63,14 @@ export function logout() {
 
 export function getCrmPayload(date: string) {
   return request<CrmPayload>(`/api/crm?date=${encodeURIComponent(date)}`);
+}
+
+/** Take a booking by hand. Allows past dates and ignores availability — see the worker. */
+export function createCrmBooking(input: CreateCrmBookingInput) {
+  return request<{ ok: true; bookingId: number }>("/api/bookings", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function patchBookingStatus(bookingId: number, status: BookingStatus) {

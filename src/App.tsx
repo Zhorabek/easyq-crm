@@ -2,6 +2,7 @@ import { type FC, type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   ApiError,
   changeOwnPassword,
+  createCrmBooking,
   createBookingPayment,
   createEmployee,
   createService,
@@ -45,6 +46,7 @@ import {
   BusinessModal,
   ClientHistoryModal,
   CredentialsModal,
+  CrmBookingModal,
   PasswordModal,
   ModalLayer,
   ServiceEditModal,
@@ -124,6 +126,11 @@ export default function App() {
   const [businessEditor, setBusinessEditor] = useState(false);
   const [credentialsEditor, setCredentialsEditor] = useState(false);
   const [passwordEditor, setPasswordEditor] = useState(false);
+  const [bookingCreator, setBookingCreator] = useState(false);
+  // Times already taken for the staff and day chosen inside the modal, so it can warn
+  // about a clash. Fetched per selection rather than read off `payload`, which only
+  // holds the currently selected date.
+  const [takenTimes, setTakenTimes] = useState<string[]>([]);
   const [tourOpen, setTourOpen] = useState(false);
   const tourAutoShown = useRef(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -333,6 +340,32 @@ export default function App() {
       notify(err instanceof Error ? err.message : 'Error');
     }
   }
+  async function loadTakenTimes(date: string, staffId: number) {
+    try {
+      const day = date === selectedDate ? payload : dayCache[date] ?? (await getCrmPayload(date));
+      setTakenTimes(
+        (day?.calendar.bookings ?? [])
+          .filter((b) => b.staffId === staffId && b.status !== 'cancelled')
+          .map((b) => b.time)
+          .sort(),
+      );
+    } catch {
+      // A failed lookup only costs the clash warning; the booking itself still works.
+      setTakenTimes([]);
+    }
+  }
+
+  async function doCreateBooking(v: Parameters<typeof createCrmBooking>[0]) {
+    try {
+      await createCrmBooking(v);
+      setBookingCreator(false);
+      notify();
+      await reload();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
   async function doChangePassword(v: { currentPassword: string; newPassword: string }) {
     try {
       const res = await changeOwnPassword(v);
@@ -401,10 +434,17 @@ export default function App() {
   const bizName = payload?.business.name || t.biz;
   const bizType = payload?.business.type || t.bizType;
 
+  const canBook = role === 'owner' || role === 'manager';
+  const newBooking = canBook ? { label: t.newBooking, run: () => setBookingCreator(true) } : null;
+
   const titles: Record<string, { title: string; sub?: string | null; action?: { label: string; run: () => void } | null }> = {
-    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: null },
-    calendar: { title: t.nav.calendar, sub: null, action: null },
-    customers: { title: t.cust.title, sub: `${payload?.clients.length ?? 0} ${t.cust.count}`, action: null },
+    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: newBooking },
+    calendar: { title: t.nav.calendar, sub: null, action: newBooking },
+    customers: {
+      title: t.cust.title,
+      sub: `${payload?.clients.length ?? 0} ${t.cust.count}`,
+      action: canBook ? { label: t.cust.add, run: () => setBookingCreator(true) } : null,
+    },
     staff: { title: t.staff.title, sub: null, action: { label: t.staff.add, run: () => setStaffCreateOpen(true) } },
     services: { title: t.serv.title, sub: null, action: { label: t.serv.add, run: () => setServiceEditor({ initial: null }) } },
     inventory: { title: t.nav.inventory, sub: t.inv.sub, action: { label: t.inv.add, run: () => setModal({ type: 'product' }) } },
@@ -487,6 +527,15 @@ export default function App() {
         {serviceEditor && <ServiceEditModal initial={serviceEditor.initial} staffOptions={payload?.employees ?? []} onClose={() => setServiceEditor(null)} onSave={(v) => void doSaveService(v)} />}
         {slotEditor && <SlotEditorModal employee={slotEditor} schedule={payload?.business.schedule ?? ''} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
         {businessEditor && payload && <BusinessModal initial={{ name: payload.business.name, type: payload.business.type, address: payload.business.address, phone: payload.business.phone, schedule: payload.business.schedule, description: payload.business.description ?? '' }} onClose={() => setBusinessEditor(false)} onSave={(v) => void doSaveBusiness(v)} />}
+        {bookingCreator && payload && (
+          <CrmBookingModal
+            payload={payload}
+            takenTimes={takenTimes}
+            onDateChange={(d, sid) => void loadTakenTimes(d, sid)}
+            onClose={() => { setBookingCreator(false); setTakenTimes([]); }}
+            onSave={(v) => void doCreateBooking(v)}
+          />
+        )}
         {passwordEditor && <PasswordModal onClose={() => setPasswordEditor(false)} onSave={(v) => void doChangePassword(v)} />}
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 

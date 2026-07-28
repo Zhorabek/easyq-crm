@@ -169,6 +169,8 @@ export interface ClientRow {
   key: string;
   name: string;
   userId: number | null;
+  /** Canonical +998XXXXXXXXX, or null for bot bookings which carry no phone. */
+  phone: string | null;
   totalVisits: number;
   completedVisits: number;
   upcomingVisits: number;
@@ -232,6 +234,17 @@ export interface PublicSlotsPayload {
   staffId: number;
   /** Free `HH:MM` values, already excluding breaks, days off and taken slots. */
   slots: string[];
+}
+
+/** Manual booking taken by staff — over the phone, or a walk-in being recorded. */
+export interface CreateCrmBookingInput {
+  serviceId: number;
+  staffId: number;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone?: string;
+  notes?: string;
 }
 
 export interface CreatePublicBookingInput {

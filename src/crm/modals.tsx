@@ -1,65 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
 import { fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { isValidPhone, toStoragePhone } from '../shared/phone';
-import { generateDayIntervals, parseBusinessHours, timeToMinutes } from '../lib/date';
-import type { BookingStatus, CalendarBookingCard, ClientRow, EmployeeRow, PaymentMethod, ServiceCatalogItem, StaffAccessRow } from '../types';
+import { generateDayIntervals, normalizeTime, parseBusinessHours, timeToMinutes } from '../lib/date';
+import type { BookingStatus, CalendarBookingCard, ClientRow, CreateCrmBookingInput, CrmPayload, EmployeeRow, PaymentMethod, ServiceCatalogItem, StaffAccessRow } from '../types';
 
 /* ===================== cosmetic "+ Add" modals (no backend) ===================== */
-function BookingModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { lang, m } = useCRM();
-  const mb = m.booking;
-  const [cust, setCust] = useState(String(CUSTOMERS[0].id));
-  const [serv, setServ] = useState(String(SERVICES[0].id));
-  const [staff, setStaff] = useState(String(STAFF[0].id));
-  const [time, setTime] = useState('15:00');
-  return (
-    <Modal title={mb.title} sub={mb.sub} icon="calendar" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={mb.submit} onSubmit={onSaved} />}>
-      <Field label={mb.customer}>
-        <SelectInput value={cust} onChange={(e) => setCust(e.target.value)}>
-          {CUSTOMERS.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
-        </SelectInput>
-      </Field>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <Field label={mb.service} half>
-          <SelectInput value={serv} onChange={(e) => setServ(e.target.value)}>
-            {SERVICES.map((s) => <option key={s.id} value={s.id}>{SERV_NAME[lang][s.key]} · {s.price} UZS</option>)}
-          </SelectInput>
-        </Field>
-        <Field label={mb.staff} half>
-          <SelectInput value={staff} onChange={(e) => setStaff(e.target.value)}>
-            {STAFF.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </SelectInput>
-        </Field>
-      </div>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <Field label={mb.date} half><TextInput type="date" /></Field>
-        <Field label={mb.time} half><TextInput type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
-      </div>
-      <Field label={mb.note}><TextInput placeholder={mb.notePh} /></Field>
-    </Modal>
-  );
-}
-
-function CustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { m } = useCRM();
-  const c = m.customer;
-  const [tier, setTier] = useState('new');
-  const [via, setVia] = useState('telegram');
-  const [phone, setPhone] = useState('');
-  return (
-    <Modal title={c.title} sub={c.sub} icon="customers" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={c.submit} onSubmit={onSaved} />}>
-      <Field label={c.name}><TextInput placeholder={c.namePh} autoFocus /></Field>
-      <Field label={c.phone}><PhoneInput value={phone} onChange={setPhone} /></Field>
-      <Field label={c.tier}><Segmented value={tier} onChange={setTier} options={[{ v: 'new', l: m.tiers.new }, { v: 'reg', l: m.tiers.reg }, { v: 'vip', l: m.tiers.vip }]} /></Field>
-      <Field label={c.source}><Segmented value={via} onChange={setVia} options={[{ v: 'telegram', l: m.via.telegram }, { v: 'web', l: m.via.web }, { v: 'walkin', l: m.via.walkin }, { v: 'phone', l: m.via.phone }]} /></Field>
-    </Modal>
-  );
-}
-
 function ProductModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { m } = useCRM();
   const p = m.product;
@@ -99,8 +48,6 @@ function RuleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
 export function ModalLayer({ modal, onClose, onSaved }: { modal: { type: string } | null; onClose: () => void; onSaved: () => void }) {
   if (!modal) return null;
   const props = { onClose, onSaved };
-  if (modal.type === 'booking') return <BookingModal {...props} />;
-  if (modal.type === 'customer') return <CustomerModal {...props} />;
   if (modal.type === 'product') return <ProductModal {...props} />;
   if (modal.type === 'rule') return <RuleModal {...props} />;
   return null;
@@ -468,6 +415,137 @@ export function PasswordModal({ onClose, onSave }: { onClose: () => void; onSave
           {tooShort ? s.passwordShort : s.passwordMismatch}
         </div>
       )}
+    </Modal>
+  );
+}
+
+/**
+ * Take a booking by hand — the phone rings, or a walk-in needs recording.
+ *
+ * Replaces a cosmetic modal that read from mock.ts and wrote nothing: it listed fake
+ * customers and services, and its submit button only showed a toast. This one uses the
+ * real catalogue and writes a real row.
+ *
+ * The time is a free field rather than a picker of free slots, deliberately. An owner
+ * squeezing a regular into a busy afternoon is normal, and the server does not enforce
+ * availability for staff-made bookings. Slots already taken are shown as a warning so the
+ * choice is informed, not blocked.
+ */
+export function CrmBookingModal({
+  payload,
+  takenTimes,
+  onDateChange,
+  onClose,
+  onSave,
+}: {
+  payload: CrmPayload;
+  /** Times already booked on the chosen day for the chosen person, for the clash warning. */
+  takenTimes: string[];
+  onDateChange: (date: string, staffId: number) => void;
+  onClose: () => void;
+  onSave: (v: CreateCrmBookingInput) => void;
+}) {
+  const { t, m } = useCRM();
+  const mb = m.booking;
+  const active = payload.services.filter((s) => s.isActive);
+
+  const [serviceId, setServiceId] = useState(active[0]?.id ?? 0);
+  const [staffId, setStaffId] = useState(payload.employees[0]?.id ?? 0);
+  const [date, setDate] = useState(payload.selectedDate);
+  const [time, setTime] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const service = active.find((s) => s.id === serviceId) ?? null;
+  // Only staff who actually perform this service, unless nobody is linked — in which case
+  // the whole team is offered rather than dead-ending the booking.
+  const eligible = service && service.linkedStaffIds.length > 0
+    ? payload.employees.filter((e) => service.linkedStaffIds.includes(e.id))
+    : payload.employees;
+
+  useEffect(() => {
+    if (eligible.length > 0 && !eligible.some((e) => e.id === staffId)) setStaffId(eligible[0].id);
+  }, [eligible, staffId]);
+
+  useEffect(() => {
+    if (date && staffId) onDateChange(date, staffId);
+  }, [date, staffId, onDateChange]);
+
+  const normalized = normalizeTime(time);
+  const clash = Boolean(normalized && takenTimes.includes(normalized));
+  const valid = Boolean(serviceId && staffId && date && normalized && clientName.trim().length >= 2 && (!phone.trim() || isValidPhone(phone)));
+
+  return (
+    <Modal
+      title={mb.title}
+      sub={mb.sub}
+      icon="calendar"
+      onClose={onClose}
+      footer={
+        <FooterBtns
+          onClose={onClose}
+          submitLabel={mb.submit}
+          disabled={!valid}
+          onSubmit={() =>
+            onSave({
+              serviceId,
+              staffId,
+              date,
+              time: normalized!,
+              clientName: clientName.trim(),
+              clientPhone: toStoragePhone(phone) ?? undefined,
+              notes: notes.trim() || undefined,
+            })
+          }
+        />
+      }
+    >
+      <Field label={mb.customer}>
+        <TextInput value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder={m.customer.namePh} autoFocus />
+      </Field>
+      <Field label={m.customer.phone}>
+        <PhoneInput value={phone} onChange={setPhone} />
+      </Field>
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <Field label={mb.service} half>
+          <SelectInput value={String(serviceId)} onChange={(e) => setServiceId(Number(e.target.value))}>
+            {active.map((s) => <option key={s.id} value={s.id}>{s.name} · {fmtSom(s.price)}</option>)}
+          </SelectInput>
+        </Field>
+        <Field label={mb.staff} half>
+          <SelectInput value={String(staffId)} onChange={(e) => setStaffId(Number(e.target.value))}>
+            {eligible.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </SelectInput>
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <Field label={mb.date} half>
+          <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
+        <Field label={mb.time} half>
+          <TextInput type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+        </Field>
+      </div>
+
+      {/* Free times for the chosen person and day. Tapping one fills the field; they are a
+          shortcut, not a constraint. */}
+      {takenTimes.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
+          {t.cal.booked}: <span className="tnum">{takenTimes.join(', ')}</span>
+        </div>
+      )}
+      {clash && (
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Ic name="bell" size={13} stroke={2} />{mb.clash}
+        </div>
+      )}
+
+      <Field label={mb.note}>
+        <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={mb.notePh} />
+      </Field>
     </Modal>
   );
 }

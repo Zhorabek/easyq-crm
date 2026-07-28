@@ -335,7 +335,7 @@ export const CRM_T: Record<Lang, any> = {
 export const CRM_M: Record<Lang, any> = {
   uz: {
     cancel: 'Bekor qilish',
-    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang' },
+    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang', clash: 'Bu vaqt allaqachon band — baribir qo‘shish mumkin.' },
     customer: { title: 'Mijoz qo‘shish', sub: 'Yangi mijoz ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Jasur Aliyev', phone: 'Telefon', tier: 'Toifa', source: 'Manba', note: 'Izoh', notePh: 'Eslatma…', submit: 'Mijozni qo‘shish' },
     service: { title: 'Xizmat qo‘shish', sub: 'Yangi xizmat ma’lumotlari', name: 'Xizmat nomi', namePh: 'Masalan, Soch olish', cat: 'Turkum', dur: 'Davomiyligi', price: 'Narx', min: 'daqiqa', submit: 'Xizmatni qo‘shish', staff: 'Ustalar' },
     staff: { title: 'Xodim qo‘shish', sub: 'Yangi xodim ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Sardor Karimov', role: 'Lavozim', rolePh: 'Masalan, Usta', phone: 'Telefon', access: 'CRM kirish', accessNone: 'Kirish yo‘q', accessHint: 'Bu odam CRM’da nima qila oladi', services: 'Ko‘rsatadigan xizmatlar', servicesHint: 'Bu usta bajaradigan xizmatlarni belgilang', selected: 'ta tanlandi', submit: 'Xodimni qo‘shish' },
@@ -349,7 +349,7 @@ export const CRM_M: Record<Lang, any> = {
   },
   ru: {
     cancel: 'Отмена',
-    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите' },
+    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите', clash: 'Это время уже занято — запись всё равно можно создать.' },
     customer: { title: 'Добавить клиента', sub: 'Данные нового клиента', name: 'Имя и фамилия', namePh: 'Например, Жасур Алиев', phone: 'Телефон', tier: 'Категория', source: 'Источник', note: 'Заметка', notePh: 'Заметка…', submit: 'Добавить клиента' },
     service: { title: 'Добавить услугу', sub: 'Данные новой услуги', name: 'Название услуги', namePh: 'Например, Стрижка', cat: 'Категория', dur: 'Длительность', price: 'Цена', min: 'минут', submit: 'Добавить услугу', staff: 'Мастера' },
     staff: { title: 'Добавить сотрудника', sub: 'Данные нового сотрудника', name: 'Имя и фамилия', namePh: 'Например, Сардор Каримов', role: 'Должность', rolePh: 'Например, Мастер', phone: 'Телефон', access: 'Доступ в CRM', accessNone: 'Нет доступа', accessHint: 'Что этот человек может делать в CRM', services: 'Оказываемые услуги', servicesHint: 'Отметьте услуги, которые выполняет этот мастер', selected: 'выбрано', submit: 'Добавить сотрудника' },
@@ -363,7 +363,7 @@ export const CRM_M: Record<Lang, any> = {
   },
   en: {
     cancel: 'Cancel',
-    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select' },
+    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select', clash: 'That time is already booked — you can still add it.' },
     customer: { title: 'Add customer', sub: 'New customer details', name: 'Full name', namePh: 'e.g. Jasur Aliyev', phone: 'Phone', tier: 'Tier', source: 'Source', note: 'Note', notePh: 'Note…', submit: 'Add customer' },
     service: { title: 'Add service', sub: 'New service details', name: 'Service name', namePh: 'e.g. Haircut', cat: 'Category', dur: 'Duration', price: 'Price', min: 'minutes', submit: 'Add service', staff: 'Specialists' },
     staff: { title: 'Add staff', sub: 'New staff member details', name: 'Full name', namePh: 'e.g. Sardor Karimov', role: 'Position', rolePh: 'e.g. Barber', phone: 'Phone', access: 'CRM access', accessNone: 'No access', accessHint: 'What this person can do in the CRM', services: 'Services performed', servicesHint: 'Select the services this specialist provides', selected: 'selected', submit: 'Add staff member' },

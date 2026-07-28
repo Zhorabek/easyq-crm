@@ -18,6 +18,8 @@ export type Capability =
   | "crm:read"
   /** Move a booking through pending/confirmed/done/cancelled. */
   | "booking:status"
+  /** Take a booking by hand — a phone call, or recording a walk-in. */
+  | "booking:create"
   /** Record money in or out against a booking. */
   | "payment:write"
   /** Create, rename and delete staff rows. */
@@ -37,6 +39,7 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
   owner: {
     "crm:read": true,
     "booking:status": true,
+    "booking:create": true,
     "payment:write": true,
     "staff:write": true,
     "schedule:write": true,
@@ -51,6 +54,7 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
   manager: {
     "crm:read": true,
     "booking:status": true,
+    "booking:create": true,
     "payment:write": true,
     "staff:write": false,
     "schedule:write": true,
@@ -65,6 +69,9 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
   specialist: {
     "crm:read": true,
     "booking:status": true,
+    // Taking a booking means choosing who it lands on. A specialist working their own
+    // day should not be assigning work to colleagues, so this stays with the desk.
+    "booking:create": false,
     "payment:write": false,
     "staff:write": false,
     "schedule:write": false,

@@ -1,5 +1,6 @@
 import { CRM_T, type Lang } from './i18n';
 import { addDays } from '../lib/date';
+import { toStoragePhone } from '../shared/phone';
 import type {
   BookingStatus,
   CalendarBookingCard,
@@ -209,6 +210,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
 
   const clients: ClientRow[] = CUSTOMERS.map((c) => {
     const fav = STAFF[(c.staff - 1 + STAFF.length) % STAFF.length] || STAFF[0];
+    const clientPhone = toStoragePhone(c.phone);
     const history: ClientHistoryItem[] = [0, 2, 1].map((si, k) => {
       const sv = SERVICES[si];
       const price = money(sv.price);
@@ -229,9 +231,10 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       };
     });
     return {
-      key: String(c.id),
+      key: clientPhone ? `phone:${clientPhone}` : String(c.id),
       name: c.name,
       userId: null,
+      phone: clientPhone,
       totalVisits: c.visits,
       completedVisits: c.visits,
       upcomingVisits: 0,

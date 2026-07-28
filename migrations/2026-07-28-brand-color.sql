@@ -1,0 +1,22 @@
+-- Per-business brand colour for the public booking page.
+--
+-- Every business's booking page rendered in easyQ's green, so a black-and-gold barbershop
+-- sending clients to <slug>.easyq.uz/booking looked like it was sending them to somebody
+-- else's product. The page already carries the shop's photo, name, address and hours; the
+-- colour was the last thing making it generic.
+--
+-- ONE colour is stored. The darker shade, the light tint and the text colour that sits on
+-- top of the accent are all derived in src/shared/brand.ts — asking an owner to pick four
+-- coordinated shades is a design task, and the text colour in particular must not be
+-- guessed or the confirm button becomes unreadable.
+--
+-- Stored as normalized lowercase `#rrggbb`, validated on write. NULL means "not chosen"
+-- and falls back to the easyQ green, so nothing changes for a business that never touches
+-- it.
+--
+-- Nullable and additive, so the two Telegram bots sharing this table are unaffected.
+--
+-- NOT idempotent: SQLite has no ADD COLUMN IF NOT EXISTS. A duplicate-column error means
+-- it is already applied and is safe to ignore.
+
+ALTER TABLE businesses ADD COLUMN brand_color TEXT;

@@ -1,5 +1,6 @@
 import { CRM_T, type Lang } from './i18n';
 import { addDays } from '../lib/date';
+import { toStoragePhone } from '../shared/phone';
 import type {
   BookingStatus,
   CalendarBookingCard,
@@ -175,6 +176,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       id: s.id,
       name: s.name,
       role: ROLE[lang][s.roleKey],
+      phone: `+9989012345${String(60 + i).slice(-2)}`,
       linkedServices: SERVICES.slice(0, 3).map((sv) => SERV_NAME[lang][sv.key]),
       totalLinkedServices: 3 + (i % 3),
       weeklySlotCount: 24 + i * 4,
@@ -208,6 +210,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
 
   const clients: ClientRow[] = CUSTOMERS.map((c) => {
     const fav = STAFF[(c.staff - 1 + STAFF.length) % STAFF.length] || STAFF[0];
+    const clientPhone = toStoragePhone(c.phone);
     const history: ClientHistoryItem[] = [0, 2, 1].map((si, k) => {
       const sv = SERVICES[si];
       const price = money(sv.price);
@@ -228,9 +231,10 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       };
     });
     return {
-      key: String(c.id),
+      key: clientPhone ? `phone:${clientPhone}` : String(c.id),
       name: c.name,
       userId: null,
+      phone: clientPhone,
       totalVisits: c.visits,
       completedVisits: c.visits,
       upcomingVisits: 0,
@@ -270,6 +274,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       photoFileUniqueId: null,
       crmUsername: 'barber_house',
       crmHasTemporaryPassword: false,
+      brandColor: null,
     },
     generatedAt: `${date}T08:00:00`,
     selectedDate: date,
@@ -298,7 +303,17 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       totalCancelledVisits: 0,
     },
     bookingLinks: [
-      { id: 'public', title: 'Barber House', subtitle: 'easyq.uz/barber-house', url: 'https://easyq.uz/barber-house', kind: 'public', description: '' },
+      { id: 'public-booking', titleKey: 'publicBooking', url: 'https://barber-house.easyq.uz/booking', kind: 'public' },
+      { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },
+      { id: 'business-admin', titleKey: 'ownerBot', url: 'https://t.me/easyqueue_business_bot', kind: 'admin' },
     ],
+    staffAccess: employees.map((e, i) => ({
+      staffId: e.id,
+      name: e.name,
+      username: i === 0 ? 'sardor1' : i === 1 ? 'kamola2' : null,
+      accessRole: i === 0 ? 'manager' : i === 1 ? 'specialist' : null,
+      enabled: i < 2,
+      hasTemporaryPassword: i === 1,
+    })),
   };
 }

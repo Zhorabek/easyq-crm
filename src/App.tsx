@@ -1,11 +1,16 @@
 import { type FC, type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   ApiError,
+  changeOwnPassword,
+  createCrmBooking,
   createBookingPayment,
   createEmployee,
   createService,
   deleteBusinessPhoto as apiDeleteBusinessPhoto,
   deleteEmployee,
+  grantStaffAccess,
+  revokeStaffAccess,
+  updateStaffAccessRole,
   getAuthSession,
   getCrmPayload,
   login as apiLogin,
@@ -18,7 +23,7 @@ import {
   updateService,
   uploadBusinessPhoto as apiUploadBusinessPhoto,
 } from './lib/api';
-import { generateHalfHourIntervals, isoToday } from './lib/date';
+import { isoToday } from './lib/date';
 import type {
   AuthSession,
   BookingStatus,
@@ -41,6 +46,8 @@ import {
   BusinessModal,
   ClientHistoryModal,
   CredentialsModal,
+  CrmBookingModal,
+  PasswordModal,
   ModalLayer,
   ServiceEditModal,
   SlotEditorModal,
@@ -65,10 +72,13 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
 
 const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'];
 
+// Which screens each role sees. This MIRRORS server/permissions.ts to keep the nav tidy —
+// it is NOT the enforcement. Hiding a button stops nobody; the worker rejects the call.
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
-  receptionist: ['dashboard', 'calendar', 'customers', 'services', 'settings'],
-  specialist: ['dashboard', 'calendar', 'customers', 'settings'],
+  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'],
+  // No customers screen: the client book is redacted out of a specialist's payload anyway.
+  specialist: ['dashboard', 'calendar', 'settings'],
 };
 
 const LOGIN_LABEL: Record<Lang, string> = { uz: 'Kirish', ru: 'Войти', en: 'Sign in' };
@@ -94,7 +104,6 @@ export default function App() {
   const [theme, setThemeState] = useState<Theme>(() => (lsGet('easyq_crm_theme', 'light') === 'dark' ? 'dark' : 'light'));
   const [active, setActiveState] = useState<string>(() => lsGet('easyq_crm_screen', 'dashboard'));
   const [branch, setBranchState] = useState<number>(() => parseInt(lsGet('easyq_crm_branch', '-1'), 10));
-  const [role, setRoleState] = useState<Role>(() => lsGet('easyq_crm_role', 'owner') as Role);
   const [navOpen, setNavOpen] = useState(false);
 
   // ---- data ----
@@ -116,6 +125,12 @@ export default function App() {
   const [serviceEditor, setServiceEditor] = useState<{ initial: ServiceCatalogItem | null } | null>(null);
   const [businessEditor, setBusinessEditor] = useState(false);
   const [credentialsEditor, setCredentialsEditor] = useState(false);
+  const [passwordEditor, setPasswordEditor] = useState(false);
+  const [bookingCreator, setBookingCreator] = useState(false);
+  // Times already taken for the staff and day chosen inside the modal, so it can warn
+  // about a clash. Fetched per selection rather than read off `payload`, which only
+  // holds the currently selected date.
+  const [takenTimes, setTakenTimes] = useState<string[]>([]);
   const [tourOpen, setTourOpen] = useState(false);
   const tourAutoShown = useRef(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -154,7 +169,6 @@ export default function App() {
   function setTheme(th: Theme) { setThemeState(th); try { localStorage.setItem('easyq_crm_theme', th); } catch {} }
   function setActive(s: string) { setActiveState(s); try { localStorage.setItem('easyq_crm_screen', s); } catch {} setNavOpen(false); }
   function setBranch(b: number) { setBranchState(b); try { localStorage.setItem('easyq_crm_branch', String(b)); } catch {} }
-  function setRole(r: Role) { setRoleState(r); try { localStorage.setItem('easyq_crm_role', r); } catch {} }
   function setSelectedDate(d: string) { setSelectedDateState(d); }
   const notify = (msg?: string) => setToast(msg || CRM_T[lang].set.saved);
 
@@ -243,19 +257,46 @@ export default function App() {
     notify();
     await reload();
   }
-  async function doCreateStaff(name: string) {
-    await createEmployee({ name });
+  async function doCreateStaff(v: { name: string; role: string; phone: string }) {
+    await createEmployee({ name: v.name, role: v.role, phone: v.phone });
     setStaffCreateOpen(false);
     notify();
     await reload();
   }
-  async function doSaveStaff(name: string) {
+  async function doSaveStaff(v: { name: string; role: string; phone: string }) {
     if (!staffEditor) return;
-    await updateEmployee(staffEditor.id, { name });
+    await updateEmployee(staffEditor.id, { name: v.name, role: v.role, phone: v.phone });
     setStaffEditor(null);
     notify();
     await reload();
   }
+  // Access changes live here rather than in the modal so the issued credentials survive
+  // the reload() that follows — the modal remounts, this state does not.
+  const [issuedCreds, setIssuedCreds] = useState<{ staffId: number; username: string; password: string } | null>(null);
+  async function doStaffAccess(staffId: number, level: 'manager' | 'specialist' | null) {
+    try {
+      if (level === null) {
+        await revokeStaffAccess(staffId);
+        setIssuedCreds(null);
+        notify();
+      } else {
+        const existing = payload?.staffAccess.find((a) => a.staffId === staffId);
+        // Already enabled at a different level means a role change, which must NOT reissue
+        // the password — only an explicit grant or reset does that.
+        if (existing?.enabled && existing.accessRole !== level) {
+          await updateStaffAccessRole(staffId, level);
+          notify();
+        } else {
+          const res = await grantStaffAccess(staffId, level);
+          setIssuedCreds({ staffId, username: res.username, password: res.password });
+        }
+      }
+      await reload();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
   async function doDeleteStaff() {
     if (!staffEditor) return;
     await deleteEmployee(staffEditor.id);
@@ -299,6 +340,45 @@ export default function App() {
       notify(err instanceof Error ? err.message : 'Error');
     }
   }
+  async function loadTakenTimes(date: string, staffId: number) {
+    try {
+      const day = date === selectedDate ? payload : dayCache[date] ?? (await getCrmPayload(date));
+      setTakenTimes(
+        (day?.calendar.bookings ?? [])
+          .filter((b) => b.staffId === staffId && b.status !== 'cancelled')
+          .map((b) => b.time)
+          .sort(),
+      );
+    } catch {
+      // A failed lookup only costs the clash warning; the booking itself still works.
+      setTakenTimes([]);
+    }
+  }
+
+  async function doCreateBooking(v: Parameters<typeof createCrmBooking>[0]) {
+    try {
+      await createCrmBooking(v);
+      setBookingCreator(false);
+      notify();
+      await reload();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
+  async function doChangePassword(v: { currentPassword: string; newPassword: string }) {
+    try {
+      const res = await changeOwnPassword(v);
+      // The response carries the refreshed session so the temporary-password banner clears
+      // without a reload; the cookie is unaffected, so the user stays signed in.
+      if (res.session) setSession(res.session);
+      setPasswordEditor(false);
+      notify(CRM_T[lang].set.passwordChanged);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -343,6 +423,9 @@ export default function App() {
   }
 
   // ---- authed shell ----
+  // The role is whatever the SESSION says. It used to be read from localStorage, so the
+  // user picked their own permissions — harmless while nothing was enforced, wrong now.
+  const role: Role = session.role;
   const roleAllowed = ROLE_SCREENS[role];
   const allowed = REAL_SCREENS.filter((s) => !roleAllowed || roleAllowed.includes(s));
   const effActive = allowed.includes(active) ? active : 'dashboard';
@@ -351,10 +434,17 @@ export default function App() {
   const bizName = payload?.business.name || t.biz;
   const bizType = payload?.business.type || t.bizType;
 
+  const canBook = role === 'owner' || role === 'manager';
+  const newBooking = canBook ? { label: t.newBooking, run: () => setBookingCreator(true) } : null;
+
   const titles: Record<string, { title: string; sub?: string | null; action?: { label: string; run: () => void } | null }> = {
-    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: null },
-    calendar: { title: t.nav.calendar, sub: null, action: null },
-    customers: { title: t.cust.title, sub: `${payload?.clients.length ?? 0} ${t.cust.count}`, action: null },
+    dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: newBooking },
+    calendar: { title: t.nav.calendar, sub: null, action: newBooking },
+    customers: {
+      title: t.cust.title,
+      sub: `${payload?.clients.length ?? 0} ${t.cust.count}`,
+      action: canBook ? { label: t.cust.add, run: () => setBookingCreator(true) } : null,
+    },
     staff: { title: t.staff.title, sub: null, action: { label: t.staff.add, run: () => setStaffCreateOpen(true) } },
     services: { title: t.serv.title, sub: null, action: { label: t.serv.add, run: () => setServiceEditor({ initial: null }) } },
     inventory: { title: t.nav.inventory, sub: t.inv.sub, action: { label: t.inv.add, run: () => setModal({ type: 'product' }) } },
@@ -370,7 +460,7 @@ export default function App() {
   const meta = titles[effActive] || titles.dashboard;
 
   const crmValue: CRMContextValue = {
-    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, setRole, allowed, navOpen, setNavOpen,
+    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),
@@ -383,16 +473,16 @@ export default function App() {
     openClient: setSelectedClient,
     openStaffEditor: (e) => (e ? setStaffEditor(e) : setStaffCreateOpen(true)),
     openSlots: setSlotEditor,
-    createStaff: (name) => void doCreateStaff(name),
+    createStaff: (name) => void doCreateStaff({ name, role: '', phone: '' }),
     openServiceEditor: (s) => setServiceEditor({ initial: s }),
     toggleServiceActive: (s) => void doToggleService(s),
     openBusinessEditor: () => setBusinessEditor(true),
     openCredentialsEditor: () => setCredentialsEditor(true),
+    openPasswordEditor: () => setPasswordEditor(true),
     uploadBusinessPhoto: () => photoInputRef.current?.click(),
     deleteBusinessPhoto: () => void doDeletePhoto(),
   };
 
-  const intervals = payload ? generateHalfHourIntervals(payload.business.schedule).map((i) => i.start) : [];
 
   return (
     <CRMCtx.Provider value={crmValue}>
@@ -420,11 +510,33 @@ export default function App() {
 
         {selectedBooking && <BookingDetailModal booking={selectedBooking} onClose={() => setSelectedBooking(null)} onStatus={(s) => void changeStatus(s)} onPay={(p) => void addPayment(p)} />}
         {selectedClient && <ClientHistoryModal client={selectedClient} onClose={() => setSelectedClient(null)} />}
-        {staffCreateOpen && <StaffCreateModal onClose={() => setStaffCreateOpen(false)} onCreate={(name) => void doCreateStaff(name)} />}
-        {staffEditor && <StaffEditModal employee={staffEditor} onClose={() => setStaffEditor(null)} onSave={(name) => void doSaveStaff(name)} onDelete={() => void doDeleteStaff()} />}
+        {staffCreateOpen && <StaffCreateModal onClose={() => setStaffCreateOpen(false)} onCreate={(v) => void doCreateStaff(v)} />}
+        {staffEditor && (
+          <StaffEditModal
+            employee={staffEditor}
+            /* Read from the live payload, not snapshotted — reload() after a grant must be
+               reflected in the open modal. */
+            access={payload?.staffAccess.find((a) => a.staffId === staffEditor.id)}
+            issued={issuedCreds?.staffId === staffEditor.id ? issuedCreds : null}
+            onClose={() => { setStaffEditor(null); setIssuedCreds(null); }}
+            onSave={(v) => void doSaveStaff(v)}
+            onDelete={() => void doDeleteStaff()}
+            onAccess={role === 'owner' ? (level) => void doStaffAccess(staffEditor.id, level) : undefined}
+          />
+        )}
         {serviceEditor && <ServiceEditModal initial={serviceEditor.initial} staffOptions={payload?.employees ?? []} onClose={() => setServiceEditor(null)} onSave={(v) => void doSaveService(v)} />}
-        {slotEditor && <SlotEditorModal employee={slotEditor} intervals={intervals} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
+        {slotEditor && <SlotEditorModal employee={slotEditor} schedule={payload?.business.schedule ?? ''} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
         {businessEditor && payload && <BusinessModal initial={{ name: payload.business.name, type: payload.business.type, address: payload.business.address, phone: payload.business.phone, schedule: payload.business.schedule, description: payload.business.description ?? '' }} onClose={() => setBusinessEditor(false)} onSave={(v) => void doSaveBusiness(v)} />}
+        {bookingCreator && payload && (
+          <CrmBookingModal
+            payload={payload}
+            takenTimes={takenTimes}
+            onDateChange={(d, sid) => void loadTakenTimes(d, sid)}
+            onClose={() => { setBookingCreator(false); setTakenTimes([]); }}
+            onSave={(v) => void doCreateBooking(v)}
+          />
+        )}
+        {passwordEditor && <PasswordModal onClose={() => setPasswordEditor(false)} onSave={(v) => void doChangePassword(v)} />}
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 
         <Toast msg={toast} />

@@ -1,6 +1,8 @@
 import type {
   AddEmployeeInput,
   AuthSession,
+  ChangeOwnPasswordInput,
+  CreateCrmBookingInput,
   BookingStatus,
   CreatePaymentInput,
   CrmPayload,
@@ -61,6 +63,14 @@ export function logout() {
 
 export function getCrmPayload(date: string) {
   return request<CrmPayload>(`/api/crm?date=${encodeURIComponent(date)}`);
+}
+
+/** Take a booking by hand. Allows past dates and ignores availability — see the worker. */
+export function createCrmBooking(input: CreateCrmBookingInput) {
+  return request<{ ok: true; bookingId: number }>("/api/bookings", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function patchBookingStatus(bookingId: number, status: BookingStatus) {
@@ -138,6 +148,41 @@ export function uploadBusinessPhoto(file: File) {
 export function deleteBusinessPhoto() {
   return request<{ ok: true }>("/api/business/photo", {
     method: "DELETE",
+  });
+}
+
+/**
+ * Grant CRM access, or reset the password of someone who already has it. Both issue a NEW
+ * temporary password, returned once in the response — it is never readable again.
+ */
+export function grantStaffAccess(staffId: number, accessRole: 'manager' | 'specialist') {
+  return request<{ ok: true; username: string; password: string; accessRole: string }>(
+    `/api/employees/${staffId}/access`,
+    { method: 'POST', body: JSON.stringify({ accessRole }) },
+  );
+}
+
+/** Change the role without touching the password. */
+export function updateStaffAccessRole(staffId: number, accessRole: 'manager' | 'specialist') {
+  return request<{ ok: true; accessRole: string }>(`/api/employees/${staffId}/access`, {
+    method: 'PATCH',
+    body: JSON.stringify({ accessRole }),
+  });
+}
+
+/** Takes effect immediately, including for a session already open. */
+export function revokeStaffAccess(staffId: number) {
+  return request<{ ok: true }>(`/api/employees/${staffId}/access`, { method: 'DELETE' });
+}
+
+/**
+ * Change the signed-in person's own password. Works for every role — the server picks the
+ * row from the session, so there is no id to pass and nothing to get wrong.
+ */
+export function changeOwnPassword(input: ChangeOwnPasswordInput) {
+  return request<{ ok: true; session: AuthSession | null }>("/api/me/password", {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }
 

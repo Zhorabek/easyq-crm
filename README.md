@@ -114,6 +114,14 @@ If your local DB was created before the payments ledger was added, also run:
 npm run db:migrate:local:payments
 ```
 
+Then add the tables the CRM itself owns — `captcha_used`, `landing_feedback` and
+`businesses.slug`. Without these the Worker cannot serve signup, feedback or per-tenant
+subdomains, because the migrations that created them live in the bot repo:
+
+```bash
+npm run db:migrate:local:crm
+```
+
 Deploy:
 
 ```bash

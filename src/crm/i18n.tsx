@@ -2,7 +2,8 @@ import { createContext, useContext } from 'react';
 
 export type Lang = 'uz' | 'ru' | 'en';
 export type Theme = 'light' | 'dark';
-export type Role = 'owner' | 'receptionist' | 'specialist';
+/** Mirrors ActorRole in src/server/permissions.ts. One vocabulary end to end. */
+export type Role = 'owner' | 'manager' | 'specialist';
 
 export const CRM_LANGS: Array<{ code: Lang; label: string }> = [
   { code: 'uz', label: 'O‘z' },
@@ -35,7 +36,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Sartaroshxona · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulug‘bek', type: 'Sartaroshxona · M. Ulug‘bek', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Egasi', receptionist: 'Administrator', specialist: 'Usta', viewAs: 'Ko‘rinish:', roleDesc: { owner: 'To‘liq kirish', receptionist: 'Navbat va mijozlar', specialist: 'Faqat o‘z jadvali' } },
+    roles: { owner: 'Egasi', manager: 'Menejer', specialist: 'Usta', viewAs: 'Ko‘rinish:', roleDesc: { owner: 'To‘liq kirish', manager: 'Navbat, to‘lov va jadval', specialist: 'Faqat o‘z jadvali' } },
     auto: {
       sub: 'Avtomatik eslatma va kampaniyalar', add: 'Qoida qo‘shish', active: 'Faol', sent: 'yuborilgan', trigger: 'Shart', channel: 'Kanal', enabled: 'Yoqilgan', toastOn: 'Qoida yoqildi', toastOff: 'Qoida o‘chirildi',
       rules: [
@@ -60,7 +61,7 @@ export const CRM_T: Record<Lang, any> = {
     },
     cal: { title: 'Jadval', staffAll: 'Barcha ustalar', addSlot: 'Bo‘sh', booked: 'Band', break: 'Tanaffus', weekdays: ['Du', 'Se', 'Cho', 'Pa', 'Ju', 'Sh', 'Ya'], weekdaysFull: ['Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba', 'Yakshanba'], monthNames: ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'], bookingsWord: 'navbat', moreWord: 'yana' },
     cust: { title: 'Mijozlar', count: 'ta mijoz', add: 'Mijoz qo‘shish', colName: 'Mijoz', colPhone: 'Telefon', colVisits: 'Tashriflar', colSpent: 'Sarflagan', colLast: 'Oxirgi tashrif', colStatus: 'Holat', vip: 'VIP', reg: 'Doimiy', new: 'Yangi', detailVisits: 'Tashriflar', detailSpent: 'Jami sarflagan', detailNoshow: 'Kelmagan', history: 'Tashriflar tarixi', notes: 'Eslatmalar', book: 'Navbatga yozish', message: 'Xabar yuborish', pref: 'Sevimli usta' },
-    staff: { title: 'Xodimlar', add: 'Xodim qo‘shish', role: 'Lavozim', bookings: 'Navbatlar', revenue: 'Tushum', rating: 'Reyting', load: 'Yuklama', today: 'Bugun', schedule: 'Jadval', edit: 'Tahrirlash', slots: 'Slotlar', delete: 'O‘chirish' },
+    staff: { title: 'Xodimlar', add: 'Xodim qo‘shish', role: 'Lavozim', bookings: 'Navbatlar', revenue: 'Tushum', rating: 'Reyting', load: 'Yuklama', today: 'Bugun', schedule: 'Jadval', edit: 'Tahrirlash', slots: 'Slotlar', delete: 'O‘chirish', phone: 'Telefon', noRole: 'Mutaxassis', quick: 'Tez sozlash', from: 'Dan', to: 'Gacha', apply: 'Belgilash', selectAll: 'Hammasi', clearDay: 'Tozalash', copyTo: 'Boshqa kunlarga ko‘chirish', copyAll: 'Barcha kunlarga', copied: 'Ko‘chirildi', slotCount: 'slot', dayOffLabel: 'Dam olish kuni' },
     serv: { title: 'Xizmatlar', add: 'Xizmat qo‘shish', colName: 'Xizmat', colCat: 'Turkum', colDur: 'Davomiyligi', colPrice: 'Narx', colBookings: 'Navbatlar', min: 'daq', active: 'faol', archived: 'arxivda', edit: 'Tahrirlash', archive: 'Arxivlash', restore: 'Tiklash' },
     an: { title: 'Tahlil va hisobot', sub: 'Biznes ko‘rsatkichlari', revenue: 'Tushum dinamikasi', bookings: 'Navbatlar', noshow: 'Kelmaganlar', newCust: 'Yangi mijozlar', topServices: 'Eng ko‘p xizmatlar', topStaff: 'Eng faol ustalar', bySource: 'Manba bo‘yicha', months: ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyun'], totalRevenue: 'Umumiy tushum', monthRevenue: 'Shu oy', collectedToday: 'Bugun yig‘ildi', outstanding: 'Qarz qoldi' },
     status: { confirmed: 'Tasdiqlangan', pending: 'Kutilmoqda', done: 'Bajarildi', cancelled: 'Bekor qilindi' },
@@ -78,6 +79,7 @@ export const CRM_T: Record<Lang, any> = {
       booking: 'Navbat sahifasi', bookingSub: 'Mijozlar shu havola orqali yoziladi',
       yourLink: 'Sizning havolangiz', copy: 'Nusxa olish', copied: 'Nusxa olindi', open: 'Ochish',
       qr: 'QR-kod', qrSub: 'Mijozlar skanerlab navbatga yoziladi', qrScan: 'Telefon kamerasi bilan skanerlang', download: 'Yuklab olish', print: 'Chop etish',
+      links: { publicBooking: 'Sizning navbat sahifangiz', clientBot: 'Mijozlar uchun Telegram bot', ownerBot: 'Egasi uchun Telegram bot' },
       onlineBooking: 'Onlayn navbatni yoqish', onlineBookingD: 'Mijozlar o‘zi navbat olsin',
       confirm: 'Tasdiqlash talab qilinsin', confirmD: 'Har bir navbatni qo‘lda tasdiqlaysiz',
       deposit: 'Oldindan to‘lov (deposit)', depositD: 'Navbat band qilishda qisman to‘lov olinadi', depositAmt: 'Deposit miqdori',
@@ -90,6 +92,20 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Saqlash', saved: 'Sozlamalar saqlandi', logout: 'Hisobdan chiqish', closed: 'Yopiq', hoursPerWeek: 'soat/hafta',
       mins: ['15 daqiqa', '30 daqiqa', '1 soat', '2 soat', '1 kun oldin'],
       credentials: 'CRM kirish', credentialsSub: 'Login va parolni yangilang', username: 'Login', currentPassword: 'Joriy parol', newPassword: 'Yangi parol', confirmPassword: 'Parolni takrorlang', credentialsSave: 'Kirishni saqlash', tempPassword: 'Vaqtinchalik parol ishlatilmoqda',
+      team: 'Jamoa va kirish', teamSub: 'Xodimlarga CRM kirish huquqini bering',
+      roleManager: 'Menejer', roleSpecialist: 'Usta', roleOwner: 'Egasi',
+      roleManagerHint: 'Navbatlar, to‘lovlar, jadval va xizmatlar', roleSpecialistHint: 'Faqat o‘z jadvali',
+      grant: 'Kirish berish', resetPass: 'Parolni tiklash', revoke: 'Kirishni o‘chirish', noAccess: 'Kirish yo‘q',
+      accessOn: 'Faol', accessOff: 'O‘chirilgan', loginLabel: 'Login', newPassLabel: 'Yangi parol',
+      copyCreds: 'Nusxa olish', credsWarn: 'Bu parol boshqa ko‘rsatilmaydi — xodimga hozir yuboring.',
+      confirmRevoke: 'Bu xodimning kirishini o‘chirasizmi?', ownerOnly: 'Faqat egasi uchun',
+      brand: 'Brend rangi', brandSub: 'Navbat sahifangiz shu rangda ko‘rinadi', brandCustom: 'O‘z rangingiz',
+      brandPreview: 'Ko‘rinishi', brandReset: 'Standart rang', brandInvalid: 'Rang #1d4ed8 ko‘rinishida bo‘lishi kerak.',
+      brandBook: 'Navbatga yozilish',
+      myPassword: 'Mening parolim', myPasswordSub: 'Faqat siz biladigan parolni o‘rnating',
+      changePassword: 'Parolni o‘zgartirish', passwordChanged: 'Parol o‘zgartirildi',
+      tempPasswordWarn: 'Siz vaqtinchalik paroldan foydalanmoqdasiz. Iltimos, o‘zingizning parolingizni o‘rnating.',
+      passwordShort: 'Parol kamida 8 belgidan iborat bo‘lishi kerak.', passwordMismatch: 'Parollar bir xil emas.',
     },
     tour: {
       next: 'Keyingi', back: 'Orqaga', skip: 'O‘tkazib yuborish', done: 'Boshladik!', goServices: 'Xizmat qo‘shishga o‘tish', replay: 'Qo‘llanma', stepOf: '{n}/{total}',
@@ -129,7 +145,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Чиланзар', type: 'Барбершоп · Чиланзар', staff: 3, today: 12 },
       { name: 'Мирзо Улугбек', type: 'Барбершоп · М. Улугбек', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Владелец', receptionist: 'Администратор', specialist: 'Мастер', viewAs: 'Просмотр:', roleDesc: { owner: 'Полный доступ', receptionist: 'Записи и клиенты', specialist: 'Только своё расписание' } },
+    roles: { owner: 'Владелец', manager: 'Менеджер', specialist: 'Мастер', viewAs: 'Просмотр:', roleDesc: { owner: 'Полный доступ', manager: 'Записи, платежи и график', specialist: 'Только своё расписание' } },
     auto: {
       sub: 'Автонапоминания и кампании', add: 'Добавить правило', active: 'Активно', sent: 'отправлено', trigger: 'Условие', channel: 'Канал', enabled: 'Включено', toastOn: 'Правило включено', toastOff: 'Правило выключено',
       rules: [
@@ -154,7 +170,7 @@ export const CRM_T: Record<Lang, any> = {
     },
     cal: { title: 'Расписание', staffAll: 'Все мастера', addSlot: 'Свободно', booked: 'Занято', break: 'Перерыв', weekdays: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'], weekdaysFull: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'], monthNames: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'], bookingsWord: 'записей', moreWord: 'ещё' },
     cust: { title: 'Клиенты', count: 'клиентов', add: 'Добавить клиента', colName: 'Клиент', colPhone: 'Телефон', colVisits: 'Визиты', colSpent: 'Потрачено', colLast: 'Последний визит', colStatus: 'Статус', vip: 'VIP', reg: 'Постоянный', new: 'Новый', detailVisits: 'Визиты', detailSpent: 'Всего потрачено', detailNoshow: 'Неявки', history: 'История визитов', notes: 'Заметки', book: 'Записать', message: 'Написать', pref: 'Любимый мастер' },
-    staff: { title: 'Сотрудники', add: 'Добавить сотрудника', role: 'Должность', bookings: 'Записи', revenue: 'Выручка', rating: 'Рейтинг', load: 'Загрузка', today: 'Сегодня', schedule: 'График', edit: 'Изменить', slots: 'Слоты', delete: 'Удалить' },
+    staff: { title: 'Сотрудники', add: 'Добавить сотрудника', role: 'Должность', bookings: 'Записи', revenue: 'Выручка', rating: 'Рейтинг', load: 'Загрузка', today: 'Сегодня', schedule: 'График', edit: 'Изменить', slots: 'Слоты', delete: 'Удалить', phone: 'Телефон', noRole: 'Специалист', quick: 'Быстрая настройка', from: 'С', to: 'До', apply: 'Отметить', selectAll: 'Все', clearDay: 'Очистить', copyTo: 'Скопировать на другие дни', copyAll: 'На все дни', copied: 'Скопировано', slotCount: 'слот.', dayOffLabel: 'Выходной' },
     serv: { title: 'Услуги', add: 'Добавить услугу', colName: 'Услуга', colCat: 'Категория', colDur: 'Длительность', colPrice: 'Цена', colBookings: 'Записи', min: 'мин', active: 'активных', archived: 'в архиве', edit: 'Изменить', archive: 'В архив', restore: 'Вернуть' },
     an: { title: 'Аналитика и отчёты', sub: 'Показатели бизнеса', revenue: 'Динамика выручки', bookings: 'Записи', noshow: 'Неявки', newCust: 'Новые клиенты', topServices: 'Топ услуг', topStaff: 'Активные мастера', bySource: 'По источникам', months: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'], totalRevenue: 'Общая выручка', monthRevenue: 'За месяц', collectedToday: 'Собрано сегодня', outstanding: 'Остаток к оплате' },
     status: { confirmed: 'Подтверждена', pending: 'Ожидает', done: 'Выполнена', cancelled: 'Отменена' },
@@ -172,6 +188,7 @@ export const CRM_T: Record<Lang, any> = {
       booking: 'Страница записи', bookingSub: 'Клиенты записываются по этой ссылке',
       yourLink: 'Ваша ссылка', copy: 'Копировать', copied: 'Скопировано', open: 'Открыть',
       qr: 'QR-код', qrSub: 'Клиенты сканируют и записываются', qrScan: 'Наведите камеру телефона', download: 'Скачать', print: 'Печать',
+      links: { publicBooking: 'Ваша страница записи', clientBot: 'Telegram-бот для клиентов', ownerBot: 'Telegram-бот для владельца' },
       onlineBooking: 'Включить онлайн-запись', onlineBookingD: 'Клиенты записываются сами',
       confirm: 'Требовать подтверждение', confirmD: 'Вы подтверждаете каждую запись вручную',
       deposit: 'Предоплата (депозит)', depositD: 'При записи берётся частичная оплата', depositAmt: 'Размер депозита',
@@ -184,6 +201,20 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Сохранить', saved: 'Настройки сохранены', logout: 'Выйти из аккаунта', closed: 'Закрыто', hoursPerWeek: 'ч/неделю',
       mins: ['15 минут', '30 минут', '1 час', '2 часа', 'за 1 день'],
       credentials: 'Доступ в CRM', credentialsSub: 'Обновите логин и пароль', username: 'Логин', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Повторите пароль', credentialsSave: 'Сохранить доступ', tempPassword: 'Используется временный пароль',
+      team: 'Команда и доступ', teamSub: 'Выдайте сотрудникам доступ в CRM',
+      roleManager: 'Менеджер', roleSpecialist: 'Мастер', roleOwner: 'Владелец',
+      roleManagerHint: 'Записи, платежи, график и услуги', roleSpecialistHint: 'Только свой график',
+      grant: 'Выдать доступ', resetPass: 'Сбросить пароль', revoke: 'Отключить доступ', noAccess: 'Нет доступа',
+      accessOn: 'Активен', accessOff: 'Отключён', loginLabel: 'Логин', newPassLabel: 'Новый пароль',
+      copyCreds: 'Скопировать', credsWarn: 'Этот пароль больше не будет показан — отправьте его сотруднику сейчас.',
+      confirmRevoke: 'Отключить доступ этому сотруднику?', ownerOnly: 'Только для владельца',
+      brand: 'Цвет бренда', brandSub: 'В этом цвете будет ваша страница записи', brandCustom: 'Свой цвет',
+      brandPreview: 'Предпросмотр', brandReset: 'Цвет по умолчанию', brandInvalid: 'Цвет должен быть в формате #1d4ed8.',
+      brandBook: 'Записаться',
+      myPassword: 'Мой пароль', myPasswordSub: 'Задайте пароль, который знаете только вы',
+      changePassword: 'Изменить пароль', passwordChanged: 'Пароль изменён',
+      tempPasswordWarn: 'Вы используете временный пароль. Задайте свой собственный.',
+      passwordShort: 'Пароль должен содержать минимум 8 символов.', passwordMismatch: 'Пароли не совпадают.',
     },
     tour: {
       next: 'Далее', back: 'Назад', skip: 'Пропустить', done: 'Начать!', goServices: 'Перейти к услугам', replay: 'Обучение', stepOf: '{n}/{total}',
@@ -223,7 +254,7 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Barbershop · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulugbek', type: 'Barbershop · M. Ulugbek', staff: 5, today: 21 },
     ],
-    roles: { owner: 'Owner', receptionist: 'Receptionist', specialist: 'Specialist', viewAs: 'View as:', roleDesc: { owner: 'Full access', receptionist: 'Bookings & customers', specialist: 'Own schedule only' } },
+    roles: { owner: 'Owner', manager: 'Manager', specialist: 'Specialist', viewAs: 'View as:', roleDesc: { owner: 'Full access', manager: 'Bookings, payments & schedules', specialist: 'Own schedule only' } },
     auto: {
       sub: 'Automated reminders & campaigns', add: 'Add rule', active: 'Active', sent: 'sent', trigger: 'Trigger', channel: 'Channel', enabled: 'Enabled', toastOn: 'Rule enabled', toastOff: 'Rule disabled',
       rules: [
@@ -248,7 +279,7 @@ export const CRM_T: Record<Lang, any> = {
     },
     cal: { title: 'Schedule', staffAll: 'All specialists', addSlot: 'Free', booked: 'Booked', break: 'Break', weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], weekdaysFull: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], bookingsWord: 'bookings', moreWord: 'more' },
     cust: { title: 'Customers', count: 'customers', add: 'Add customer', colName: 'Customer', colPhone: 'Phone', colVisits: 'Visits', colSpent: 'Spent', colLast: 'Last visit', colStatus: 'Status', vip: 'VIP', reg: 'Regular', new: 'New', detailVisits: 'Visits', detailSpent: 'Total spent', detailNoshow: 'No-shows', history: 'Visit history', notes: 'Notes', book: 'Book', message: 'Message', pref: 'Preferred specialist' },
-    staff: { title: 'Staff', add: 'Add staff', role: 'Role', bookings: 'Bookings', revenue: 'Revenue', rating: 'Rating', load: 'Load', today: 'Today', schedule: 'Schedule', edit: 'Edit', slots: 'Slots', delete: 'Delete' },
+    staff: { title: 'Staff', add: 'Add staff', role: 'Position', bookings: 'Bookings', revenue: 'Revenue', rating: 'Rating', load: 'Load', today: 'Today', schedule: 'Schedule', edit: 'Edit', slots: 'Slots', delete: 'Delete', phone: 'Phone', noRole: 'Specialist', quick: 'Quick set', from: 'From', to: 'To', apply: 'Apply', selectAll: 'All', clearDay: 'Clear', copyTo: 'Copy to other days', copyAll: 'All days', copied: 'Copied', slotCount: 'slots', dayOffLabel: 'Day off' },
     serv: { title: 'Services', add: 'Add service', colName: 'Service', colCat: 'Category', colDur: 'Duration', colPrice: 'Price', colBookings: 'Bookings', min: 'min', active: 'active', archived: 'archived', edit: 'Edit', archive: 'Archive', restore: 'Restore' },
     an: { title: 'Analytics & reports', sub: 'Business performance', revenue: 'Revenue trend', bookings: 'Bookings', noshow: 'No-shows', newCust: 'New customers', topServices: 'Top services', topStaff: 'Top specialists', bySource: 'By source', months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], totalRevenue: 'Total revenue', monthRevenue: 'This month', collectedToday: 'Collected today', outstanding: 'Outstanding' },
     status: { confirmed: 'Confirmed', pending: 'Pending', done: 'Done', cancelled: 'Cancelled' },
@@ -266,6 +297,7 @@ export const CRM_T: Record<Lang, any> = {
       booking: 'Booking page', bookingSub: 'Customers book through this link',
       yourLink: 'Your link', copy: 'Copy', copied: 'Copied', open: 'Open',
       qr: 'QR code', qrSub: 'Customers scan it to book', qrScan: 'Scan with your phone camera', download: 'Download', print: 'Print',
+      links: { publicBooking: 'Your booking page', clientBot: 'Telegram bot for customers', ownerBot: 'Telegram bot for the owner' },
       onlineBooking: 'Enable online booking', onlineBookingD: 'Let customers book themselves',
       confirm: 'Require confirmation', confirmD: 'You approve each booking manually',
       deposit: 'Prepayment (deposit)', depositD: 'Take a partial payment at booking', depositAmt: 'Deposit amount',
@@ -278,6 +310,20 @@ export const CRM_T: Record<Lang, any> = {
       save: 'Save changes', saved: 'Settings saved', logout: 'Log out', closed: 'Closed', hoursPerWeek: 'h/week',
       mins: ['15 minutes', '30 minutes', '1 hour', '2 hours', '1 day before'],
       credentials: 'CRM access', credentialsSub: 'Update your login and password', username: 'Username', currentPassword: 'Current password', newPassword: 'New password', confirmPassword: 'Repeat password', credentialsSave: 'Save access', tempPassword: 'A temporary password is in use',
+      team: 'Team & access', teamSub: 'Give your staff access to the CRM',
+      roleManager: 'Manager', roleSpecialist: 'Specialist', roleOwner: 'Owner',
+      roleManagerHint: 'Bookings, payments, schedules and services', roleSpecialistHint: 'Their own schedule only',
+      grant: 'Give access', resetPass: 'Reset password', revoke: 'Turn off access', noAccess: 'No access',
+      accessOn: 'Active', accessOff: 'Turned off', loginLabel: 'Username', newPassLabel: 'New password',
+      copyCreds: 'Copy', credsWarn: 'This password will not be shown again — send it to your staff member now.',
+      confirmRevoke: 'Turn off access for this employee?', ownerOnly: 'Owner only',
+      brand: 'Brand colour', brandSub: 'Your booking page is shown in this colour', brandCustom: 'Custom colour',
+      brandPreview: 'Preview', brandReset: 'Default colour', brandInvalid: 'Colour must look like #1d4ed8.',
+      brandBook: 'Book an appointment',
+      myPassword: 'My password', myPasswordSub: 'Set a password only you know',
+      changePassword: 'Change password', passwordChanged: 'Password changed',
+      tempPasswordWarn: 'You are using a temporary password. Please set your own.',
+      passwordShort: 'Password must be at least 8 characters.', passwordMismatch: 'Passwords do not match.',
     },
     tour: {
       next: 'Next', back: 'Back', skip: 'Skip', done: 'Get started!', goServices: 'Go to Services', replay: 'Take the tour', stepOf: '{n}/{total}',
@@ -298,10 +344,10 @@ export const CRM_T: Record<Lang, any> = {
 export const CRM_M: Record<Lang, any> = {
   uz: {
     cancel: 'Bekor qilish',
-    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang' },
+    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang', clash: 'Bu vaqt allaqachon band — baribir qo‘shish mumkin.' },
     customer: { title: 'Mijoz qo‘shish', sub: 'Yangi mijoz ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Jasur Aliyev', phone: 'Telefon', tier: 'Toifa', source: 'Manba', note: 'Izoh', notePh: 'Eslatma…', submit: 'Mijozni qo‘shish' },
     service: { title: 'Xizmat qo‘shish', sub: 'Yangi xizmat ma’lumotlari', name: 'Xizmat nomi', namePh: 'Masalan, Soch olish', cat: 'Turkum', dur: 'Davomiyligi', price: 'Narx', min: 'daqiqa', submit: 'Xizmatni qo‘shish', staff: 'Ustalar' },
-    staff: { title: 'Xodim qo‘shish', sub: 'Yangi xodim ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Sardor Karimov', role: 'Lavozim', phone: 'Telefon', services: 'Ko‘rsatadigan xizmatlar', servicesHint: 'Bu usta bajaradigan xizmatlarni belgilang', selected: 'ta tanlandi', submit: 'Xodimni qo‘shish' },
+    staff: { title: 'Xodim qo‘shish', sub: 'Yangi xodim ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Sardor Karimov', role: 'Lavozim', rolePh: 'Masalan, Usta', phone: 'Telefon', access: 'CRM kirish', accessNone: 'Kirish yo‘q', accessHint: 'Bu odam CRM’da nima qila oladi', services: 'Ko‘rsatadigan xizmatlar', servicesHint: 'Bu usta bajaradigan xizmatlarni belgilang', selected: 'ta tanlandi', submit: 'Xodimni qo‘shish' },
     product: { title: 'Mahsulot qo‘shish', sub: 'Yangi ombor mahsuloti', name: 'Mahsulot nomi', namePh: 'Masalan, Pomada (gel)', cat: 'Turkum', stock: 'Boshlang‘ich qoldiq', min: 'Minimal zaxira', price: 'Narx', units: 'dona', submit: 'Mahsulotni qo‘shish', cats: { hair: 'Soch parvarishi', beard: 'Soqol', tools: 'Asboblar', retail: 'Sotuvga' } },
     rule: { title: 'Avtomatlashtirish qoidasi', sub: 'Yangi eslatma yoki kampaniya', name: 'Qoida nomi', namePh: 'Masalan, 24 soat oldin eslatma', trigger: 'Shart (trigger)', channel: 'Kanal', submit: 'Qoidani qo‘shish', triggers: { before24: 'Navbatdan 24 soat oldin', before2: 'Navbatdan 2 soat oldin', after: 'Tashrifdan keyin', inactive: '60 kun faolsizlik', birthday: 'Tug‘ilgan kun' } },
     tiers: { vip: 'VIP', reg: 'Doimiy', new: 'Yangi' },
@@ -312,10 +358,10 @@ export const CRM_M: Record<Lang, any> = {
   },
   ru: {
     cancel: 'Отмена',
-    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите' },
+    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите', clash: 'Это время уже занято — запись всё равно можно создать.' },
     customer: { title: 'Добавить клиента', sub: 'Данные нового клиента', name: 'Имя и фамилия', namePh: 'Например, Жасур Алиев', phone: 'Телефон', tier: 'Категория', source: 'Источник', note: 'Заметка', notePh: 'Заметка…', submit: 'Добавить клиента' },
     service: { title: 'Добавить услугу', sub: 'Данные новой услуги', name: 'Название услуги', namePh: 'Например, Стрижка', cat: 'Категория', dur: 'Длительность', price: 'Цена', min: 'минут', submit: 'Добавить услугу', staff: 'Мастера' },
-    staff: { title: 'Добавить сотрудника', sub: 'Данные нового сотрудника', name: 'Имя и фамилия', namePh: 'Например, Сардор Каримов', role: 'Должность', phone: 'Телефон', services: 'Оказываемые услуги', servicesHint: 'Отметьте услуги, которые выполняет этот мастер', selected: 'выбрано', submit: 'Добавить сотрудника' },
+    staff: { title: 'Добавить сотрудника', sub: 'Данные нового сотрудника', name: 'Имя и фамилия', namePh: 'Например, Сардор Каримов', role: 'Должность', rolePh: 'Например, Мастер', phone: 'Телефон', access: 'Доступ в CRM', accessNone: 'Нет доступа', accessHint: 'Что этот человек может делать в CRM', services: 'Оказываемые услуги', servicesHint: 'Отметьте услуги, которые выполняет этот мастер', selected: 'выбрано', submit: 'Добавить сотрудника' },
     product: { title: 'Добавить товар', sub: 'Новый товар на складе', name: 'Название товара', namePh: 'Например, Помада (гель)', cat: 'Категория', stock: 'Начальный остаток', min: 'Мин. запас', price: 'Цена', units: 'шт', submit: 'Добавить товар', cats: { hair: 'Уход за волосами', beard: 'Борода', tools: 'Инструменты', retail: 'На продажу' } },
     rule: { title: 'Правило автоматизации', sub: 'Новое напоминание или кампания', name: 'Название правила', namePh: 'Например, Напоминание за 24 часа', trigger: 'Условие (триггер)', channel: 'Канал', submit: 'Добавить правило', triggers: { before24: 'За 24 часа до записи', before2: 'За 2 часа до записи', after: 'После визита', inactive: '60 дней без визита', birthday: 'День рождения' } },
     tiers: { vip: 'VIP', reg: 'Постоянный', new: 'Новый' },
@@ -326,10 +372,10 @@ export const CRM_M: Record<Lang, any> = {
   },
   en: {
     cancel: 'Cancel',
-    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select' },
+    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select', clash: 'That time is already booked — you can still add it.' },
     customer: { title: 'Add customer', sub: 'New customer details', name: 'Full name', namePh: 'e.g. Jasur Aliyev', phone: 'Phone', tier: 'Tier', source: 'Source', note: 'Note', notePh: 'Note…', submit: 'Add customer' },
     service: { title: 'Add service', sub: 'New service details', name: 'Service name', namePh: 'e.g. Haircut', cat: 'Category', dur: 'Duration', price: 'Price', min: 'minutes', submit: 'Add service', staff: 'Specialists' },
-    staff: { title: 'Add staff', sub: 'New staff member details', name: 'Full name', namePh: 'e.g. Sardor Karimov', role: 'Role', phone: 'Phone', services: 'Services performed', servicesHint: 'Select the services this specialist provides', selected: 'selected', submit: 'Add staff member' },
+    staff: { title: 'Add staff', sub: 'New staff member details', name: 'Full name', namePh: 'e.g. Sardor Karimov', role: 'Position', rolePh: 'e.g. Barber', phone: 'Phone', access: 'CRM access', accessNone: 'No access', accessHint: 'What this person can do in the CRM', services: 'Services performed', servicesHint: 'Select the services this specialist provides', selected: 'selected', submit: 'Add staff member' },
     product: { title: 'Add product', sub: 'New inventory product', name: 'Product name', namePh: 'e.g. Pomade (gel)', cat: 'Category', stock: 'Starting stock', min: 'Min. stock', price: 'Price', units: 'pcs', submit: 'Add product', cats: { hair: 'Hair care', beard: 'Beard', tools: 'Tools', retail: 'Retail' } },
     rule: { title: 'Automation rule', sub: 'New reminder or campaign', name: 'Rule name', namePh: 'e.g. 24-hour reminder', trigger: 'Trigger', channel: 'Channel', submit: 'Add rule', triggers: { before24: '24h before appointment', before2: '2h before appointment', after: 'After a visit', inactive: '60 days inactive', birthday: 'Birthday' } },
     tiers: { vip: 'VIP', reg: 'Regular', new: 'New' },
@@ -358,7 +404,11 @@ export type CRMContextValue = {
   branch: number;
   setBranch: (b: number) => void;
   role: Role;
-  setRole: (r: Role) => void;
+  staffName: string | null;
+  /** This actor is still on an issued temporary password and should replace it. */
+  isTemporaryPassword: boolean;
+  /** Demo only. The real CRM's role comes from the signed session and is not settable. */
+  setRole?: (r: Role) => void;
   allowed: string[] | null;
   navOpen: boolean;
   setNavOpen: (open: boolean) => void;

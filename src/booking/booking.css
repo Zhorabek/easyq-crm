@@ -1,0 +1,411 @@
+/* Public booking page.
+ *
+ * Reuses the design tokens from crm.css so a client's page and the owner's CRM look like
+ * one product, but none of its layout — the CRM is a dense admin shell and this is a
+ * single-column form people fill in on a phone, usually one-handed.
+ *
+ * Deliberately light-only: crm.css switches on [data-theme='dark'], and nothing here sets
+ * that attribute, so the tokens stay on their light values. A client has no theme toggle
+ * and no stored preference to honour. */
+
+.bk-shell {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------- header */
+
+.bk-head {
+  margin-bottom: 18px;
+}
+.bk-head-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.bk-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 15px;
+  flex: none;
+  object-fit: cover;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.bk-avatar-fallback {
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink-3);
+}
+.bk-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.bk-head-text h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+.bk-head-text p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bk-langs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  flex: none;
+}
+.bk-langs button {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.bk-langs button.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.bk-schedule {
+  margin-top: 11px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  background: var(--accent-tint);
+  display: inline-block;
+  padding: 5px 11px;
+  border-radius: 999px;
+}
+
+/* --------------------------------------------------------------------- card */
+
+.bk-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 6px 18px 20px;
+}
+
+.bk-section + .bk-section {
+  border-top: 1px solid var(--line);
+}
+.bk-section {
+  padding: 18px 0 4px;
+}
+.bk-section-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 13px;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.bk-step {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex: none;
+}
+
+/* ------------------------------------------------------- service list rows */
+
+.bk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1.5px solid var(--line-2);
+  font-family: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.bk-row:hover {
+  border-color: var(--ink-3);
+}
+.bk-row.is-on {
+  border-color: var(--accent-deep);
+  background: var(--accent-tint);
+}
+.bk-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bk-row-name {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.bk-row-meta {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.bk-row-price {
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- chips */
+
+.bk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Horizontal scroll rather than wrap: three weeks of days would otherwise become a
+   six-row block that pushes the time picker off screen on a phone. */
+.bk-days {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+.bk-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1.5px solid var(--line-2);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.bk-chip:hover:not(:disabled) {
+  border-color: var(--ink-3);
+}
+.bk-chip.is-on {
+  border-color: var(--accent-deep);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.bk-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bk-chip-sub {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.bk-day-dow {
+  font-size: 11.5px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+.bk-day-num {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+/* ---------------------------------------------------------------- fields */
+
+.bk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 13px;
+}
+.bk-field > span {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.bk-field input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  /* 16px, not the CRM's 14px: Safari on iOS zooms the viewport when a focused input is
+     under 16px, and this form is mostly filled in on a phone. */
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+.bk-field input:focus {
+  border-color: var(--accent-deep);
+  background: var(--panel);
+}
+
+.bk-phone {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+}
+.bk-phone:focus-within {
+  border-color: var(--accent-deep);
+  background: var(--panel);
+}
+.bk-phone-cc {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-3);
+  flex: none;
+}
+.bk-phone input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+
+/* --------------------------------------------------------------- feedback */
+
+.bk-primary {
+  width: 100%;
+  border: 0;
+  border-radius: 13px;
+  padding: 15px;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 10px 24px -12px rgba(132, 169, 46, 0.7);
+  cursor: pointer;
+  margin-top: 4px;
+}
+.bk-primary:disabled {
+  background: var(--panel-2);
+  color: var(--ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.bk-error {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rose);
+  background: var(--rose-t);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  margin-bottom: 12px;
+}
+.bk-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 22px 4px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.bk-empty strong {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------ confirmation */
+
+.bk-done {
+  text-align: center;
+  padding: 34px 20px 26px;
+}
+.bk-done-mark {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+}
+.bk-done h2 {
+  margin: 0 0 8px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.bk-done-detail {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.bk-done-sub {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.bk-foot {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink-3);
+}
+/* Fixed easyQ green: the wordmark belongs to the platform, not to the shop, so it does
+   not follow --accent-deep like everything else on the page. */
+.bk-foot span {
+  color: #84a92e;
+}

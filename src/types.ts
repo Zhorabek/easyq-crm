@@ -16,7 +16,12 @@ export interface BusinessProfile {
   photoFileUniqueId: string | null;
   crmUsername: string | null;
   crmHasTemporaryPassword: boolean;
+  /** Chosen accent as `#rrggbb`, or null to use the easyQ default. */
+  brandColor: string | null;
 }
+
+/** Permission level. The owner is the business account; the rest are staff logins. */
+export type ActorRole = "owner" | "manager" | "specialist";
 
 export interface AuthSession {
   businessId: number;
@@ -25,6 +30,25 @@ export interface AuthSession {
   isTemporaryPassword: boolean;
   /** Subdomain label — this business's CRM lives at `<slug>.easyq.uz`. */
   slug: string | null;
+  /**
+   * Resolved server-side from the signed cookie and re-checked against the staff row on
+   * every request. The UI uses it to hide what the user cannot do — but the hiding is
+   * cosmetic; server/permissions.ts is what actually enforces it.
+   */
+  role: ActorRole;
+  /** Null for the owner, who has no staff row. */
+  staffId: number | null;
+  staffName: string | null;
+}
+
+/** One staff member's CRM access, for the owner's Team & access screen. */
+export interface StaffAccessRow {
+  staffId: number;
+  name: string;
+  username: string | null;
+  accessRole: "manager" | "specialist" | null;
+  enabled: boolean;
+  hasTemporaryPassword: boolean;
 }
 
 export interface KpiCard {
@@ -92,7 +116,14 @@ export interface PaymentSummary {
 export interface EmployeeRow {
   id: number;
   name: string;
+  /**
+   * The role the owner typed, or "" when unset. Deliberately not defaulted server-side:
+   * it used to fall back to a hardcoded Russian "Специалист", which the UI rendered
+   * verbatim to Uzbek and English owners. The UI localizes the empty case.
+   */
   role: string;
+  /** Canonical +998XXXXXXXXX, or null. */
+  phone: string | null;
   linkedServices: string[];
   totalLinkedServices: number;
   weeklySlotCount: number;
@@ -140,6 +171,8 @@ export interface ClientRow {
   key: string;
   name: string;
   userId: number | null;
+  /** Canonical +998XXXXXXXXX, or null for bot bookings which carry no phone. */
+  phone: string | null;
   totalVisits: number;
   completedVisits: number;
   upcomingVisits: number;
@@ -159,11 +192,73 @@ export interface EmployeeRevenueItem {
 
 export interface BookingLinkItem {
   id: string;
-  title: string;
-  subtitle: string;
+  /** i18n key resolved in the UI. The worker must not return display copy — it has no
+   *  idea which of uz/ru/en the viewer reads. */
+  titleKey: "publicBooking" | "ownerBot" | "clientBot";
   url: string;
-  kind: "public" | "admin" | "preview";
-  description: string;
+  kind: "public" | "admin";
+}
+
+/* ── Public booking page (unauthenticated, tenant-scoped) ─────────────────── */
+
+export interface PublicService {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+  staffIds: number[];
+}
+
+export interface PublicStaff {
+  id: number;
+  name: string;
+  /** The owner-set role, falling back to the first linked service, or "" if neither. */
+  role: string;
+}
+
+export interface PublicBusinessPayload {
+  name: string;
+  type: string;
+  address: string;
+  phone: string;
+  schedule: string;
+  description: string | null;
+  hasPhoto: boolean;
+  /** Resolved accent for this business; never null, falls back to the easyQ green. */
+  brandColor: string;
+  services: PublicService[];
+  staff: PublicStaff[];
+  /** IANA zone the business runs on, so the client page agrees about "today". */
+  timeZone: string;
+  today: string;
+}
+
+export interface PublicSlotsPayload {
+  date: string;
+  staffId: number;
+  /** Free `HH:MM` values, already excluding breaks, days off and taken slots. */
+  slots: string[];
+}
+
+/** Manual booking taken by staff — over the phone, or a walk-in being recorded. */
+export interface CreateCrmBookingInput {
+  serviceId: number;
+  staffId: number;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone?: string;
+  notes?: string;
+}
+
+export interface CreatePublicBookingInput {
+  serviceId: number;
+  staffId: number;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone: string;
+  notes?: string;
 }
 
 export interface CrmPayload {
@@ -195,6 +290,12 @@ export interface CrmPayload {
     totalCancelledVisits: number;
   };
   bookingLinks: BookingLinkItem[];
+  /**
+   * Emptied by redactPayloadFor for any actor without the `access:manage` capability,
+   * which today means everyone but the owner. Carries login usernames, so it must stay
+   * gated on the capability rather than on a role name.
+   */
+  staffAccess: StaffAccessRow[];
 }
 
 export interface UpdateBookingStatusInput {
@@ -210,10 +311,14 @@ export interface CreatePaymentInput {
 
 export interface AddEmployeeInput {
   name: string;
+  role?: string;
+  phone?: string;
 }
 
 export interface UpdateEmployeeInput {
   name: string;
+  role?: string;
+  phone?: string;
 }
 
 export interface UpsertServiceInput {
@@ -254,6 +359,7 @@ export interface UpdateBusinessProfileInput {
   phone?: string;
   schedule?: string;
   description?: string | null;
+  brandColor?: string | null;
 }
 
 export interface LoginInput {
@@ -265,4 +371,13 @@ export interface UpdateCrmCredentialsInput {
   username: string;
   currentPassword: string;
   newPassword?: string;
+}
+
+/**
+ * Change your own password. Deliberately carries no staffId — the target row is taken
+ * from the session, or this would be an account-takeover endpoint.
+ */
+export interface ChangeOwnPasswordInput {
+  currentPassword: string;
+  newPassword: string;
 }

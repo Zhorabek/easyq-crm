@@ -5,6 +5,8 @@ import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, Statu
 import { avatarColor, colorForId, dayPayments, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
+import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
+import { BRAND_PRESETS, DEFAULT_BRAND_COLOR, brandPalette, isValidBrandColor, normalizeBrandColor } from '../shared/brand';
 import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ServiceCatalogItem } from '../types';
 
 const PALETTE = ['#84A92E', '#3B82F6', '#8B5CF6', '#F59E0B', '#14B8A6', '#F43F5E'];
@@ -553,7 +555,14 @@ export function Staff() {
                 <Avatar name={p.name} color={avatarColor(p.name)} size={54} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16.5, fontWeight: 800 }}>{p.name}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>{p.role || s.role}</div>
+                  {/* `s.role` is the field LABEL, so the old fallback printed "Role" as
+                      somebody's job title. `s.noRole` is the actual placeholder. */}
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.role || s.noRole}</div>
+                  {p.phone && (
+                    <a href={`tel:${p.phone}`} className="tnum" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, color: 'var(--accent-deep)', marginTop: 3 }}>
+                      <Ic name="phone" size={12} stroke={2.2} />{formatPhone(p.phone)}
+                    </a>
+                  )}
                 </div>
                 <button onClick={() => openStaffEditor(p)} style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', display: 'grid', placeItems: 'center' }}><Ic name="dots" size={18} /></button>
               </div>
@@ -813,18 +822,61 @@ function QRBlock({ link }: { link: string }) {
 }
 
 export function Settings() {
-  const { t, lang, setLang, theme, setTheme } = useCRM();
-  const { payload, openBusinessEditor, openCredentialsEditor, uploadBusinessPhoto, deleteBusinessPhoto } = useData();
+  const { t, lang, setLang, theme, setTheme, role, notify, isTemporaryPassword } = useCRM();
+  const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor, uploadBusinessPhoto, deleteBusinessPhoto, reload } = useData();
   const [sec, setSec] = useState('profile');
   const [copied, setCopied] = useState(false);
+  // Credentials are returned by the API exactly once, so they live in component state
+  // and are never refetched. A reload loses them, which is correct.
+  const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
+  // Draft is a raw string, not a validated colour: the owner may be mid-way through
+  // typing a hex, and snapping it to a valid value on every keystroke fights them.
+  const [brandDraft, setBrandDraft] = useState(payload?.business.brandColor ?? DEFAULT_BRAND_COLOR);
+  const brandPreview = brandPalette(isValidBrandColor(brandDraft) ? brandDraft : DEFAULT_BRAND_COLOR);
+  const onSaveBrand = async (value: string) => {
+    try {
+      // Empty clears it back to the easyQ default, which is what the reset button sends.
+      await updateBusinessProfile({ brandColor: value.trim() ? value.trim() : null });
+      notify();
+      await reload();
+    } catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+
+  const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
+  const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
+    try { const res = await grantStaffAccess(staffId, r); setIssued({ staffId, username: res.username, password: res.password }); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+  // Reset reuses the grant endpoint: both mean "issue a new temporary password".
+  const onReset = onGrant;
+  const onSetRole = async (staffId: number, r: 'manager' | 'specialist') => {
+    try { await updateStaffAccessRole(staffId, r); notify(); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+  const onRevoke = async (staffId: number) => {
+    if (!window.confirm(t.set.confirmRevoke)) return;
+    try { await revokeStaffAccess(staffId); setIssued(null); notify(); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
   if (!payload) return null;
   const s = t.set;
   const b = payload.business;
-  const publicLink = payload.bookingLinks.find((l) => l.kind === 'public');
+  // Prefer the business's own booking page for the headline link and the QR. It only
+  // exists once a slug is assigned; before that fall back to the generic client bot,
+  // which is the best available answer to "what do I send my customers?".
+  const publicLink =
+    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
   const link = publicLink?.url || '';
   const copy = () => { try { navigator.clipboard.writeText(link); } catch (e) {} setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
-  const navItems: Array<[string, string]> = [['profile', 'user'], ['booking', 'grid'], ['appearance', 'sun']];
+  // `team` was translated in all three languages but never rendered — the section simply
+  // did not exist. Owner-only, since granting access is an owner capability server-side.
+  const navItems: Array<[string, string]> = [
+    ['profile', 'user'],
+    ['booking', 'grid'],
+    ...(role === 'owner' ? ([['brand', 'star'], ['team', 'staff']] as Array<[string, string]>) : []),
+    ['appearance', 'sun'],
+  ];
 
   return (
     <div className="fadein" style={{ padding: 28 }}>
@@ -866,11 +918,26 @@ export function Settings() {
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
-                <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.save}</button>
-                <button onClick={openCredentialsEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="user" size={16} stroke={2} />{s.credentials}</button>
+                {/* Editing the shop and its login are owner capabilities server-side
+                    (business:write, credentials:write). Showing them to a manager only earns
+                    them a 403 — and the credentials modal would open blank now that
+                    crmUsername is redacted for non-owners. */}
+                {role === 'owner' && (
+                  <>
+                    <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.save}</button>
+                    <button onClick={openCredentialsEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="user" size={16} stroke={2} />{s.credentials}</button>
+                  </>
+                )}
+                {/* Every role, always. Changing your own password needs no capability, and a
+                    staff member had no way to do it at all until now. */}
+                <button onClick={openPasswordEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="shield" size={16} stroke={2} />{s.myPassword}</button>
               </div>
-              {b.crmHasTemporaryPassword && (
-                <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}><Ic name="bell" size={14} stroke={2} />{s.tempPassword}</div>
+              {/* `b.crmHasTemporaryPassword` is redacted to false for non-owners, so the
+                  session's own flag is what tells a staff member their password is temporary. */}
+              {(b.crmHasTemporaryPassword || isTemporaryPassword) && (
+                <button onClick={openPasswordEditor} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, textAlign: 'left' }}>
+                  <Ic name="bell" size={14} stroke={2} />{isTemporaryPassword ? s.tempPasswordWarn : s.tempPassword}
+                </button>
               )}
             </Panel>
           )}
@@ -893,16 +960,193 @@ export function Settings() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
                 {payload.bookingLinks.map((bl) => (
                   <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.kind === 'public' ? 'send' : bl.kind === 'admin' ? 'user' : 'grid'} size={17} stroke={2} /></span>
+                    <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.title}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.subtitle}</div>
+                      {/* Title comes from a key, not the payload — the worker cannot know
+                          which language this owner reads. */}
+                      <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
+                      <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
                     </div>
                     <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
                   </a>
                 ))}
               </div>
               {link && <QRBlock link={link} />}
+            </Panel>
+          )}
+
+          {sec === 'team' && (
+            <Panel>
+              <SetHead title={s.team} sub={s.teamSub} />
+
+              {/* The owner's own login sits at the top: it is the account that grants all
+                  the others, and it is the one nobody can reset from here. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '13px 14px', borderRadius: 12, background: 'var(--accent-tint)', border: '1px solid var(--accent)' }}>
+                <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="loyalty" size={17} stroke={2} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 800 }}>{b.name}</div>
+                  <div className="mono" style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 600 }}>{b.crmUsername} · {s.roleOwner}</div>
+                </div>
+                <button onClick={openCredentialsEditor} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--panel)', border: '1px solid var(--line-2)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>{s.credentials}</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+                {payload.staffAccess.length === 0 && <EmptyHint text={t.staff.title} />}
+                {payload.staffAccess.map((row) => {
+                  const justIssued = issued?.staffId === row.staffId;
+                  return (
+                    <div key={row.staffId} style={{ borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', padding: '13px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <Avatar name={row.name} color={avatarColor(row.name)} size={34} />
+                        <div style={{ flex: 1, minWidth: 120 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 800 }}>{row.name}</div>
+                          <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
+                            {row.username ? row.username : s.noAccess}
+                          </div>
+                        </div>
+
+                        {row.enabled ? (
+                          <>
+                            {/* Role is a live control: changing it applies on the staff
+                                member's next request, not at their next login. */}
+                            <div style={{ display: 'inline-flex', background: 'var(--panel)', border: '1px solid var(--line-2)', borderRadius: 999, padding: 3, gap: 2 }}>
+                              {(['manager', 'specialist'] as const).map((r) => {
+                                const on = row.accessRole === r;
+                                return (
+                                  <button
+                                    key={r}
+                                    title={r === 'manager' ? s.roleManagerHint : s.roleSpecialistHint}
+                                    onClick={() => { if (!on) void onSetRole(row.staffId, r); }}
+                                    style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent', whiteSpace: 'nowrap' }}
+                                  >
+                                    {r === 'manager' ? s.roleManager : s.roleSpecialist}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <Badge color="var(--accent-deep)" tint="var(--accent-tint)" dot>{s.accessOn}</Badge>
+                            <button onClick={() => void onReset(row.staffId, row.accessRole ?? 'specialist')} style={btnGhost}>{s.resetPass}</button>
+                            <button onClick={() => void onRevoke(row.staffId)} style={{ ...btnGhost, color: 'var(--rose)' }}>{s.revoke}</button>
+                          </>
+                        ) : (
+                          <>
+                            {row.username && <Badge>{s.accessOff}</Badge>}
+                            <button onClick={() => void onGrant(row.staffId, 'specialist')} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', whiteSpace: 'nowrap' }}>{s.grant}</button>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Shown once, right after issuing. There is no way to read this
+                          password back, which is the point — so it is impossible to miss. */}
+                      {justIssued && (
+                        <div style={{ marginTop: 12, padding: '12px 13px', borderRadius: 11, background: 'var(--panel)', border: '1px solid var(--accent)' }}>
+                          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.loginLabel}</div>
+                              <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.username}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.newPassLabel}</div>
+                              <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.password}</div>
+                            </div>
+                            <button onClick={() => copyText(`${issued.username} / ${issued.password}`)} style={{ ...btnGhost, alignSelf: 'flex-end' }}>{s.copyCreds}</button>
+                          </div>
+                          <div style={{ marginTop: 9, fontSize: 12, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Ic name="bell" size={13} stroke={2} />{s.credsWarn}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+          )}
+
+          {sec === 'brand' && (
+            <Panel>
+              <SetHead title={s.brand} sub={s.brandSub} />
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 18 }}>
+                {BRAND_PRESETS.map((preset) => {
+                  const on = (brandDraft || DEFAULT_BRAND_COLOR).toLowerCase() === preset.toLowerCase();
+                  return (
+                    <button
+                      key={preset}
+                      onClick={() => setBrandDraft(preset)}
+                      title={preset}
+                      style={{
+                        width: 40, height: 40, borderRadius: 11, background: preset, flex: 'none',
+                        border: on ? '3px solid var(--ink)' : '1px solid var(--line-2)',
+                        display: 'grid', placeItems: 'center',
+                      }}
+                    >
+                      {on && <Ic name="check" size={17} stroke={3} style={{ color: brandPalette(preset).accentInk }} />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{s.brandCustom}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* The native picker writes a valid hex by construction; the text field
+                        beside it is for pasting a brand colour from a style guide. */}
+                    <input
+                      type="color"
+                      value={isValidBrandColor(brandDraft) ? normalizeBrandColor(brandDraft)! : DEFAULT_BRAND_COLOR}
+                      onChange={(e) => setBrandDraft(e.target.value)}
+                      style={{ width: 46, height: 42, padding: 0, border: '1px solid var(--line-2)', borderRadius: 10, background: 'none' }}
+                    />
+                    <input
+                      value={brandDraft}
+                      onChange={(e) => setBrandDraft(e.target.value)}
+                      placeholder={DEFAULT_BRAND_COLOR}
+                      className="mono"
+                      style={{ ...setInput, width: 132 }}
+                    />
+                  </div>
+                </label>
+                <button onClick={() => setBrandDraft(DEFAULT_BRAND_COLOR)} style={btnGhost}>{s.brandReset}</button>
+              </div>
+
+              {brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 10 }}>{s.brandInvalid}</div>
+              )}
+
+              {/* Live preview of the derived palette, so the owner sees the button text
+                  colour that gets picked for them rather than discovering it on the
+                  client-facing page. */}
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
+                <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 18, background: brandPreview.accentTint }}>
+                  <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--ink)' }}>{b.name}</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: brandPreview.accentDeep, marginTop: 3 }}>{b.schedule}</div>
+                  <button
+                    style={{
+                      marginTop: 14, padding: '12px 18px', borderRadius: 12, fontSize: 14.5, fontWeight: 800,
+                      background: brandPreview.accent, color: brandPreview.accentInk, border: 0,
+                    }}
+                  >
+                    {s.brandBook}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button
+                  onClick={() => void onSaveBrand(brandDraft)}
+                  disabled={brandDraft.trim() !== '' && !isValidBrandColor(brandDraft)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
+                    color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
+                    opacity: brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) ? 0.5 : 1,
+                  }}
+                >
+                  <Ic name="check" size={16} stroke={2.4} />{s.save}
+                </button>
+              </div>
             </Panel>
           )}
 

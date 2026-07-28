@@ -273,7 +273,11 @@ export interface CrmPayload {
     totalCancelledVisits: number;
   };
   bookingLinks: BookingLinkItem[];
-  /** Owner-only; empty for managers and specialists. */
+  /**
+   * Emptied by redactPayloadFor for any actor without the `access:manage` capability,
+   * which today means everyone but the owner. Carries login usernames, so it must stay
+   * gated on the capability rather than on a role name.
+   */
   staffAccess: StaffAccessRow[];
 }
 

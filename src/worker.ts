@@ -1997,52 +1997,79 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
  * unredacted payload carries every client, every colleague's revenue and the shop's
  * finances, so returning it would make the role meaningless.
  *
- * Owners and managers run the business and get everything.
+ * REDACTION IS KEYED ON CAPABILITIES, NOT ROLE NAMES. An earlier version early-returned
+ * the whole payload for anything that was not `specialist`, which meant every field was
+ * exposed to every other role by default and a manager received `staffAccess` — the login
+ * username of every colleague plus a flag marking who was still on an owner-issued
+ * temporary password. Gating on `can(...)` makes a new role restrictive until somebody
+ * grants it the capability, rather than privileged until somebody remembers to redact.
  */
 function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
-  if (actor.role !== "specialist" || !actor.staffId) return payload;
+  let visible = payload;
 
-  const mine = actor.staffId;
-  const isMine = (staffId: number | null) => staffId === mine;
+  // ── Row scoping: a specialist sees only their own day ──────────────────────
+  if (isScopedToOwnBookings(actor.role) && actor.staffId) {
+    const mine = actor.staffId;
+    const isMine = (staffId: number | null) => staffId === mine;
 
-  return {
-    ...payload,
-    // Money is the owner's business, not a line on someone's own calendar.
-    kpis: [],
-    analytics: {
-      employeeRevenue: [],
-      monthlyRevenue: 0,
-      totalRevenue: 0,
-      collectedToday: 0,
-      refundsToday: 0,
-      totalOutstanding: 0,
-      totalCompletedVisits: 0,
-      totalCancelledVisits: 0,
-    },
-    // The client book is a business asset; a specialist sees who is in front of them today
-    // through the calendar instead.
-    clients: [],
-    reservationsToday: payload.reservationsToday.filter((booking) =>
-      payload.calendar.bookings.some((card) => card.id === booking.id && isMine(card.staffId))
-    ),
-    calendar: {
-      ...payload.calendar,
-      columns: payload.calendar.columns.filter((column) => column.id === mine),
-      bookings: payload.calendar.bookings.filter((card) => isMine(card.staffId)),
-      dayRevenue: 0,
-    },
-    employees: payload.employees
-      .filter((employee) => employee.id === mine)
-      .map((employee) => ({
-        ...employee,
-        completedRevenue: 0,
-        todayRevenue: 0,
-        outstandingRevenue: 0,
-      })),
-    // Sharing links are the owner's to hand out.
-    bookingLinks: [],
-    staffAccess: [],
-  };
+    visible = {
+      ...visible,
+      // Money is the owner's business, not a line on someone's own calendar.
+      kpis: [],
+      analytics: {
+        employeeRevenue: [],
+        monthlyRevenue: 0,
+        totalRevenue: 0,
+        collectedToday: 0,
+        refundsToday: 0,
+        totalOutstanding: 0,
+        totalCompletedVisits: 0,
+        totalCancelledVisits: 0,
+      },
+      // The client book is a business asset; a specialist sees who is in front of them
+      // today through the calendar instead.
+      clients: [],
+      reservationsToday: visible.reservationsToday.filter((booking) =>
+        visible.calendar.bookings.some((card) => card.id === booking.id && isMine(card.staffId))
+      ),
+      calendar: {
+        ...visible.calendar,
+        columns: visible.calendar.columns.filter((column) => column.id === mine),
+        bookings: visible.calendar.bookings.filter((card) => isMine(card.staffId)),
+        dayRevenue: 0,
+      },
+      employees: visible.employees
+        .filter((employee) => employee.id === mine)
+        .map((employee) => ({
+          ...employee,
+          completedRevenue: 0,
+          todayRevenue: 0,
+          outstandingRevenue: 0,
+        })),
+      // Sharing links are the owner's to hand out.
+      bookingLinks: [],
+    };
+  }
+
+  // ── Capability gates: apply to EVERY role that lacks the capability ────────
+
+  // Who can sign in, under what username, and who still holds a temporary password is
+  // only the business of whoever can change those things.
+  if (!can(actor.role, "access:manage")) {
+    visible = { ...visible, staffAccess: [] };
+  }
+
+  // The owner's own login identifier. It exists in this payload solely to render the
+  // owner's Settings screen; to anyone else it is half of a credential they should never
+  // have been handed, and `crmHasTemporaryPassword` tells them how fresh the other half is.
+  if (!can(actor.role, "credentials:write")) {
+    visible = {
+      ...visible,
+      business: { ...visible.business, crmUsername: null, crmHasTemporaryPassword: false },
+    };
+  }
+
+  return visible;
 }
 
 async function updateBookingStatus(env: Env, actor: Actor, bookingId: number, input: UpdateBookingStatusInput) {

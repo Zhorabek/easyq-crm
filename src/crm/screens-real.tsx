@@ -4,6 +4,7 @@ import { useCRM } from './i18n';
 import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
 import { avatarColor, colorForId, dayPayments, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
+import { formatPhone } from '../shared/phone';
 import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ServiceCatalogItem } from '../types';
 
 const PALETTE = ['#84A92E', '#3B82F6', '#8B5CF6', '#F59E0B', '#14B8A6', '#F43F5E'];
@@ -857,7 +858,7 @@ export function Settings() {
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14, marginTop: 18 }}>
-                {[[s.bizName, b.name], [s.category, b.type], [s.phone, b.phone], [s.address, b.address], [s.schedule, b.schedule], [s.description, b.description || '—']].map(([label, val], i) => (
+                {[[s.bizName, b.name], [s.category, b.type], [s.phone, formatPhone(b.phone)], [s.address, b.address], [s.schedule, b.schedule], [s.description, b.description || '—']].map(([label, val], i) => (
                   <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 12, padding: '12px 14px', gridColumn: i >= 3 ? 'span 2' : 'auto' }}>
                     <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 700 }}>{label}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3 }}>{val}</div>

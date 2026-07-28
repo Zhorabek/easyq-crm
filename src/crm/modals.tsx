@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { Avatar, Badge, Field, FooterBtns, Modal, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
+import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
 import { fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
+import { isValidPhone, toStoragePhone } from '../shared/phone';
 import type { BookingStatus, CalendarBookingCard, ClientRow, EmployeeRow, PaymentMethod, ServiceCatalogItem } from '../types';
 
 /* ===================== cosmetic "+ Add" modals (no backend) ===================== */
@@ -47,10 +48,11 @@ function CustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   const c = m.customer;
   const [tier, setTier] = useState('new');
   const [via, setVia] = useState('telegram');
+  const [phone, setPhone] = useState('');
   return (
     <Modal title={c.title} sub={c.sub} icon="customers" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={c.submit} onSubmit={onSaved} />}>
       <Field label={c.name}><TextInput placeholder={c.namePh} autoFocus /></Field>
-      <Field label={c.phone}><TextInput type="tel" placeholder="+998 90 000 00 00" /></Field>
+      <Field label={c.phone}><PhoneInput value={phone} onChange={setPhone} /></Field>
       <Field label={c.tier}><Segmented value={tier} onChange={setTier} options={[{ v: 'new', l: m.tiers.new }, { v: 'reg', l: m.tiers.reg }, { v: 'vip', l: m.tiers.vip }]} /></Field>
       <Field label={c.source}><Segmented value={via} onChange={setVia} options={[{ v: 'telegram', l: m.via.telegram }, { v: 'web', l: m.via.web }, { v: 'walkin', l: m.via.walkin }, { v: 'phone', l: m.via.phone }]} /></Field>
     </Modal>
@@ -295,9 +297,9 @@ export function BusinessModal({ initial, onClose, onSave }: { initial: { name: s
   const s = t.set;
   const [f, setF] = useState(initial);
   const up = (k: keyof typeof initial, v: string) => setF((p) => ({ ...p, [k]: v }));
-  const valid = f.name.trim() && f.address.trim() && f.phone.trim() && f.schedule.trim();
+  const valid = f.name.trim() && f.address.trim() && isValidPhone(f.phone) && f.schedule.trim();
   return (
-    <Modal title={s.profile} sub={s.profileSub} icon="settings" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} disabled={!valid} onSubmit={() => onSave({ ...f, description: f.description.trim() || null })} />}>
+    <Modal title={s.profile} sub={s.profileSub} icon="settings" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} disabled={!valid} onSubmit={() => onSave({ ...f, phone: toStoragePhone(f.phone) ?? f.phone, description: f.description.trim() || null })} />}>
       <Field label={s.bizName}><TextInput value={f.name} onChange={(e) => up('name', e.target.value)} autoFocus /></Field>
       <div style={{ display: 'flex', gap: 12 }}>
         <Field label={s.category} half>
@@ -305,7 +307,7 @@ export function BusinessModal({ initial, onClose, onSave }: { initial: { name: s
             {BIZ_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </SelectInput>
         </Field>
-        <Field label={s.phone} half><TextInput value={f.phone} onChange={(e) => up('phone', e.target.value)} /></Field>
+        <Field label={s.phone} half><PhoneInput value={f.phone} onChange={(v) => up('phone', v)} /></Field>
       </div>
       <Field label={s.address}><TextInput value={f.address} onChange={(e) => up('address', e.target.value)} placeholder={s.addressPh} /></Field>
       <Field label={s.schedule}><TextInput value={f.schedule} onChange={(e) => up('schedule', e.target.value)} placeholder="09:00-19:00" /></Field>

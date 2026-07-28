@@ -3,9 +3,12 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
+  useRef,
 } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
+import { PHONE_NATIONAL_PLACEHOLDER, formatNational, nationalDigits } from '../shared/phone';
 
 /* ---------------- Logo ---------------- */
 export function CRMLogo() {
@@ -173,6 +176,74 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
         e.target.style.background = 'var(--panel-2)';
       }}
     />
+  );
+}
+
+/**
+ * `+998 XX XXX XX XX` masked input.
+ *
+ * The country code is a static span rather than part of the input value, which
+ * removes the whole class of bugs where the caret lands inside the prefix or a
+ * user deletes it. The input therefore holds only the national part, and
+ * `onChange` reports that same national string — callers store whatever
+ * toStoragePhone() makes of it.
+ */
+export function PhoneInput({
+  value,
+  onChange,
+  ...rest
+}: { value: string; onChange: (national: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+  const national = formatNational(nationalDigits(value));
+
+  // Reformatting only moves separators, so the caret has to be restored by DIGIT
+  // count — restoring it by character index drifts every time a space is inserted.
+  // Runs on every render rather than keying on `national`, so a keystroke that
+  // leaves the formatted value unchanged (a letter, a stray space) still clears the
+  // pending caret instead of leaving it to fire against a later edit.
+  useLayoutEffect(() => {
+    const target = caretRef.current;
+    caretRef.current = null;
+    if (target == null || !ref.current) return;
+    let index = 0;
+    let digitsSeen = 0;
+    while (index < national.length && digitsSeen < target) {
+      if (/\d/.test(national[index])) digitsSeen += 1;
+      index += 1;
+    }
+    ref.current.setSelectionRange(index, index);
+  });
+
+  return (
+    <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 8, padding: '0 13px' }}>
+      <span style={{ color: 'var(--ink-3)', fontWeight: 700, flex: 'none' }}>+998</span>
+      <input
+        {...rest}
+        ref={ref}
+        type="tel"
+        inputMode="tel"
+        value={national}
+        placeholder={PHONE_NATIONAL_PLACEHOLDER}
+        onChange={(e) => {
+          const caret = e.target.selectionStart ?? e.target.value.length;
+          caretRef.current = e.target.value.slice(0, caret).replace(/\D/g, '').length;
+          onChange(formatNational(nationalDigits(e.target.value)));
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--ink)',
+          padding: '11px 0',
+          fontSize: 14,
+          fontWeight: 600,
+          outline: 'none',
+          fontFamily: 'var(--font)',
+        }}
+      />
+    </div>
   );
 }
 

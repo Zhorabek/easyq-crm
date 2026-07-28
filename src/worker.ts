@@ -37,6 +37,7 @@ import {
 } from "./server/auth";
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
 import { slugProblem, type SlugProblem } from "./shared/slug";
+import { toStoragePhone } from "./shared/phone";
 
 interface Env {
   DB: D1Database;
@@ -859,7 +860,9 @@ async function signupBusiness(env: Env, request: Request) {
   if (name.length < 2) {
     return json({ error: "Business name is required." }, { status: 400, headers: SIGNUP_CORS });
   }
-  if (phone.replace(/\D/g, "").length < 9) {
+  // Signup is a new row every time, so it can hold the canonical form strictly.
+  const storedPhone = toStoragePhone(phone);
+  if (!storedPhone) {
     return json({ error: "A valid phone number is required." }, { status: 400, headers: SIGNUP_CORS });
   }
 
@@ -900,7 +903,7 @@ async function signupBusiness(env: Env, request: Request) {
   try {
     insertBiz = await env.DB
       .prepare("INSERT INTO businesses (user_id, name, type, address, phone, schedule, slug) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(userId, name, type, address, phone, "09:00 - 19:00", slug)
+      .bind(userId, name, type, address, storedPhone, "09:00 - 19:00", slug)
       .run();
   } catch (error) {
     // Someone claimed this slug between the check above and here.
@@ -1704,7 +1707,11 @@ async function deleteEmployee(env: Env, business: BusinessRow, staffId: number) 
 async function updateBusinessProfile(env: Env, business: BusinessRow, input: UpdateBusinessProfileInput) {
   const nextName = input.name === undefined ? business.name : input.name.trim();
   const nextAddress = input.address === undefined ? business.address : input.address.trim();
-  const nextPhone = input.phone === undefined ? business.phone : input.phone.trim();
+  // Canonicalize only what parses as a +998 number. Businesses created before this
+  // rule existed can hold anything, and rejecting their stored value here would lock
+  // them out of editing every OTHER profile field until they retyped the phone.
+  const submittedPhone = input.phone === undefined ? business.phone : input.phone.trim();
+  const nextPhone = toStoragePhone(submittedPhone) ?? submittedPhone;
   const nextSchedule = input.schedule === undefined ? business.schedule : input.schedule.trim();
   const nextDescription =
     input.description === undefined ? business.description : input.description?.trim() ? input.description.trim() : null;

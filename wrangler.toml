@@ -10,6 +10,13 @@ compatibility_date = "2026-04-06"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+# REQUIRED for the public booking page. `/booking` is a client-side route with no file
+# behind it, and the default not_found_handling ("none") would 404 it. Unmatched paths now
+# serve index.html so main.tsx can dispatch on the path.
+#
+# This does not weaken the unknown-subdomain 404 below: run_worker_first means the Worker
+# vets the hostname first and returns its own response before assets are ever consulted.
+not_found_handling = "single-page-application"
 # REQUIRED for per-tenant subdomains. By default the asset router answers any
 # request matching a file in ./dist *before* the Worker runs, so `/` on an
 # unclaimed subdomain would serve the CRM login SPA instead of the Worker's

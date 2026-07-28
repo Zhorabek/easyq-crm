@@ -298,7 +298,9 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       totalCancelledVisits: 0,
     },
     bookingLinks: [
-      { id: 'public', title: 'Barber House', subtitle: 'easyq.uz/barber-house', url: 'https://easyq.uz/barber-house', kind: 'public', description: '' },
+      { id: 'public-booking', titleKey: 'publicBooking', url: 'https://barber-house.easyq.uz/booking', kind: 'public' },
+      { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },
+      { id: 'business-admin', titleKey: 'ownerBot', url: 'https://t.me/easyqueue_business_bot', kind: 'admin' },
     ],
   };
 }

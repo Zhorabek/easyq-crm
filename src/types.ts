@@ -159,11 +159,60 @@ export interface EmployeeRevenueItem {
 
 export interface BookingLinkItem {
   id: string;
-  title: string;
-  subtitle: string;
+  /** i18n key resolved in the UI. The worker must not return display copy — it has no
+   *  idea which of uz/ru/en the viewer reads. */
+  titleKey: "publicBooking" | "ownerBot" | "clientBot";
   url: string;
-  kind: "public" | "admin" | "preview";
-  description: string;
+  kind: "public" | "admin";
+}
+
+/* ── Public booking page (unauthenticated, tenant-scoped) ─────────────────── */
+
+export interface PublicService {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+  staffIds: number[];
+}
+
+export interface PublicStaff {
+  id: number;
+  name: string;
+  /** First linked service, shown as a subtitle. Never a real job title — see #6. */
+  role: string;
+}
+
+export interface PublicBusinessPayload {
+  name: string;
+  type: string;
+  address: string;
+  phone: string;
+  schedule: string;
+  description: string | null;
+  hasPhoto: boolean;
+  services: PublicService[];
+  staff: PublicStaff[];
+  /** IANA zone the business runs on, so the client page agrees about "today". */
+  timeZone: string;
+  today: string;
+}
+
+export interface PublicSlotsPayload {
+  date: string;
+  staffId: number;
+  /** Free `HH:MM` values, already excluding breaks, days off and taken slots. */
+  slots: string[];
+}
+
+export interface CreatePublicBookingInput {
+  serviceId: number;
+  staffId: number;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone: string;
+  notes?: string;
 }
 
 export interface CrmPayload {

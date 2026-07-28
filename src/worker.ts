@@ -8,6 +8,7 @@ import type {
   ClientHistoryItem,
   ClientRow,
   CreatePaymentInput,
+  CreatePublicBookingInput,
   CrmPayload,
   EmployeeRevenueItem,
   EmployeeRow,
@@ -38,6 +39,8 @@ import {
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
+import { openShiftSlots } from "./shared/availability";
+import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
 
 interface Env {
   DB: D1Database;
@@ -272,6 +275,24 @@ function formatDateInTimeZone(date: Date, timeZone: string) {
 
 function getTodayIso(timeZone = "UTC") {
   return formatDateInTimeZone(new Date(), timeZone);
+}
+
+/**
+ * Current local `HH:MM` in the business's zone.
+ *
+ * The booking page hides slots that have already passed, and "passed" has to mean passed
+ * for the shop. A Worker runs in UTC, so comparing against UTC time would keep offering
+ * 09:00 in Tashkent until lunchtime.
+ */
+function getNowMinuteInTimeZone(timeZone = "UTC") {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.hour ?? "00"}:${map.minute ?? "00"}`;
 }
 
 function getSelectedDate(request: Request, timeZone = "UTC") {
@@ -812,6 +833,75 @@ async function checkSubdomain(env: Env, url: URL) {
   );
 }
 
+// ───────────────────────────────────────────── Public booking page (tenant hosts only)
+//
+// These are the only endpoints a stranger can reach with no session. Each one derives the
+// business from `tenant` — resolved from the HOSTNAME — and never from the request body,
+// so one shop's page cannot read or write another's data.
+
+async function publicBusinessEndpoint(env: Env, tenant: TenantContext) {
+  const timeZone = env.APP_TIMEZONE || "UTC";
+  const payload = await getPublicBusiness(env.DB, tenant.businessId, timeZone, getTodayIso(timeZone));
+  if (!payload) return json({ error: "Not found" }, { status: 404 });
+
+  // Short cache: services and staff change rarely, and this is the page's first request.
+  return json(payload, { headers: { "cache-control": "public, max-age=60" } });
+}
+
+async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
+  const timeZone = env.APP_TIMEZONE || "UTC";
+  const today = getTodayIso(timeZone);
+  const date = url.searchParams.get("date") ?? "";
+  const staffId = Number(url.searchParams.get("staffId") ?? 0);
+
+  if (!isIsoDate(date) || !Number.isInteger(staffId) || staffId <= 0) {
+    return json({ error: "A date and staffId are required." }, { status: 400 });
+  }
+  if (date < today) {
+    return json({ date, staffId, slots: [] });
+  }
+
+  const slots = await getPublicSlots(
+    env.DB,
+    tenant.businessId,
+    staffId,
+    date,
+    date === today ? getNowMinuteInTimeZone(timeZone) : null
+  );
+
+  // Never cached: a slot list is stale the moment somebody else books.
+  return json({ date, staffId, slots }, { headers: { "cache-control": "no-store" } });
+}
+
+async function publicBookingEndpoint(env: Env, tenant: TenantContext, request: Request) {
+  const timeZone = env.APP_TIMEZONE || "UTC";
+  const input = (await request.json().catch(() => ({}))) as CreatePublicBookingInput;
+
+  const result = await createPublicBooking(
+    env.DB,
+    tenant.businessId,
+    input,
+    getTodayIso(timeZone),
+    getNowMinuteInTimeZone(timeZone)
+  );
+
+  if (!result.ok) {
+    // 409 for "someone got there first", which the UI retries by refreshing slots;
+    // 429 for the per-phone cap; 400 for anything the client can fix by editing.
+    const status = result.error === "slot_taken" ? 409 : result.error === "rate_limited" ? 429 : 400;
+    return json({ error: result.error, code: result.error }, { status });
+  }
+
+  return json(result, { status: 201 });
+}
+
+/** The shop's photo, for the public page. Same proxy, without the session requirement. */
+async function publicPhotoEndpoint(env: Env, tenant: TenantContext) {
+  const business = await getBusinessById(env.DB, tenant.businessId);
+  if (!business) return new Response("Not found", { status: 404 });
+  return proxyBusinessPhoto(env, business);
+}
+
 async function getCaptcha(env: Env, request: Request) {
   const captcha = await issueCaptcha(request, env.CRM_SESSION_SECRET);
   return json(captcha, {
@@ -1264,13 +1354,17 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   const calendarColumns: CalendarStaffColumn[] = staff.map((person) => {
     const serviceNames = servicesByStaff.get(person.id) ?? [];
     const rawDaySlots = (slotsByStaff.get(person.id) ?? []).filter((slot) => slot.weekday === weekday);
-    const weeklyBreaks = weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? [];
     const dayOff = dayOffsByStaff.get(person.id)?.get(selectedDate);
-    const blockedSlotTimes = new Set<string>([
-      ...weeklyBreaks,
-      ...(dayOff?.isFullDay ? [] : dayOff?.slots ?? []),
-    ]);
-    const daySlots = dayOff?.isFullDay ? [] : rawDaySlots.filter((slot) => !blockedSlotTimes.has(slot.slot_time));
+    // Shared with the public booking API so the two can never disagree about what is
+    // open — see src/shared/availability.ts.
+    const openTimes = new Set(
+      openShiftSlots({
+        shiftSlots: rawDaySlots.map((slot) => slot.slot_time),
+        weeklyBreaks: weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? [],
+        dayOff,
+      })
+    );
+    const daySlots = rawDaySlots.filter((slot) => openTimes.has(slot.slot_time));
     const staffBookingsToday = bookingsToday.filter((booking) => booking.staff_id === person.id && booking.status !== "cancelled");
     const completedRevenue = staffBookingsToday.reduce(
       (sum, booking) => sum + (paymentSummaryByBooking.get(booking.id)?.net ?? 0),
@@ -1367,14 +1461,11 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
         booking.status !== "cancelled" &&
         booking.datetime >= `${selectedDate} 00:00:00`
     ).length;
-    const todayDayOff = dayOffsByStaff.get(person.id)?.get(selectedDate);
-    const todayBlocked = new Set<string>([
-      ...(weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? []),
-      ...(todayDayOff?.slots ?? []),
-    ]);
-    const todayAvailableSlotCount = todayDayOff?.isFullDay
-      ? 0
-      : weeklySlots[weekday].slots.filter((slot) => !todayBlocked.has(slot)).length;
+    const todayAvailableSlotCount = openShiftSlots({
+      shiftSlots: weeklySlots[weekday].slots,
+      weeklyBreaks: weeklyBreaksByStaff.get(person.id)?.get(weekday) ?? [],
+      dayOff: dayOffsByStaff.get(person.id)?.get(selectedDate),
+    }).length;
 
     return {
       id: person.id,
@@ -1533,31 +1624,38 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
 
   const clientBot = env.CLIENT_BOT_USERNAME || "easyqueue_client_bot";
   const businessBot = env.BUSINESS_BOT_USERNAME || "easyqueue_business_bot";
+
+  // Titles are i18n KEYS, not text. This payload previously carried Russian strings that
+  // the UI rendered verbatim, so an Uzbek owner saw "Общая ссылка для клиентов".
+  //
+  // The per-employee "share this master" entries are gone. All four pointed at the same
+  // generic client bot and their own description admitted the master was not preselected,
+  // so they were four identical links wearing different names.
   const bookingLinks: BookingLinkItem[] = [
+    // The business's own booking page — the one link actually worth sharing, because it
+    // is per-tenant. Only offered once a slug exists; before that there is no such page.
+    ...(business.slug
+      ? [
+          {
+            id: "public-booking",
+            titleKey: "publicBooking" as const,
+            url: `${tenantOrigin(business.slug, env)}booking`,
+            kind: "public" as const,
+          },
+        ]
+      : []),
     {
-      id: "public-main",
-      title: "Общая ссылка для клиентов",
-      subtitle: "@easyqueue_client_bot",
+      id: "client-bot",
+      titleKey: "clientBot" as const,
       url: `https://t.me/${clientBot}`,
       kind: "public",
-      description: "Открывает клиентский бот и позволяет пройти весь сценарий записи.",
     },
     {
       id: "business-admin",
-      title: "Ссылка для владельца",
-      subtitle: "@easyqueue_business_bot",
+      titleKey: "ownerBot" as const,
       url: `https://t.me/${businessBot}`,
       kind: "admin",
-      description: "Быстрый переход в бизнес-бот для управления услугами, сотрудниками и слотами.",
     },
-    ...employees.slice(0, 4).map((employee) => ({
-      id: `employee-${employee.id}`,
-      title: `Поделиться мастером: ${employee.name}`,
-      subtitle: "MVP ссылка",
-      url: `https://t.me/${clientBot}`,
-      kind: "preview" as const,
-      description: "Открывает общий клиентский бот; мастер подбирается внутри текущего сценария записи.",
-    })),
   ];
 
   return {
@@ -2070,6 +2168,28 @@ export default {
 
       if (url.pathname === "/api/subdomain/check" && request.method === "GET") {
         return checkSubdomain(env, url);
+      }
+
+      // ── Public booking page ─────────────────────────────────────────────────
+      // Tenant-only by construction: without a resolved host there is no business to
+      // book against, so these 404 on crm.easyq.uz rather than guessing one.
+      if (url.pathname.startsWith("/api/public/")) {
+        if (!tenant) return json({ error: "Not found" }, { status: 404 });
+
+        if (url.pathname === "/api/public/business" && request.method === "GET") {
+          return publicBusinessEndpoint(env, tenant);
+        }
+        if (url.pathname === "/api/public/slots" && request.method === "GET") {
+          return publicSlotsEndpoint(env, tenant, url);
+        }
+        if (url.pathname === "/api/public/bookings" && request.method === "POST") {
+          return publicBookingEndpoint(env, tenant, request);
+        }
+        if (url.pathname === "/api/public/photo" && request.method === "GET") {
+          return publicPhotoEndpoint(env, tenant);
+        }
+
+        return json({ error: "Not found" }, { status: 404 });
       }
 
       if (url.pathname === "/api/captcha" && request.method === "GET") {

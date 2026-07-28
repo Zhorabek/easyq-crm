@@ -820,7 +820,11 @@ export function Settings() {
   if (!payload) return null;
   const s = t.set;
   const b = payload.business;
-  const publicLink = payload.bookingLinks.find((l) => l.kind === 'public');
+  // Prefer the business's own booking page for the headline link and the QR. It only
+  // exists once a slug is assigned; before that fall back to the generic client bot,
+  // which is the best available answer to "what do I send my customers?".
+  const publicLink =
+    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
   const link = publicLink?.url || '';
   const copy = () => { try { navigator.clipboard.writeText(link); } catch (e) {} setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
@@ -893,10 +897,12 @@ export function Settings() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
                 {payload.bookingLinks.map((bl) => (
                   <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.kind === 'public' ? 'send' : bl.kind === 'admin' ? 'user' : 'grid'} size={17} stroke={2} /></span>
+                    <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.title}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.subtitle}</div>
+                      {/* Title comes from a key, not the payload — the worker cannot know
+                          which language this owner reads. */}
+                      <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
+                      <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
                     </div>
                     <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
                   </a>

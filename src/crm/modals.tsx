@@ -425,6 +425,53 @@ export function CredentialsModal({ initialUsername, onClose, onSave }: { initial
   );
 }
 
+/**
+ * Change your own password. Available to every role, unlike CredentialsModal, which also
+ * renames the business login and is owner-only.
+ *
+ * Staff previously had no way to do this at all, so an owner-issued temporary password —
+ * read aloud or sent over chat — stayed valid indefinitely, with its plaintext copy still
+ * sitting in the row.
+ */
+export function PasswordModal({ onClose, onSave }: { onClose: () => void; onSave: (v: { currentPassword: string; newPassword: string }) => void }) {
+  const { t } = useCRM();
+  const s = t.set;
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  // Mirrors MIN_PASSWORD_LENGTH in the worker. The server re-checks; this only spares a
+  // round trip and gives the reason inline.
+  const tooShort = next.length > 0 && next.length < 8;
+  const mismatch = confirm.length > 0 && next !== confirm;
+  const valid = Boolean(current) && next.length >= 8 && next === confirm;
+
+  return (
+    <Modal
+      title={s.myPassword}
+      sub={s.myPasswordSub}
+      icon="user"
+      onClose={onClose}
+      footer={<FooterBtns onClose={onClose} submitLabel={s.changePassword} disabled={!valid} onSubmit={() => onSave({ currentPassword: current, newPassword: next })} />}
+    >
+      <Field label={s.currentPassword}>
+        <TextInput type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus />
+      </Field>
+      <Field label={s.newPassword}>
+        <TextInput type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      </Field>
+      <Field label={s.confirmPassword}>
+        <TextInput type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+      </Field>
+      {(tooShort || mismatch) && (
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)' }}>
+          {tooShort ? s.passwordShort : s.passwordMismatch}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /* ===================== real: slot editor ===================== */
 /**
  * Weekly shift editor.

@@ -354,3 +354,12 @@ export interface UpdateCrmCredentialsInput {
   currentPassword: string;
   newPassword?: string;
 }
+
+/**
+ * Change your own password. Deliberately carries no staffId — the target row is taken
+ * from the session, or this would be an account-takeover endpoint.
+ */
+export interface ChangeOwnPasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}

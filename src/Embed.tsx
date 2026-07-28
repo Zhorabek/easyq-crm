@@ -136,6 +136,7 @@ export default function EmbedApp() {
     setRole,
     // Demo has no signed-in person, so the sidebar falls back to the business name.
     staffName: null,
+    isTemporaryPassword: false,
     allowed,
     navOpen,
     setNavOpen,
@@ -162,6 +163,7 @@ export default function EmbedApp() {
     toggleServiceActive: noop,
     openBusinessEditor: noop,
     openCredentialsEditor: noop,
+    openPasswordEditor: noop,
     uploadBusinessPhoto: noop,
     deleteBusinessPhoto: noop,
   };

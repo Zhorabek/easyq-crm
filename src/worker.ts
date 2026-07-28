@@ -8,6 +8,7 @@ import type {
   ClientHistoryItem,
   ClientRow,
   CreatePaymentInput,
+  ChangeOwnPasswordInput,
   CreatePublicBookingInput,
   CrmPayload,
   EmployeeRevenueItem,
@@ -1348,6 +1349,104 @@ async function listFeedback(env: Env) {
     .prepare("SELECT id, name, text, rating, created_at FROM landing_feedback WHERE approved = 1 ORDER BY created_at DESC, id DESC LIMIT 20")
     .all<FeedbackRow>();
   return json({ items: res.results ?? [] }, { headers: FEEDBACK_CORS });
+}
+
+/** Shared with updateBusinessCredentials so both paths agree on what counts as a password. */
+const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * Change your OWN password. Self-service, so it needs no capability — every role may do
+ * this for themselves, and only for themselves.
+ *
+ * This exists because staff previously had no way to change their password at all:
+ * updateBusinessCredentials writes to `businesses` and requires credentials:write, so a
+ * staff member was stuck on the owner-issued temporary password indefinitely and the
+ * plaintext copy in crm_temp_password was never cleared.
+ *
+ * The target row comes from the ACTOR, never from the request body. There is deliberately
+ * no staffId parameter — with one, this would become an account-takeover endpoint.
+ */
+async function changeOwnPassword(
+  env: Env,
+  actor: Actor,
+  input: { currentPassword?: string; newPassword?: string }
+) {
+  const currentPassword = String(input.currentPassword ?? "");
+  // Not trimmed: whitespace is a legal password character, and trimming here would store
+  // something different from what was validated — and from what the person typed.
+  const newPassword = String(input.newPassword ?? "");
+
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return json(
+      { error: `Новый пароль должен содержать минимум ${MIN_PASSWORD_LENGTH} символов.`, code: "password_too_short" },
+      { status: 400 }
+    );
+  }
+
+  if (newPassword === currentPassword) {
+    return json({ error: "Новый пароль должен отличаться от текущего.", code: "password_unchanged" }, { status: 400 });
+  }
+
+  const nextHash = await hashCrmPassword(newPassword);
+
+  if (actor.role === "owner") {
+    if (!(await verifyCrmPassword(currentPassword, actor.business.crm_password_hash))) {
+      return json({ error: "Текущий пароль указан неверно.", code: "wrong_password" }, { status: 400 });
+    }
+
+    await env.DB
+      .prepare(
+        `UPDATE businesses
+         SET crm_password_hash = ?, crm_temp_password = NULL, crm_credentials_updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .bind(nextHash, actor.business.id)
+      .run();
+
+    const refreshed = await getBusinessById(env.DB, actor.business.id);
+    return json({ ok: true, session: refreshed ? toAuthSession(refreshed) : null });
+  }
+
+  // Staff: the hash is re-read here rather than carried on the Actor, because Actor holds
+  // only what authorization needs and a stale hash would let an old password keep working.
+  const member = await env.DB
+    .prepare("SELECT id, name, crm_username, crm_password_hash FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(actor.staffId, actor.business.id)
+    .first<{ id: number; name: string; crm_username: string | null; crm_password_hash: string | null }>();
+
+  if (!member) {
+    return json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  if (!(await verifyCrmPassword(currentPassword, member.crm_password_hash))) {
+    return json({ error: "Текущий пароль указан неверно.", code: "wrong_password" }, { status: 400 });
+  }
+
+  // Clearing crm_temp_password is the point: it is the plaintext the owner read out, and
+  // it should not outlive the moment the person picks their own.
+  await env.DB
+    .prepare(
+      `UPDATE staff
+       SET crm_password_hash = ?, crm_temp_password = NULL, access_updated_at = datetime('now')
+       WHERE id = ? AND business_id = ?`
+    )
+    .bind(nextHash, member.id, actor.business.id)
+    .run();
+
+  // NOTE: sessions carry no password version, so any OTHER session this person has open
+  // stays valid until it expires. Invalidating them needs a version column on the row and
+  // a check in readSession — worth doing, but it is a schema change, not part of this fix.
+  return json({
+    ok: true,
+    session: {
+      ...toAuthSession(actor.business),
+      username: member.crm_username ?? "",
+      isTemporaryPassword: false,
+      role: actor.role,
+      staffId: member.id,
+      staffName: member.name,
+    } satisfies AuthSession,
+  });
 }
 
 async function updateBusinessCredentials(env: Env, request: Request, business: BusinessRow, input: UpdateCrmCredentialsInput) {
@@ -2721,6 +2820,14 @@ export default {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "business:write");
         return await updateBusinessProfile(env, actor.business, await readJson<UpdateBusinessProfileInput>(request));
+      }
+
+      // Self-service password change. Intentionally has NO requireCapability call: every
+      // authenticated role may change their own password, and the row is chosen from the
+      // actor, so there is nothing here to escalate with.
+      if (url.pathname === "/api/me/password" && request.method === "PATCH") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        return await changeOwnPassword(env, actor, await readJson<ChangeOwnPasswordInput>(request));
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {

@@ -821,8 +821,8 @@ function QRBlock({ link }: { link: string }) {
 }
 
 export function Settings() {
-  const { t, lang, setLang, theme, setTheme, role, notify } = useCRM();
-  const { payload, openBusinessEditor, openCredentialsEditor, uploadBusinessPhoto, deleteBusinessPhoto, reload } = useData();
+  const { t, lang, setLang, theme, setTheme, role, notify, isTemporaryPassword } = useCRM();
+  const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor, uploadBusinessPhoto, deleteBusinessPhoto, reload } = useData();
   const [sec, setSec] = useState('profile');
   const [copied, setCopied] = useState(false);
   // Credentials are returned by the API exactly once, so they live in component state
@@ -904,17 +904,27 @@ export function Settings() {
                   </div>
                 ))}
               </div>
-              {/* Both are owner capabilities server-side (business:write, credentials:write).
-                  Showing them to a manager only earns them a 403 — and the credentials modal
-                  would open blank now that crmUsername is redacted for non-owners. */}
-              {role === 'owner' && (
-                <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
-                  <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.save}</button>
-                  <button onClick={openCredentialsEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="user" size={16} stroke={2} />{s.credentials}</button>
-                </div>
-              )}
-              {b.crmHasTemporaryPassword && (
-                <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}><Ic name="bell" size={14} stroke={2} />{s.tempPassword}</div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+                {/* Editing the shop and its login are owner capabilities server-side
+                    (business:write, credentials:write). Showing them to a manager only earns
+                    them a 403 — and the credentials modal would open blank now that
+                    crmUsername is redacted for non-owners. */}
+                {role === 'owner' && (
+                  <>
+                    <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.save}</button>
+                    <button onClick={openCredentialsEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="user" size={16} stroke={2} />{s.credentials}</button>
+                  </>
+                )}
+                {/* Every role, always. Changing your own password needs no capability, and a
+                    staff member had no way to do it at all until now. */}
+                <button onClick={openPasswordEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="shield" size={16} stroke={2} />{s.myPassword}</button>
+              </div>
+              {/* `b.crmHasTemporaryPassword` is redacted to false for non-owners, so the
+                  session's own flag is what tells a staff member their password is temporary. */}
+              {(b.crmHasTemporaryPassword || isTemporaryPassword) && (
+                <button onClick={openPasswordEditor} style={{ marginTop: 12, fontSize: 12.5, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, textAlign: 'left' }}>
+                  <Ic name="bell" size={14} stroke={2} />{isTemporaryPassword ? s.tempPasswordWarn : s.tempPassword}
+                </button>
               )}
             </Panel>
           )}

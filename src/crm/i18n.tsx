@@ -99,6 +99,10 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Faol', accessOff: 'O‘chirilgan', loginLabel: 'Login', newPassLabel: 'Yangi parol',
       copyCreds: 'Nusxa olish', credsWarn: 'Bu parol boshqa ko‘rsatilmaydi — xodimga hozir yuboring.',
       confirmRevoke: 'Bu xodimning kirishini o‘chirasizmi?', ownerOnly: 'Faqat egasi uchun',
+      myPassword: 'Mening parolim', myPasswordSub: 'Faqat siz biladigan parolni o‘rnating',
+      changePassword: 'Parolni o‘zgartirish', passwordChanged: 'Parol o‘zgartirildi',
+      tempPasswordWarn: 'Siz vaqtinchalik paroldan foydalanmoqdasiz. Iltimos, o‘zingizning parolingizni o‘rnating.',
+      passwordShort: 'Parol kamida 8 belgidan iborat bo‘lishi kerak.', passwordMismatch: 'Parollar bir xil emas.',
     },
     tour: {
       next: 'Keyingi', back: 'Orqaga', skip: 'O‘tkazib yuborish', done: 'Boshladik!', goServices: 'Xizmat qo‘shishga o‘tish', replay: 'Qo‘llanma', stepOf: '{n}/{total}',
@@ -201,6 +205,10 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Активен', accessOff: 'Отключён', loginLabel: 'Логин', newPassLabel: 'Новый пароль',
       copyCreds: 'Скопировать', credsWarn: 'Этот пароль больше не будет показан — отправьте его сотруднику сейчас.',
       confirmRevoke: 'Отключить доступ этому сотруднику?', ownerOnly: 'Только для владельца',
+      myPassword: 'Мой пароль', myPasswordSub: 'Задайте пароль, который знаете только вы',
+      changePassword: 'Изменить пароль', passwordChanged: 'Пароль изменён',
+      tempPasswordWarn: 'Вы используете временный пароль. Задайте свой собственный.',
+      passwordShort: 'Пароль должен содержать минимум 8 символов.', passwordMismatch: 'Пароли не совпадают.',
     },
     tour: {
       next: 'Далее', back: 'Назад', skip: 'Пропустить', done: 'Начать!', goServices: 'Перейти к услугам', replay: 'Обучение', stepOf: '{n}/{total}',
@@ -303,6 +311,10 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Active', accessOff: 'Turned off', loginLabel: 'Username', newPassLabel: 'New password',
       copyCreds: 'Copy', credsWarn: 'This password will not be shown again — send it to your staff member now.',
       confirmRevoke: 'Turn off access for this employee?', ownerOnly: 'Owner only',
+      myPassword: 'My password', myPasswordSub: 'Set a password only you know',
+      changePassword: 'Change password', passwordChanged: 'Password changed',
+      tempPasswordWarn: 'You are using a temporary password. Please set your own.',
+      passwordShort: 'Password must be at least 8 characters.', passwordMismatch: 'Passwords do not match.',
     },
     tour: {
       next: 'Next', back: 'Back', skip: 'Skip', done: 'Get started!', goServices: 'Go to Services', replay: 'Take the tour', stepOf: '{n}/{total}',
@@ -384,6 +396,8 @@ export type CRMContextValue = {
   setBranch: (b: number) => void;
   role: Role;
   staffName: string | null;
+  /** This actor is still on an issued temporary password and should replace it. */
+  isTemporaryPassword: boolean;
   /** Demo only. The real CRM's role comes from the signed session and is not settable. */
   setRole?: (r: Role) => void;
   allowed: string[] | null;

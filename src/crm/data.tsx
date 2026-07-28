@@ -26,6 +26,8 @@ export type DataValue = {
   toggleServiceActive: (s: ServiceCatalogItem) => void;
   openBusinessEditor: () => void;
   openCredentialsEditor: () => void;
+  /** Self-service password change — available to every role, unlike the credentials modal. */
+  openPasswordEditor: () => void;
   uploadBusinessPhoto: () => void;
   deleteBusinessPhoto: () => void;
 };

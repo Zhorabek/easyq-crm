@@ -1,6 +1,7 @@
 import { type FC, type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   ApiError,
+  changeOwnPassword,
   createBookingPayment,
   createEmployee,
   createService,
@@ -44,6 +45,7 @@ import {
   BusinessModal,
   ClientHistoryModal,
   CredentialsModal,
+  PasswordModal,
   ModalLayer,
   ServiceEditModal,
   SlotEditorModal,
@@ -121,6 +123,7 @@ export default function App() {
   const [serviceEditor, setServiceEditor] = useState<{ initial: ServiceCatalogItem | null } | null>(null);
   const [businessEditor, setBusinessEditor] = useState(false);
   const [credentialsEditor, setCredentialsEditor] = useState(false);
+  const [passwordEditor, setPasswordEditor] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const tourAutoShown = useRef(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -330,6 +333,19 @@ export default function App() {
       notify(err instanceof Error ? err.message : 'Error');
     }
   }
+  async function doChangePassword(v: { currentPassword: string; newPassword: string }) {
+    try {
+      const res = await changeOwnPassword(v);
+      // The response carries the refreshed session so the temporary-password banner clears
+      // without a reload; the cookie is unaffected, so the user stays signed in.
+      if (res.session) setSession(res.session);
+      setPasswordEditor(false);
+      notify(CRM_T[lang].set.passwordChanged);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Error');
+    }
+  }
+
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -404,7 +420,7 @@ export default function App() {
   const meta = titles[effActive] || titles.dashboard;
 
   const crmValue: CRMContextValue = {
-    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, allowed, navOpen, setNavOpen,
+    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),
@@ -422,6 +438,7 @@ export default function App() {
     toggleServiceActive: (s) => void doToggleService(s),
     openBusinessEditor: () => setBusinessEditor(true),
     openCredentialsEditor: () => setCredentialsEditor(true),
+    openPasswordEditor: () => setPasswordEditor(true),
     uploadBusinessPhoto: () => photoInputRef.current?.click(),
     deleteBusinessPhoto: () => void doDeletePhoto(),
   };
@@ -470,6 +487,7 @@ export default function App() {
         {serviceEditor && <ServiceEditModal initial={serviceEditor.initial} staffOptions={payload?.employees ?? []} onClose={() => setServiceEditor(null)} onSave={(v) => void doSaveService(v)} />}
         {slotEditor && <SlotEditorModal employee={slotEditor} schedule={payload?.business.schedule ?? ''} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
         {businessEditor && payload && <BusinessModal initial={{ name: payload.business.name, type: payload.business.type, address: payload.business.address, phone: payload.business.phone, schedule: payload.business.schedule, description: payload.business.description ?? '' }} onClose={() => setBusinessEditor(false)} onSave={(v) => void doSaveBusiness(v)} />}
+        {passwordEditor && <PasswordModal onClose={() => setPasswordEditor(false)} onSave={(v) => void doChangePassword(v)} />}
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 
         <Toast msg={toast} />

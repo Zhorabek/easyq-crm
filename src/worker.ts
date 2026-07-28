@@ -38,6 +38,18 @@ import {
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
+import {
+  consumeVerification,
+  contactBelongsToSender,
+  createVerification,
+  generateNonce,
+  getVerification,
+  isUsable,
+  markVerified,
+  parseStartPayload,
+  releaseVerification,
+  type TelegramUpdate,
+} from "./server/verification";
 
 interface Env {
   DB: D1Database;
@@ -54,6 +66,14 @@ interface Env {
    * Not in wrangler.toml (which carries no [vars] block) — this is only an override.
    */
   TENANT_ROOT_DOMAINS?: string;
+  /**
+   * Dedicated phone-verification bot. Separate from BUSINESS_BOT_TOKEN because a bot
+   * has one webhook, and reusing the business bot's would steal its updates.
+   */
+  VERIFY_BOT_TOKEN?: string;
+  VERIFY_BOT_USERNAME?: string;
+  /** Echoed by Telegram in X-Telegram-Bot-Api-Secret-Token; gates the webhook. */
+  VERIFY_WEBHOOK_SECRET?: string;
 }
 
 type BusinessRow = {
@@ -770,14 +790,233 @@ type SignupInput = {
   name?: string;
   type?: string;
   address?: string;
-  phone?: string;
   lang?: string;
-  code?: string;
   slug?: string;
   captchaToken?: string;
   captchaAnswer?: string;
   acceptedTerms?: boolean;
+  /**
+   * Proof that a Telegram account confirmed a phone number. Replaces the old
+   * `code: "1111"`. Note there is no longer a `phone` field — the number is read from
+   * the verification row, because a client-supplied phone would make the whole
+   * verification decorative.
+   */
+  verificationNonce?: string;
 };
+
+// ─────────────────────────────────────────────────────── Telegram phone verification
+
+/** Public origin of the landing, used to build the deep link's bot username. */
+function verifyBotUsername(env: Env) {
+  return env.VERIFY_BOT_USERNAME || "easyq_verify_bot";
+}
+
+async function startVerification(env: Env, request: Request) {
+  if (!env.VERIFY_BOT_TOKEN) {
+    return json(
+      {
+        error: "Phone verification is not configured.",
+        code: "verify_unconfigured",
+        hint: "Create a bot with @BotFather, then set VERIFY_BOT_TOKEN, VERIFY_BOT_USERNAME and VERIFY_WEBHOOK_SECRET on the easyq-crm Worker.",
+      },
+      { status: 503, headers: SIGNUP_CORS }
+    );
+  }
+
+  const nonce = generateNonce();
+  const created = await createVerification(env.DB, nonce);
+
+  return json(
+    {
+      nonce: created.nonce,
+      // `startapp` is for mini-apps; plain `start` is what delivers "/start <payload>".
+      deepLink: `https://t.me/${verifyBotUsername(env)}?start=${created.nonce}`,
+      botUsername: verifyBotUsername(env),
+      expiresIn: created.expiresIn,
+    },
+    { status: 201, headers: { ...SIGNUP_CORS, "cache-control": "no-store" } }
+  );
+}
+
+/**
+ * Polled by the signup wizard. Deliberately thin: it reveals only whether THIS nonce
+ * has been confirmed and, once it has, the number that was confirmed. The nonce is
+ * unguessable, so holding it is what authorizes seeing the phone.
+ */
+async function verificationStatus(env: Env, url: URL) {
+  const nonce = url.searchParams.get("nonce") ?? "";
+  const row = await getVerification(env.DB, nonce);
+
+  if (!row || !isUsable(row)) {
+    return json(
+      { status: row?.status === "consumed" ? "consumed" : "expired" },
+      { headers: { ...PUBLIC_GET_CORS, "cache-control": "no-store" } }
+    );
+  }
+
+  return json(
+    {
+      status: row.status,
+      phone: row.status === "verified" ? row.phone : null,
+    },
+    { headers: { ...PUBLIC_GET_CORS, "cache-control": "no-store" } }
+  );
+}
+
+const VERIFY_PROMPT: Record<string, { ask: string; done: string; bad: string; stale: string }> = {
+  ru: {
+    ask: "Нажмите кнопку ниже, чтобы подтвердить свой номер телефона и продолжить регистрацию на EasyQ.",
+    done: "Номер подтверждён ✅ Вернитесь на страницу регистрации — она продолжится сама.",
+    bad: "Пожалуйста, нажмите кнопку «Поделиться номером», а не отправляйте чужой контакт.",
+    stale: "Ссылка устарела. Откройте регистрацию на easyq.uz заново.",
+  },
+  uz: {
+    ask: "Telefon raqamingizni tasdiqlash va EasyQ’da ro‘yxatdan o‘tishni davom ettirish uchun pastdagi tugmani bosing.",
+    done: "Raqam tasdiqlandi ✅ Ro‘yxatdan o‘tish sahifasiga qayting — u o‘zi davom etadi.",
+    bad: "Iltimos, «Raqamni yuborish» tugmasini bosing, boshqa odamning kontaktini yubormang.",
+    stale: "Havola eskirgan. easyq.uz’da ro‘yxatdan o‘tishni qaytadan boshlang.",
+  },
+  en: {
+    ask: "Tap the button below to confirm your phone number and continue signing up for EasyQ.",
+    done: "Number confirmed ✅ Head back to the signup page — it will continue on its own.",
+    bad: "Please tap the “Share my number” button rather than forwarding someone else's contact.",
+    stale: "This link has expired. Start the signup again at easyq.uz.",
+  },
+};
+
+const SHARE_BUTTON: Record<string, string> = {
+  ru: "📱 Поделиться номером",
+  uz: "📱 Raqamni yuborish",
+  en: "📱 Share my number",
+};
+
+function promptLang(code: string | undefined) {
+  const lang = String(code ?? "").slice(0, 2).toLowerCase();
+  return lang === "ru" || lang === "uz" || lang === "en" ? lang : "ru";
+}
+
+/**
+ * Webhook for the dedicated verification bot.
+ *
+ * Register it once with:
+ *   curl "https://api.telegram.org/bot<TOKEN>/setWebhook" -d url=... -d secret_token=...
+ *
+ * Telegram echoes that secret in X-Telegram-Bot-Api-Secret-Token. Checking it is not
+ * optional: this endpoint writes verified phone numbers, so without the check anyone
+ * who knows the URL could POST a forged contact and verify any number they like.
+ */
+async function telegramVerifyWebhook(env: Env, request: Request) {
+  if (!env.VERIFY_BOT_TOKEN || !env.VERIFY_WEBHOOK_SECRET) {
+    return json({ error: "Not found" }, { status: 404 });
+  }
+
+  const presented = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  if (!timingSafeEqualString(presented, env.VERIFY_WEBHOOK_SECRET)) {
+    // 404 rather than 401: an unauthenticated caller learns nothing about the route.
+    return json({ error: "Not found" }, { status: 404 });
+  }
+
+  const update = (await request.json().catch(() => ({}))) as TelegramUpdate;
+  const message = update.message;
+  const chatId = message?.chat?.id;
+  const senderId = message?.from?.id;
+  const lang = promptLang(message?.from?.language_code);
+  const copy = VERIFY_PROMPT[lang];
+
+  // Always 200. A non-2xx makes Telegram retry the same update for hours, so failures
+  // are swallowed here and surfaced through the browser's polling instead.
+  if (!chatId) return json({ ok: true });
+
+  const startPayload = parseStartPayload(message?.text);
+  if (startPayload) {
+    const row = await getVerification(env.DB, startPayload);
+    if (!row || !isUsable(row)) {
+      await sendVerifyMessage(env, chatId, copy.stale);
+      return json({ ok: true });
+    }
+
+    await sendVerifyMessage(env, chatId, copy.ask, {
+      keyboard: [[{ text: SHARE_BUTTON[lang], request_contact: true }]],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    });
+    // The nonce is remembered against the chat, because the contact message that
+    // follows carries no payload of its own.
+    await rememberPendingChat(env.DB, chatId, startPayload);
+    return json({ ok: true });
+  }
+
+  if (message?.contact) {
+    if (!contactBelongsToSender(message.contact, senderId)) {
+      await sendVerifyMessage(env, chatId, copy.bad);
+      return json({ ok: true });
+    }
+
+    const nonce = await takePendingChat(env.DB, chatId);
+    if (!nonce) {
+      await sendVerifyMessage(env, chatId, copy.stale);
+      return json({ ok: true });
+    }
+
+    const phone = toStoragePhone(String(message.contact.phone_number ?? ""));
+    if (!phone) {
+      await sendVerifyMessage(env, chatId, copy.stale);
+      return json({ ok: true });
+    }
+
+    const outcome = await markVerified(env.DB, nonce, phone, Number(senderId));
+    await sendVerifyMessage(env, chatId, outcome.ok ? copy.done : copy.stale, { remove_keyboard: true });
+    return json({ ok: true });
+  }
+
+  return json({ ok: true });
+}
+
+async function sendVerifyMessage(env: Env, chatId: number, text: string, replyMarkup?: unknown) {
+  if (!env.VERIFY_BOT_TOKEN) return;
+  await tgCallJson(env.VERIFY_BOT_TOKEN, "sendMessage", {
+    chat_id: chatId,
+    text,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  }).catch((error) => {
+    console.log("verify sendMessage error:", error);
+    return null;
+  });
+}
+
+/**
+ * The contact message Telegram sends has no /start payload, so the nonce has to be
+ * carried across the two updates. It is parked on the verification row itself
+ * (telegram_id doubles as "this chat is mid-flow") to avoid a second table.
+ */
+async function rememberPendingChat(db: D1Database, chatId: number, nonce: string) {
+  await db
+    .prepare("UPDATE signup_verification SET telegram_id = ? WHERE nonce = ? AND status = 'pending'")
+    .bind(chatId, nonce)
+    .run();
+}
+
+/** Most recent still-pending nonce this chat opened. */
+async function takePendingChat(db: D1Database, chatId: number) {
+  const row = await db
+    .prepare(
+      `SELECT nonce FROM signup_verification
+       WHERE telegram_id = ? AND status = 'pending' AND expires_at >= ?
+       ORDER BY created_at DESC
+       LIMIT 1`
+    )
+    .bind(chatId, Math.floor(Date.now() / 1000))
+    .first<{ nonce: string }>();
+  return row?.nonce ?? null;
+}
+
+/** Length-independent comparison, so a wrong secret leaks nothing through timing. */
+function timingSafeEqualString(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return diff === 0;
+}
 
 async function crmUsernameExists(db: D1Database, username: string) {
   const row = await db.prepare("SELECT 1 AS x FROM businesses WHERE crm_username = ? LIMIT 1").bind(username).first();
@@ -824,8 +1063,6 @@ async function signupBusiness(env: Env, request: Request) {
   const name = (input.name ?? "").trim();
   const type = (input.type ?? "").trim() || "other";
   const address = (input.address ?? "").trim() || "—";
-  const phone = (input.phone ?? "").trim();
-  const code = String(input.code ?? "");
   const language = input.lang === "ru" || input.lang === "uz" ? input.lang : null;
   const slug = String(input.slug ?? "").trim().toLowerCase();
 
@@ -854,16 +1091,8 @@ async function signupBusiness(env: Env, request: Request) {
     );
   }
 
-  if (code !== "1111") {
-    return json({ error: "Invalid verification code." }, { status: 400, headers: SIGNUP_CORS });
-  }
   if (name.length < 2) {
     return json({ error: "Business name is required." }, { status: 400, headers: SIGNUP_CORS });
-  }
-  // Signup is a new row every time, so it can hold the canonical form strictly.
-  const storedPhone = toStoragePhone(phone);
-  if (!storedPhone) {
-    return json({ error: "A valid phone number is required." }, { status: 400, headers: SIGNUP_CORS });
   }
 
   const slugIssue = slugProblem(slug);
@@ -876,6 +1105,32 @@ async function signupBusiness(env: Env, request: Request) {
   if (await slugExists(env.DB, slug)) {
     return json({ error: "That subdomain is already taken.", code: "slug_taken" }, { status: 409, headers: SIGNUP_CORS });
   }
+
+  // Phone verification is spent LAST among the checks and immediately before the first
+  // write, because consuming is a compare-and-swap: it is what stops two concurrent
+  // requests holding the same nonce from creating two businesses. Everything cheap and
+  // rejectable therefore runs first, so a slug collision does not burn a good nonce.
+  if (!env.VERIFY_BOT_TOKEN) {
+    return json(
+      { error: "Phone verification is not configured.", code: "verify_unconfigured" },
+      { status: 503, headers: SIGNUP_CORS }
+    );
+  }
+  const verification = await consumeVerification(env.DB, String(input.verificationNonce ?? ""));
+  if (!verification.ok) {
+    return json(
+      {
+        error:
+          verification.reason === "already_used"
+            ? "That confirmation was already used. Please verify your number again."
+            : "Please confirm your phone number in Telegram first.",
+        code: `verify_${verification.reason}`,
+      },
+      { status: 400, headers: SIGNUP_CORS }
+    );
+  }
+  // Telegram vouched for this number, so it never came from the request body.
+  const storedPhone = verification.phone;
 
   // Web sign-ups have no Telegram account, but users.telegram_id is NOT NULL UNIQUE.
   // Use a synthetic negative id (real Telegram ids are positive) and retry on the rare collision.
@@ -906,8 +1161,10 @@ async function signupBusiness(env: Env, request: Request) {
       .bind(userId, name, type, address, storedPhone, "09:00 - 19:00", slug)
       .run();
   } catch (error) {
-    // Someone claimed this slug between the check above and here.
+    // Someone claimed this slug between the check above and here. Undo both writes so
+    // the visitor can just pick another subdomain instead of re-verifying in Telegram.
     await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run().catch(() => undefined);
+    await releaseVerification(env.DB, String(input.verificationNonce ?? ""));
     const message = error instanceof Error ? error.message : "";
     if (message.includes("UNIQUE") || message.includes("constraint")) {
       return json({ error: "That subdomain is already taken.", code: "slug_taken" }, { status: 409, headers: SIGNUP_CORS });
@@ -2031,7 +2288,9 @@ export default {
         (url.pathname === "/api/signup" ||
           url.pathname === "/api/feedback" ||
           url.pathname === "/api/captcha" ||
-          url.pathname === "/api/subdomain/check")
+          url.pathname === "/api/subdomain/check" ||
+          url.pathname.startsWith("/api/verify/") ||
+          url.pathname === "/api/telegram/verify-webhook")
       ) {
         return json({ error: "Not found" }, { status: 404 });
       }
@@ -2070,6 +2329,24 @@ export default {
 
       if (url.pathname === "/api/subdomain/check" && request.method === "GET") {
         return checkSubdomain(env, url);
+      }
+
+      // ── Telegram phone verification ─────────────────────────────────────────
+      if (url.pathname === "/api/verify/start" && request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: SIGNUP_CORS });
+      }
+
+      if (url.pathname === "/api/verify/start" && request.method === "POST") {
+        return startVerification(env, request);
+      }
+
+      if (url.pathname === "/api/verify/status" && request.method === "GET") {
+        return verificationStatus(env, url);
+      }
+
+      // Called by Telegram, not by a browser — no CORS, gated on the shared secret.
+      if (url.pathname === "/api/telegram/verify-webhook" && request.method === "POST") {
+        return telegramVerifyWebhook(env, request);
       }
 
       if (url.pathname === "/api/captcha" && request.method === "GET") {

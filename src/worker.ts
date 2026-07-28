@@ -44,6 +44,7 @@ import {
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
+import { normalizeBrandColor } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
 import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
 
@@ -81,6 +82,7 @@ type BusinessRow = {
   crm_credentials_updated_at: string | null;
   slug: string | null;
   session_version: number;
+  brand_color: string | null;
 };
 
 type LoginRow = {
@@ -265,7 +267,8 @@ async function getBusinessById(db: D1Database, businessId: number) {
            crm_temp_password,
            crm_credentials_updated_at,
            slug,
-           session_version
+           session_version,
+           brand_color
          FROM businesses
          WHERE id = ?
          LIMIT 1`
@@ -2157,6 +2160,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       photoFileUniqueId: business.photo_file_unique_id,
       crmUsername: business.crm_username,
       crmHasTemporaryPassword: Boolean(business.crm_temp_password),
+      brandColor: business.brand_color,
     },
     generatedAt: new Date().toISOString(),
     selectedDate,
@@ -2526,6 +2530,21 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
     input.description === undefined ? business.description : input.description?.trim() ? input.description.trim() : null;
   const nextType = input.type === undefined ? normalizeBusinessType(business.type) ?? business.type : normalizeBusinessType(input.type);
 
+  // Empty string clears the choice back to the easyQ default; anything unparseable is a
+  // 400 rather than being silently stored and rendering as no colour at all.
+  let nextBrandColor = business.brand_color;
+  if (input.brandColor !== undefined) {
+    const raw = String(input.brandColor ?? "").trim();
+    if (!raw) {
+      nextBrandColor = null;
+    } else {
+      nextBrandColor = normalizeBrandColor(raw);
+      if (!nextBrandColor) {
+        return json({ error: "Brand colour must be a hex value like #1d4ed8", code: "invalid_brand_color" }, { status: 400 });
+      }
+    }
+  }
+
   if (!nextName) {
     return json({ error: "Business name is required" }, { status: 400 });
   }
@@ -2549,10 +2568,10 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
   await env.DB
     .prepare(
       `UPDATE businesses
-       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?
+       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?, brand_color = ?
        WHERE id = ?`
     )
-    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, business.id)
+    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, nextBrandColor, business.id)
     .run();
 
   return json({ ok: true });

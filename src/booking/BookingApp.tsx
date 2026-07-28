@@ -6,6 +6,7 @@ import type {
   PublicStaff,
 } from '../types';
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
+import { brandPalette } from '../shared/brand';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -122,6 +123,20 @@ export default function BookingApp() {
   useEffect(() => {
     if (biz) document.title = `${t.book} · ${biz.name}`;
   }, [biz, t.book]);
+
+  // Repaint the accent tokens from the business's colour. Set on the root element rather
+  // than injected as a <style> block so it overrides crm.css by specificity without a
+  // stylesheet race, and so a business that has chosen nothing simply inherits the
+  // defaults already in the file.
+  useEffect(() => {
+    if (!biz) return;
+    const palette = brandPalette(biz.brandColor);
+    const root = document.documentElement;
+    root.style.setProperty('--accent', palette.accent);
+    root.style.setProperty('--accent-deep', palette.accentDeep);
+    root.style.setProperty('--accent-tint', palette.accentTint);
+    root.style.setProperty('--accent-ink', palette.accentInk);
+  }, [biz]);
 
   // Staff who can actually perform the chosen service. A service with no linked staff
   // falls back to the whole team rather than dead-ending the client.
@@ -398,6 +413,7 @@ export default function BookingApp() {
         </div>
       )}
 
+      {/* Deliberately not brand-coloured: this is easyQ's mark, not the shop's. */}
       <footer className="bk-foot">
         easy<span>Q</span>
       </footer>

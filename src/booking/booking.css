@@ -404,6 +404,8 @@
   letter-spacing: -0.03em;
   color: var(--ink-3);
 }
+/* Fixed easyQ green: the wordmark belongs to the platform, not to the shop, so it does
+   not follow --accent-deep like everything else on the page. */
 .bk-foot span {
-  color: var(--accent-deep);
+  color: #84a92e;
 }

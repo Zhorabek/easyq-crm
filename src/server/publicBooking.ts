@@ -12,6 +12,7 @@
 
 import { bookableSlots, type ExistingBooking } from "../shared/availability";
 import { isValidPhone, toStoragePhone } from "../shared/phone";
+import { DEFAULT_BRAND_COLOR, normalizeBrandColor } from "../shared/brand";
 import type {
   CreatePublicBookingInput,
   PublicBusinessPayload,
@@ -77,7 +78,7 @@ export async function getPublicBusiness(
 ): Promise<PublicBusinessPayload | null> {
   const business = await db
     .prepare(
-      `SELECT name, type, address, phone, schedule, description, photo_file_id
+      `SELECT name, type, address, phone, schedule, description, photo_file_id, brand_color
        FROM businesses WHERE id = ? LIMIT 1`
     )
     .bind(businessId)
@@ -89,6 +90,7 @@ export async function getPublicBusiness(
       schedule: string;
       description: string | null;
       photo_file_id: string | null;
+      brand_color: string | null;
     }>();
 
   if (!business) return null;
@@ -161,6 +163,8 @@ export async function getPublicBusiness(
     schedule: business.schedule,
     description: business.description,
     hasPhoto: Boolean(business.photo_file_id),
+    // Resolved here so the page never has to decide what "no colour" means.
+    brandColor: normalizeBrandColor(business.brand_color ?? "") ?? DEFAULT_BRAND_COLOR,
     services: publicServices,
     staff: publicStaff,
     timeZone,

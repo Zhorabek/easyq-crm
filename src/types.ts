@@ -16,6 +16,8 @@ export interface BusinessProfile {
   photoFileUniqueId: string | null;
   crmUsername: string | null;
   crmHasTemporaryPassword: boolean;
+  /** Chosen accent as `#rrggbb`, or null to use the easyQ default. */
+  brandColor: string | null;
 }
 
 /** Permission level. The owner is the business account; the rest are staff logins. */
@@ -222,6 +224,8 @@ export interface PublicBusinessPayload {
   schedule: string;
   description: string | null;
   hasPhoto: boolean;
+  /** Resolved accent for this business; never null, falls back to the easyQ green. */
+  brandColor: string;
   services: PublicService[];
   staff: PublicStaff[];
   /** IANA zone the business runs on, so the client page agrees about "today". */
@@ -355,6 +359,7 @@ export interface UpdateBusinessProfileInput {
   phone?: string;
   schedule?: string;
   description?: string | null;
+  brandColor?: string | null;
 }
 
 export interface LoginInput {

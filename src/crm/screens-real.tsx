@@ -5,7 +5,8 @@ import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, Statu
 import { avatarColor, colorForId, dayPayments, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
-import { grantStaffAccess, revokeStaffAccess, updateStaffAccessRole } from '../lib/api';
+import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
+import { BRAND_PRESETS, DEFAULT_BRAND_COLOR, brandPalette, isValidBrandColor, normalizeBrandColor } from '../shared/brand';
 import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ServiceCatalogItem } from '../types';
 
 const PALETTE = ['#84A92E', '#3B82F6', '#8B5CF6', '#F59E0B', '#14B8A6', '#F43F5E'];
@@ -828,6 +829,18 @@ export function Settings() {
   // Credentials are returned by the API exactly once, so they live in component state
   // and are never refetched. A reload loses them, which is correct.
   const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
+  // Draft is a raw string, not a validated colour: the owner may be mid-way through
+  // typing a hex, and snapping it to a valid value on every keystroke fights them.
+  const [brandDraft, setBrandDraft] = useState(payload?.business.brandColor ?? DEFAULT_BRAND_COLOR);
+  const brandPreview = brandPalette(isValidBrandColor(brandDraft) ? brandDraft : DEFAULT_BRAND_COLOR);
+  const onSaveBrand = async (value: string) => {
+    try {
+      // Empty clears it back to the easyQ default, which is what the reset button sends.
+      await updateBusinessProfile({ brandColor: value.trim() ? value.trim() : null });
+      notify();
+      await reload();
+    } catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
 
   const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
   const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
@@ -861,7 +874,7 @@ export function Settings() {
   const navItems: Array<[string, string]> = [
     ['profile', 'user'],
     ['booking', 'grid'],
-    ...(role === 'owner' ? ([['team', 'staff']] as Array<[string, string]>) : []),
+    ...(role === 'owner' ? ([['brand', 'star'], ['team', 'staff']] as Array<[string, string]>) : []),
     ['appearance', 'sun'],
   ];
 
@@ -1046,6 +1059,93 @@ export function Settings() {
                     </div>
                   );
                 })}
+              </div>
+            </Panel>
+          )}
+
+          {sec === 'brand' && (
+            <Panel>
+              <SetHead title={s.brand} sub={s.brandSub} />
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 18 }}>
+                {BRAND_PRESETS.map((preset) => {
+                  const on = (brandDraft || DEFAULT_BRAND_COLOR).toLowerCase() === preset.toLowerCase();
+                  return (
+                    <button
+                      key={preset}
+                      onClick={() => setBrandDraft(preset)}
+                      title={preset}
+                      style={{
+                        width: 40, height: 40, borderRadius: 11, background: preset, flex: 'none',
+                        border: on ? '3px solid var(--ink)' : '1px solid var(--line-2)',
+                        display: 'grid', placeItems: 'center',
+                      }}
+                    >
+                      {on && <Ic name="check" size={17} stroke={3} style={{ color: brandPalette(preset).accentInk }} />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{s.brandCustom}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* The native picker writes a valid hex by construction; the text field
+                        beside it is for pasting a brand colour from a style guide. */}
+                    <input
+                      type="color"
+                      value={isValidBrandColor(brandDraft) ? normalizeBrandColor(brandDraft)! : DEFAULT_BRAND_COLOR}
+                      onChange={(e) => setBrandDraft(e.target.value)}
+                      style={{ width: 46, height: 42, padding: 0, border: '1px solid var(--line-2)', borderRadius: 10, background: 'none' }}
+                    />
+                    <input
+                      value={brandDraft}
+                      onChange={(e) => setBrandDraft(e.target.value)}
+                      placeholder={DEFAULT_BRAND_COLOR}
+                      className="mono"
+                      style={{ ...setInput, width: 132 }}
+                    />
+                  </div>
+                </label>
+                <button onClick={() => setBrandDraft(DEFAULT_BRAND_COLOR)} style={btnGhost}>{s.brandReset}</button>
+              </div>
+
+              {brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 10 }}>{s.brandInvalid}</div>
+              )}
+
+              {/* Live preview of the derived palette, so the owner sees the button text
+                  colour that gets picked for them rather than discovering it on the
+                  client-facing page. */}
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
+                <div style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 18, background: brandPreview.accentTint }}>
+                  <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--ink)' }}>{b.name}</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: brandPreview.accentDeep, marginTop: 3 }}>{b.schedule}</div>
+                  <button
+                    style={{
+                      marginTop: 14, padding: '12px 18px', borderRadius: 12, fontSize: 14.5, fontWeight: 800,
+                      background: brandPreview.accent, color: brandPreview.accentInk, border: 0,
+                    }}
+                  >
+                    {s.brandBook}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button
+                  onClick={() => void onSaveBrand(brandDraft)}
+                  disabled={brandDraft.trim() !== '' && !isValidBrandColor(brandDraft)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
+                    color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
+                    opacity: brandDraft.trim() !== '' && !isValidBrandColor(brandDraft) ? 0.5 : 1,
+                  }}
+                >
+                  <Ic name="check" size={16} stroke={2.4} />{s.save}
+                </button>
               </div>
             </Panel>
           )}

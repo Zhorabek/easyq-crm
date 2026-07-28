@@ -5,6 +5,7 @@ import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectI
 import { fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { isValidPhone, toStoragePhone } from '../shared/phone';
+import { generateDayIntervals, parseBusinessHours, timeToMinutes } from '../lib/date';
 import type { BookingStatus, CalendarBookingCard, ClientRow, EmployeeRow, PaymentMethod, ServiceCatalogItem } from '../types';
 
 /* ===================== cosmetic "+ Add" modals (no backend) ===================== */
@@ -211,21 +212,31 @@ export function ClientHistoryModal({ client, onClose }: { client: ClientRow; onC
 }
 
 /* ===================== real: staff create / edit ===================== */
-export function StaffCreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => void }) {
+export type StaffFormValue = { name: string; role: string; phone: string };
+
+export function StaffCreateModal({ onClose, onCreate }: { onClose: () => void; onCreate: (v: StaffFormValue) => void }) {
   const { m } = useCRM();
   const s = m.staff;
-  const [name, setName] = useState('');
+  const [f, setF] = useState<StaffFormValue>({ name: '', role: '', phone: '' });
+  const up = (k: keyof StaffFormValue, v: string) => setF((p) => ({ ...p, [k]: v }));
+  // Phone is optional, but a half-typed one is not — it would be stored as nothing.
+  const valid = f.name.trim().length >= 2 && (!f.phone.trim() || isValidPhone(f.phone));
   return (
-    <Modal title={s.title} sub={s.sub} icon="staff" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={s.submit} disabled={!name.trim()} onSubmit={() => onCreate(name.trim())} />}>
-      <Field label={s.name}><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+    <Modal title={s.title} sub={s.sub} icon="staff" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={s.submit} disabled={!valid} onSubmit={() => onCreate({ name: f.name.trim(), role: f.role.trim(), phone: toStoragePhone(f.phone) ?? '' })} />}>
+      <Field label={s.name}><TextInput value={f.name} onChange={(e) => up('name', e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+      <Field label={s.role}><TextInput value={f.role} onChange={(e) => up('role', e.target.value)} placeholder={s.rolePh} /></Field>
+      <Field label={s.phone}><PhoneInput value={f.phone} onChange={(v) => up('phone', v)} /></Field>
     </Modal>
   );
 }
 
-export function StaffEditModal({ employee, onClose, onSave, onDelete }: { employee: EmployeeRow; onClose: () => void; onSave: (name: string) => void; onDelete: () => void }) {
+export function StaffEditModal({ employee, onClose, onSave, onDelete }: { employee: EmployeeRow; onClose: () => void; onSave: (v: StaffFormValue) => void; onDelete: () => void }) {
   const { t, m } = useCRM();
   const s = m.staff;
-  const [name, setName] = useState(employee.name);
+  const [f, setF] = useState<StaffFormValue>({ name: employee.name, role: employee.role, phone: employee.phone ?? '' });
+  const up = (k: keyof StaffFormValue, v: string) => setF((p) => ({ ...p, [k]: v }));
+  const valid = f.name.trim().length >= 2 && (!f.phone.trim() || isValidPhone(f.phone));
+  const submit = () => onSave({ name: f.name.trim(), role: f.role.trim(), phone: toStoragePhone(f.phone) ?? '' });
   return (
     <Modal
       title={employee.name}
@@ -235,13 +246,15 @@ export function StaffEditModal({ employee, onClose, onSave, onDelete }: { employ
       footer={
         <>
           <button onClick={onDelete} style={{ flex: 'none', padding: '11px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700, color: 'var(--rose)', background: 'var(--rose-t)' }}>{t.staff.delete}</button>
-          <button onClick={() => onSave(name.trim())} disabled={!name.trim()} style={{ flex: 1, padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--accent-ink)', background: name.trim() ? 'var(--accent)' : 'var(--panel-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+          <button onClick={submit} disabled={!valid} style={{ flex: 1, padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--accent-ink)', background: valid ? 'var(--accent)' : 'var(--panel-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
             <Ic name="check" size={17} stroke={2.4} />{m.saved}
           </button>
         </>
       }
     >
-      <Field label={s.name}><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+      <Field label={s.name}><TextInput value={f.name} onChange={(e) => up('name', e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+      <Field label={s.role}><TextInput value={f.role} onChange={(e) => up('role', e.target.value)} placeholder={s.rolePh} /></Field>
+      <Field label={s.phone}><PhoneInput value={f.phone} onChange={(v) => up('phone', v)} /></Field>
     </Modal>
   );
 }
@@ -336,50 +349,194 @@ export function CredentialsModal({ initialUsername, onClose, onSave }: { initial
 }
 
 /* ===================== real: slot editor ===================== */
-export function SlotEditorModal({ employee, intervals, onClose, onSave }: { employee: EmployeeRow; intervals: string[]; onClose: () => void; onSave: (v: { weeklySlots: Array<{ weekday: number; slots: string[] }>; weeklyBreaks: Array<{ weekday: number; slots: string[] }>; dayOffs: Array<{ date: string; isFullDay: boolean; slots: string[] }> }) => void }) {
+/**
+ * Weekly shift editor.
+ *
+ * Rebuilt because the old one had three problems that made a normal week painful:
+ *
+ *  1. The grid was generated from the BUSINESS schedule string, so a shop listed as
+ *     "09:00 - 19:00" could not roster anyone at 08:00 or 22:00 — those buttons did not
+ *     exist. The grid is now the full 24 hours; business hours only seed From/To.
+ *  2. Every slot needed its own tap. A 09:00-19:00 day is 20 taps, a six-day week ~120.
+ *     The From/To range setter does a whole day in three.
+ *  3. Nothing could be copied between days, though most shops work identical hours
+ *     Monday to Saturday. "Copy to" does that in one tap per day.
+ *
+ * Individual chips still toggle, for the exceptions the bulk tools cannot express.
+ */
+export function SlotEditorModal({
+  employee,
+  schedule,
+  onClose,
+  onSave,
+}: {
+  employee: EmployeeRow;
+  /** Business hours text. Used only to preset From/To and to dim unusual hours. */
+  schedule: string;
+  onClose: () => void;
+  onSave: (v: {
+    weeklySlots: Array<{ weekday: number; slots: string[] }>;
+    weeklyBreaks: Array<{ weekday: number; slots: string[] }>;
+    dayOffs: Array<{ date: string; isFullDay: boolean; slots: string[] }>;
+  }) => void;
+}) {
   const { t, m } = useCRM();
+  const st = t.staff;
+  const allTimes = generateDayIntervals();
+  const hours = parseBusinessHours(schedule);
+
   const [mode, setMode] = useState<'slots' | 'breaks'>('slots');
   const [weekday, setWeekday] = useState(() => employee.weeklySlots.find((d) => d.slots.length)?.weekday ?? 1);
-  const [slots, setSlots] = useState<Record<number, string[]>>(() => Object.fromEntries(employee.weeklySlots.map((d) => [d.weekday, [...d.slots]])));
-  const [breaks, setBreaks] = useState<Record<number, string[]>>(() => Object.fromEntries(employee.weeklyBreaks.map((d) => [d.weekday, [...d.slots]])));
+  const [slots, setSlots] = useState<Record<number, string[]>>(() =>
+    Object.fromEntries(employee.weeklySlots.map((d) => [d.weekday, [...d.slots]])),
+  );
+  const [breaks, setBreaks] = useState<Record<number, string[]>>(() =>
+    Object.fromEntries(employee.weeklyBreaks.map((d) => [d.weekday, [...d.slots]])),
+  );
+  const [from, setFrom] = useState(hours?.start ?? '09:00');
+  const [to, setTo] = useState(hours?.end ?? '19:00');
+  const [copiedTo, setCopiedTo] = useState<number[]>([]);
+
   const dayOffs = employee.dayOffs.map((d) => ({ date: d.date, isFullDay: d.isFullDay, slots: [...d.slots] }));
   const labels: string[] = t.cal.weekdaysFull;
   const order = [1, 2, 3, 4, 5, 6, 0];
   const cur = mode === 'slots' ? slots : breaks;
   const setCur = mode === 'slots' ? setSlots : setBreaks;
   const active = cur[weekday] ?? [];
-  const toggle = (time: string) => setCur((p) => { const list = p[weekday] ?? []; return { ...p, [weekday]: list.includes(time) ? list.filter((x) => x !== time) : [...list, time].sort() }; });
+  const rangeInvalid = timeToMinutes(to) <= timeToMinutes(from);
 
-  const save = () => {
-    const weeklySlots = order.map((wd) => ({ weekday: wd, slots: (slots[wd] ?? []).slice().sort() }));
-    const weeklyBreaks = order.map((wd) => ({ weekday: wd, slots: (breaks[wd] ?? []).slice().sort() }));
-    onSave({ weeklySlots, weeklyBreaks, dayOffs });
+  const writeDay = (wd: number, list: string[]) => setCur((p) => ({ ...p, [wd]: [...new Set(list)].sort() }));
+  const toggle = (time: string) =>
+    writeDay(weekday, active.includes(time) ? active.filter((x) => x !== time) : [...active, time]);
+
+  /** Half-hours from `from` up to but excluding `to`, so 09:00-19:00 ends at 18:30. */
+  const applyRange = () => {
+    if (rangeInvalid) return;
+    const a = timeToMinutes(from);
+    const b = timeToMinutes(to);
+    writeDay(
+      weekday,
+      allTimes.filter((time) => {
+        const v = timeToMinutes(time);
+        return v >= a && v < b;
+      }),
+    );
   };
 
+  const copyToDay = (wd: number) => {
+    writeDay(wd, [...active]);
+    setCopiedTo((p) => (p.includes(wd) ? p : [...p, wd]));
+  };
+  const copyToAll = () => {
+    setCur((p) => {
+      const next = { ...p };
+      for (const wd of order) next[wd] = [...active].sort();
+      return next;
+    });
+    setCopiedTo(order.filter((wd) => wd !== weekday));
+  };
+
+  const save = () => {
+    onSave({
+      weeklySlots: order.map((wd) => ({ weekday: wd, slots: (slots[wd] ?? []).slice().sort() })),
+      weeklyBreaks: order.map((wd) => ({ weekday: wd, slots: (breaks[wd] ?? []).slice().sort() })),
+      dayOffs,
+    });
+  };
+
+  const pill = (on: boolean) => ({
+    fontSize: 12.5,
+    fontWeight: 700,
+    padding: '7px 11px',
+    borderRadius: 9,
+    color: on ? 'var(--accent-ink)' : 'var(--ink-2)',
+    background: on ? 'var(--accent)' : 'var(--panel-2)',
+    border: '1px solid var(--line-2)',
+    whiteSpace: 'nowrap' as const,
+  });
+
   return (
-    <Modal title={employee.name} sub={t.staff.schedule} icon="calendar" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} onSubmit={save} />}>
+    <Modal title={employee.name} sub={st.schedule} icon="calendar" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} onSubmit={save} />}>
       <Segmented value={mode} onChange={(v) => setMode(v as 'slots' | 'breaks')} options={[{ v: 'slots', l: t.cal.addSlot }, { v: 'breaks', l: t.cal.break }]} />
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {order.map((wd) => {
-          const on = wd === weekday;
           const count = (cur[wd] ?? []).length;
           return (
-            <button key={wd} onClick={() => setWeekday(wd)} style={{ fontSize: 12.5, fontWeight: 700, padding: '7px 11px', borderRadius: 9, color: on ? 'var(--accent-ink)' : 'var(--ink-2)', background: on ? 'var(--accent)' : 'var(--panel-2)', border: '1px solid var(--line-2)' }}>
-              {labels[wd].slice(0, 3)}{count ? ` · ${count}` : ''}
+            <button key={wd} onClick={() => { setWeekday(wd); setCopiedTo([]); }} style={pill(wd === weekday)}>
+              {labels[wd].slice(0, 3)}{count ? ' · ' + count : ''}
             </button>
           );
         })}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 7 }}>
-        {intervals.map((time) => {
-          const on = active.includes(time);
-          return (
-            <button key={time} onClick={() => toggle(time)} className="tnum" style={{ fontSize: 12.5, fontWeight: 700, padding: '9px 0', borderRadius: 9, color: on ? 'var(--accent-ink)' : 'var(--ink-2)', background: on ? 'var(--accent)' : 'var(--panel-2)', border: on ? '1px solid var(--accent)' : '1px solid var(--line-2)' }}>
-              {time}
-            </button>
-          );
-        })}
-        {intervals.length === 0 && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>—</span>}
+
+      {/* Quick set. This is what makes a full week bearable. */}
+      <div style={{ background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: 13, display: 'flex', flexDirection: 'column', gap: 11 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{st.quick}</span>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <Field label={st.from} half>
+            <SelectInput value={from} onChange={(e) => setFrom(e.target.value)}>
+              {allTimes.map((time) => <option key={time} value={time}>{time}</option>)}
+            </SelectInput>
+          </Field>
+          <Field label={st.to} half>
+            <SelectInput value={to} onChange={(e) => setTo(e.target.value)}>
+              {/* 24:00 lets a shift close at midnight, which 23:30 cannot express. */}
+              {[...allTimes.slice(1), '24:00'].map((time) => <option key={time} value={time}>{time}</option>)}
+            </SelectInput>
+          </Field>
+          <button onClick={applyRange} disabled={rangeInvalid} style={{ ...pill(true), padding: '11px 16px', fontSize: 13.5, fontWeight: 800, opacity: rangeInvalid ? 0.45 : 1 }}>
+            {st.apply}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button onClick={() => writeDay(weekday, allTimes)} style={pill(false)}>{st.selectAll}</button>
+          <button onClick={() => writeDay(weekday, [])} style={pill(false)}>{st.clearDay}</button>
+        </div>
+      </div>
+
+      {/* Copy to other days. Most shops work the same hours all week. */}
+      {active.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{st.copyTo}</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {order.filter((wd) => wd !== weekday).map((wd) => (
+              <button key={wd} onClick={() => copyToDay(wd)} style={pill(copiedTo.includes(wd))}>
+                {copiedTo.includes(wd) ? '✓ ' : ''}{labels[wd].slice(0, 3)}
+              </button>
+            ))}
+            <button onClick={copyToAll} style={{ ...pill(false), fontWeight: 800 }}>{st.copyAll}</button>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{labels[weekday]}</span>
+          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: active.length ? 'var(--accent-deep)' : 'var(--ink-3)' }}>
+            {active.length ? active.length + ' ' + st.slotCount : mode === 'slots' ? st.dayOffLabel : '—'}
+          </span>
+        </div>
+        {/* Capped height: 48 chips would push the footer off a phone screen. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(66px, 1fr))', gap: 6, maxHeight: 224, overflowY: 'auto', paddingRight: 2 }}>
+          {allTimes.map((time) => {
+            const on = active.includes(time);
+            const outside = hours ? timeToMinutes(time) < hours.startMinutes || timeToMinutes(time) >= hours.endMinutes : false;
+            return (
+              <button
+                key={time}
+                onClick={() => toggle(time)}
+                className="tnum"
+                /* Outside the shop's stated hours stays clickable but dimmed — unusual,
+                   not unavailable. Rostering an early shift must remain possible. */
+                title={outside ? schedule : undefined}
+                style={{ fontSize: 12.5, fontWeight: 700, padding: '9px 0', borderRadius: 9, color: on ? 'var(--accent-ink)' : 'var(--ink-2)', background: on ? 'var(--accent)' : 'var(--panel-2)', border: on ? '1px solid var(--accent)' : '1px solid var(--line-2)', opacity: on || !outside ? 1 : 0.5 }}
+              >
+                {time}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Modal>
   );

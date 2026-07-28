@@ -99,6 +99,8 @@ type StaffRow = {
   id: number;
   business_id: number;
   name: string;
+  role: string | null;
+  phone: string | null;
 };
 
 type StaffServiceRow = {
@@ -1204,7 +1206,10 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       )
       .bind(business.id)
       .all<ServiceRow>(),
-    env.DB.prepare("SELECT id, business_id, name FROM staff WHERE business_id = ? ORDER BY name ASC").bind(business.id).all<StaffRow>(),
+    env.DB
+      .prepare("SELECT id, business_id, name, role, phone FROM staff WHERE business_id = ? ORDER BY name ASC")
+      .bind(business.id)
+      .all<StaffRow>(),
     env.DB
       .prepare(
         `SELECT ss.staff_id, ss.service_id, st.name AS staff_name, s.name AS service_name, s.is_active AS service_active
@@ -1374,7 +1379,10 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     return {
       id: person.id,
       name: person.name,
-      role: dayOff?.isFullDay ? "Выходной" : serviceNames[0] ?? "Специалист",
+      // Role, or "" — never a server-side default. This used to return the Russian
+      // "Выходной"/"Специалист", which the UI printed verbatim to Uzbek owners; the
+      // day-off state is already carried by an empty slots array.
+      role: person.role?.trim() || serviceNames[0] || "",
       serviceNames,
       slots: daySlots.map((slot) => ({ id: slot.id, time: slot.slot_time })),
       utilization: daySlots.length > 0 ? Math.round((staffBookingsToday.length / daySlots.length) * 100) : 0,
@@ -1470,7 +1478,8 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     return {
       id: person.id,
       name: person.name,
-      role: serviceNames[0] ?? "Специалист",
+      role: person.role?.trim() || serviceNames[0] || "",
+      phone: person.phone,
       linkedServices: serviceNames,
       totalLinkedServices: serviceNames.length,
       weeklySlotCount: weeklySlots.reduce((sum, day) => sum + day.slots.length, 0),
@@ -1759,13 +1768,37 @@ async function createBookingPayment(env: Env, business: BusinessRow, bookingId: 
   return json({ ok: true }, { status: 201 });
 }
 
+/**
+ * Role and phone are optional. Phone is canonicalized when it parses and rejected when
+ * it is present but malformed — silently storing junk would defeat the point of having a
+ * number to call.
+ */
+function normalizeStaffFields(input: { role?: string; phone?: string }) {
+  const role = input.role === undefined ? null : input.role.trim() || null;
+
+  if (input.phone === undefined) return { role, phone: null as string | null, error: null };
+  const raw = input.phone.trim();
+  if (!raw) return { role, phone: null as string | null, error: null };
+
+  const phone = toStoragePhone(raw);
+  return phone ? { role, phone, error: null } : { role, phone: null, error: "Employee phone number is not valid" };
+}
+
 async function addEmployee(env: Env, business: BusinessRow, input: AddEmployeeInput) {
   const name = input.name?.trim();
   if (!name) {
     return json({ error: "Employee name is required" }, { status: 400 });
   }
 
-  await env.DB.prepare("INSERT INTO staff (business_id, name) VALUES (?, ?)").bind(business.id, name).run();
+  const fields = normalizeStaffFields(input);
+  if (fields.error) {
+    return json({ error: fields.error }, { status: 400 });
+  }
+
+  await env.DB
+    .prepare("INSERT INTO staff (business_id, name, role, phone) VALUES (?, ?, ?, ?)")
+    .bind(business.id, name, fields.role, fields.phone)
+    .run();
   return json({ ok: true }, { status: 201 });
 }
 
@@ -1779,12 +1812,23 @@ async function updateEmployee(env: Env, business: BusinessRow, staffId: number, 
     return json({ error: "Employee not found" }, { status: 404 });
   }
 
+
   const name = input.name?.trim();
   if (!name) {
     return json({ error: "Employee name is required" }, { status: 400 });
   }
 
-  await env.DB.prepare("UPDATE staff SET name = ? WHERE id = ? AND business_id = ?").bind(name, staffId, business.id).run();
+  const fields = normalizeStaffFields(input);
+  if (fields.error) {
+    return json({ error: fields.error }, { status: 400 });
+  }
+
+  // COALESCE-free on purpose: an omitted field means "clear it", which is how the modal
+  // lets an owner remove a role or a phone they no longer want stored.
+  await env.DB
+    .prepare("UPDATE staff SET name = ?, role = ?, phone = ? WHERE id = ? AND business_id = ?")
+    .bind(name, fields.role, fields.phone, staffId, business.id)
+    .run();
   return json({ ok: true });
 }
 

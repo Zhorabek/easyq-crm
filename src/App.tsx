@@ -18,7 +18,7 @@ import {
   updateService,
   uploadBusinessPhoto as apiUploadBusinessPhoto,
 } from './lib/api';
-import { generateHalfHourIntervals, isoToday } from './lib/date';
+import { isoToday } from './lib/date';
 import type {
   AuthSession,
   BookingStatus,
@@ -243,15 +243,15 @@ export default function App() {
     notify();
     await reload();
   }
-  async function doCreateStaff(name: string) {
-    await createEmployee({ name });
+  async function doCreateStaff(v: { name: string; role: string; phone: string }) {
+    await createEmployee({ name: v.name, role: v.role, phone: v.phone });
     setStaffCreateOpen(false);
     notify();
     await reload();
   }
-  async function doSaveStaff(name: string) {
+  async function doSaveStaff(v: { name: string; role: string; phone: string }) {
     if (!staffEditor) return;
-    await updateEmployee(staffEditor.id, { name });
+    await updateEmployee(staffEditor.id, { name: v.name, role: v.role, phone: v.phone });
     setStaffEditor(null);
     notify();
     await reload();
@@ -383,7 +383,7 @@ export default function App() {
     openClient: setSelectedClient,
     openStaffEditor: (e) => (e ? setStaffEditor(e) : setStaffCreateOpen(true)),
     openSlots: setSlotEditor,
-    createStaff: (name) => void doCreateStaff(name),
+    createStaff: (name) => void doCreateStaff({ name, role: '', phone: '' }),
     openServiceEditor: (s) => setServiceEditor({ initial: s }),
     toggleServiceActive: (s) => void doToggleService(s),
     openBusinessEditor: () => setBusinessEditor(true),
@@ -392,7 +392,6 @@ export default function App() {
     deleteBusinessPhoto: () => void doDeletePhoto(),
   };
 
-  const intervals = payload ? generateHalfHourIntervals(payload.business.schedule).map((i) => i.start) : [];
 
   return (
     <CRMCtx.Provider value={crmValue}>
@@ -420,10 +419,10 @@ export default function App() {
 
         {selectedBooking && <BookingDetailModal booking={selectedBooking} onClose={() => setSelectedBooking(null)} onStatus={(s) => void changeStatus(s)} onPay={(p) => void addPayment(p)} />}
         {selectedClient && <ClientHistoryModal client={selectedClient} onClose={() => setSelectedClient(null)} />}
-        {staffCreateOpen && <StaffCreateModal onClose={() => setStaffCreateOpen(false)} onCreate={(name) => void doCreateStaff(name)} />}
-        {staffEditor && <StaffEditModal employee={staffEditor} onClose={() => setStaffEditor(null)} onSave={(name) => void doSaveStaff(name)} onDelete={() => void doDeleteStaff()} />}
+        {staffCreateOpen && <StaffCreateModal onClose={() => setStaffCreateOpen(false)} onCreate={(v) => void doCreateStaff(v)} />}
+        {staffEditor && <StaffEditModal employee={staffEditor} onClose={() => setStaffEditor(null)} onSave={(v) => void doSaveStaff(v)} onDelete={() => void doDeleteStaff()} />}
         {serviceEditor && <ServiceEditModal initial={serviceEditor.initial} staffOptions={payload?.employees ?? []} onClose={() => setServiceEditor(null)} onSave={(v) => void doSaveService(v)} />}
-        {slotEditor && <SlotEditorModal employee={slotEditor} intervals={intervals} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
+        {slotEditor && <SlotEditorModal employee={slotEditor} schedule={payload?.business.schedule ?? ''} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
         {businessEditor && payload && <BusinessModal initial={{ name: payload.business.name, type: payload.business.type, address: payload.business.address, phone: payload.business.phone, schedule: payload.business.schedule, description: payload.business.description ?? '' }} onClose={() => setBusinessEditor(false)} onSave={(v) => void doSaveBusiness(v)} />}
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 

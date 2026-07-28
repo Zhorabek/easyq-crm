@@ -553,7 +553,14 @@ export function Staff() {
                 <Avatar name={p.name} color={avatarColor(p.name)} size={54} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16.5, fontWeight: 800 }}>{p.name}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>{p.role || s.role}</div>
+                  {/* `s.role` is the field LABEL, so the old fallback printed "Role" as
+                      somebody's job title. `s.noRole` is the actual placeholder. */}
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.role || s.noRole}</div>
+                  {p.phone && (
+                    <a href={`tel:${p.phone}`} className="tnum" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, color: 'var(--accent-deep)', marginTop: 3 }}>
+                      <Ic name="phone" size={12} stroke={2.2} />{formatPhone(p.phone)}
+                    </a>
+                  )}
                 </div>
                 <button onClick={() => openStaffEditor(p)} style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', display: 'grid', placeItems: 'center' }}><Ic name="dots" size={18} /></button>
               </div>

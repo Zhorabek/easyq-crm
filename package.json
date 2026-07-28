@@ -13,6 +13,8 @@
     "db:migrate:local:crm": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-crm-owned-tables.sql",
     "db:migrate:local:booking-phone": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-booking-client-phone.sql",
     "db:migrate:remote:booking-phone": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-booking-client-phone.sql",
+    "db:migrate:local:staff-role": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-28-staff-role-phone.sql",
+    "db:migrate:remote:staff-role": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-staff-role-phone.sql",
     "build": "vite build",
     "typecheck": "tsc --noEmit && vite build",
     "preview": "vite preview",

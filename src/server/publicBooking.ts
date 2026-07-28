@@ -38,7 +38,7 @@ export type PublicBookingError =
   | "rate_limited";
 
 type ServiceRow = { id: number; name: string; price: number; duration: number };
-type StaffRow = { id: number; name: string };
+type StaffRow = { id: number; name: string; role: string | null };
 
 function isIsoDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -100,7 +100,7 @@ export async function getPublicBusiness(
       .prepare("SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 ORDER BY name ASC")
       .bind(businessId)
       .all<ServiceRow>(),
-    db.prepare("SELECT id, name FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
+    db.prepare("SELECT id, name, role FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
     db
       .prepare(
         `SELECT ss.staff_id, ss.service_id
@@ -148,7 +148,9 @@ export async function getPublicBusiness(
   const publicStaff: PublicStaff[] = staff.map((person) => ({
     id: person.id,
     name: person.name,
-    role: serviceNamesByStaff.get(person.id)?.[0] ?? "",
+    // The owner's role wins over the first service name — a client reading "Barber" is
+    // better served than one reading "Стрижка", which is what they are booking anyway.
+    role: person.role?.trim() || serviceNamesByStaff.get(person.id)?.[0] || "",
   }));
 
   return {

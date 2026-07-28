@@ -175,6 +175,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       id: s.id,
       name: s.name,
       role: ROLE[lang][s.roleKey],
+      phone: `+9989012345${String(60 + i).slice(-2)}`,
       linkedServices: SERVICES.slice(0, 3).map((sv) => SERV_NAME[lang][sv.key]),
       totalLinkedServices: 3 + (i % 3),
       weeklySlotCount: 24 + i * 4,

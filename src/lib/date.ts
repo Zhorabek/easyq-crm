@@ -123,6 +123,22 @@ export function generateHalfHourIntervals(schedule: string) {
   return intervals;
 }
 
+/**
+ * Every half-hour of the day, 00:00 through 23:30.
+ *
+ * The slot editor used generateHalfHourIntervals(business.schedule), which clamped the
+ * grid to the business's stated hours — so a shop open "09:00 - 19:00" could not roster
+ * anyone before 09:00 or after 18:30 at all. Those times simply had no button. An early
+ * cleaner or a late shift was unenterable rather than merely awkward.
+ */
+export function generateDayIntervals(stepMinutes = 30) {
+  const times: string[] = [];
+  for (let cursor = 0; cursor < 24 * 60; cursor += stepMinutes) {
+    times.push(minutesToTime(cursor));
+  }
+  return times;
+}
+
 export function toHalfHourIntervalLabel(startTime: string) {
   const minutes = timeToMinutes(startTime);
   if (!Number.isFinite(minutes)) return startTime;

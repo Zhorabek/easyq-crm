@@ -92,7 +92,14 @@ export interface PaymentSummary {
 export interface EmployeeRow {
   id: number;
   name: string;
+  /**
+   * The role the owner typed, or "" when unset. Deliberately not defaulted server-side:
+   * it used to fall back to a hardcoded Russian "Специалист", which the UI rendered
+   * verbatim to Uzbek and English owners. The UI localizes the empty case.
+   */
   role: string;
+  /** Canonical +998XXXXXXXXX, or null. */
+  phone: string | null;
   linkedServices: string[];
   totalLinkedServices: number;
   weeklySlotCount: number;
@@ -179,7 +186,7 @@ export interface PublicService {
 export interface PublicStaff {
   id: number;
   name: string;
-  /** First linked service, shown as a subtitle. Never a real job title — see #6. */
+  /** The owner-set role, falling back to the first linked service, or "" if neither. */
   role: string;
 }
 
@@ -259,10 +266,14 @@ export interface CreatePaymentInput {
 
 export interface AddEmployeeInput {
   name: string;
+  role?: string;
+  phone?: string;
 }
 
 export interface UpdateEmployeeInput {
   name: string;
+  role?: string;
+  phone?: string;
 }
 
 export interface UpsertServiceInput {

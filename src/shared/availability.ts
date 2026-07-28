@@ -42,12 +42,75 @@ export function openShiftSlots({ shiftSlots, weeklyBreaks, dayOff }: Availabilit
   return shiftSlots.filter((slot) => !blocked.has(slot));
 }
 
+/** An appointment already on the books. `durationMinutes` may be null on legacy rows. */
+export type ExistingBooking = { time: string; durationMinutes: number | null };
+
+/** Slot grid granularity. staff_slots are rostered on the half hour. */
+export const SLOT_STEP_MINUTES = 30;
+
+function toMinutes(time: string) {
+  const [h = 0, m = 0] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
 /**
- * Slots a client can actually book: rostered, not blocked, not already taken.
- *
- * `bookedTimes` must exclude cancelled bookings — a cancelled slot is free again.
+ * Round a duration up to whole slots. A 45-minute service occupies two 30-minute slots,
+ * because half a slot cannot be sold to anybody else.
  */
-export function bookableSlots(input: AvailabilityInput & { bookedTimes: string[] }): string[] {
-  const taken = new Set(input.bookedTimes);
-  return openShiftSlots(input).filter((slot) => !taken.has(slot));
+function slotsNeeded(durationMinutes: number | null | undefined) {
+  const minutes = Number(durationMinutes ?? 0);
+  if (!Number.isFinite(minutes) || minutes <= 0) return 1;
+  return Math.max(1, Math.ceil(minutes / SLOT_STEP_MINUTES));
+}
+
+/**
+ * Slots a client can actually book, accounting for how long things take.
+ *
+ * The old version compared start times only, so a 60-minute appointment at 11:00 left
+ * 10:30 on sale and two clients arrived half an hour apart for the same chair.
+ *
+ * A slot is offered only when the WHOLE service fits: every half-hour step it would
+ * occupy must be rostered, unblocked, and unoccupied. One rule covers three cases that
+ * would otherwise each need their own check —
+ *   • an existing appointment overlapping any part of the new one,
+ *   • a break landing mid-service,
+ *   • a service overrunning the end of the shift, since the steps past closing are simply
+ *     not in the open set.
+ *
+ * `bookings` must exclude cancelled appointments — a cancelled slot is free again.
+ *
+ * SCOPE: this governs the CRM and the web booking page. The Telegram bots compute their
+ * own availability in their own repository and still compare start times only, so a bot
+ * booking can still overlap. Fixing that means changing the bots too.
+ */
+export function bookableSlots(
+  input: AvailabilityInput & {
+    bookings: ExistingBooking[];
+    /** Duration of the service being booked. Omitted or 0 means a single slot. */
+    serviceDurationMinutes?: number | null;
+  }
+): string[] {
+  const open = openShiftSlots(input);
+  const openMinutes = new Set(open.map(toMinutes));
+
+  // Every half-hour an existing appointment occupies, not just where it starts.
+  const occupied = new Set<number>();
+  for (const booking of input.bookings) {
+    const start = toMinutes(booking.time);
+    if (!Number.isFinite(start)) continue;
+    for (let i = 0; i < slotsNeeded(booking.durationMinutes); i += 1) {
+      occupied.add(start + i * SLOT_STEP_MINUTES);
+    }
+  }
+
+  const needed = slotsNeeded(input.serviceDurationMinutes);
+
+  return open.filter((slot) => {
+    const start = toMinutes(slot);
+    for (let i = 0; i < needed; i += 1) {
+      const step = start + i * SLOT_STEP_MINUTES;
+      if (!openMinutes.has(step) || occupied.has(step)) return false;
+    }
+    return true;
+  });
 }

@@ -147,13 +147,15 @@ export default function BookingApp() {
   // Slots depend on staff+date; refetch whenever either moves, and drop a held time that
   // is no longer offered so the confirm button cannot submit a stale slot.
   useEffect(() => {
-    if (!staff || !date) {
+    if (!staff || !date || !service) {
       setSlots(null);
       return;
     }
     let alive = true;
     setSlotsLoading(true);
-    fetch(`/api/public/slots?staffId=${staff.id}&date=${encodeURIComponent(date)}`)
+    // serviceId is sent so the server can exclude slots the service would overrun; it
+    // resolves the duration itself rather than trusting a number from here.
+    fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('slots'))))
       .then((body: { slots: string[] }) => {
         if (!alive) return;
@@ -165,7 +167,7 @@ export default function BookingApp() {
     return () => {
       alive = false;
     };
-  }, [staff, date]);
+  }, [staff, date, service]);
 
   function dayLabel(iso: string) {
     if (!biz) return iso;
@@ -201,7 +203,7 @@ export default function BookingApp() {
         // A lost race means the slot list is wrong; refetch so they see the truth.
         if (body.code === 'slot_taken') {
           setTime('');
-          const refresh = await fetch(`/api/public/slots?staffId=${staff.id}&date=${encodeURIComponent(date)}`);
+          const refresh = await fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`);
           if (refresh.ok) setSlots(((await refresh.json()) as { slots: string[] }).slots);
         }
         return;

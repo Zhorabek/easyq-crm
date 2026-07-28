@@ -10,7 +10,7 @@
 //      payment history and staff phone numbers all stay out; a caller gets the shop's
 //      public details, its active services, its staff, and free slot times.
 
-import { bookableSlots } from "../shared/availability";
+import { bookableSlots, type ExistingBooking } from "../shared/availability";
 import { isValidPhone, toStoragePhone } from "../shared/phone";
 import type {
   CreatePublicBookingInput,
@@ -179,7 +179,13 @@ export async function getPublicSlots(
   businessId: number,
   staffId: number,
   date: string,
-  nowIsoMinute: string | null
+  nowIsoMinute: string | null,
+  /**
+   * Duration of the service being booked, so a slot is only offered when the whole service
+   * fits. Null falls back to a single slot, which is what a caller with no service chosen
+   * yet should see.
+   */
+  serviceDurationMinutes: number | null = null
 ): Promise<string[]> {
   const staff = await db
     .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
@@ -206,7 +212,7 @@ export async function getPublicSlots(
     // date prefix in both shapes rather than assuming one.
     db
       .prepare(
-        `SELECT datetime FROM bookings
+        `SELECT datetime, duration_snapshot FROM bookings
          WHERE staff_id = ? AND business_id = ? AND status != 'cancelled'
            AND (datetime LIKE ? OR datetime LIKE ?)`
       )
@@ -220,9 +226,12 @@ export async function getPublicSlots(
     slot_time: string | null;
     is_full_day: number;
   }>;
-  const booked = ((bookedRes.results ?? []) as unknown as Array<{ datetime: string }>).map((row) =>
-    row.datetime.replace("T", " ").slice(11, 16)
-  );
+  const bookings = ((bookedRes.results ?? []) as unknown as Array<{ datetime: string; duration_snapshot: number | null }>).map(
+    (row) => ({
+      time: row.datetime.replace("T", " ").slice(11, 16),
+      durationMinutes: row.duration_snapshot,
+    })
+  ) satisfies ExistingBooking[];
 
   const weeklyBreaks: string[] = [];
   let dayOff: { isFullDay: boolean; slots: string[] } | undefined;
@@ -236,7 +245,7 @@ export async function getPublicSlots(
     }
   }
 
-  const slots = bookableSlots({ shiftSlots, weeklyBreaks, dayOff, bookedTimes: booked });
+  const slots = bookableSlots({ shiftSlots, weeklyBreaks, dayOff, bookings, serviceDurationMinutes });
 
   // Today's already-passed slots are not bookable. `nowIsoMinute` is the business's local
   // "HH:MM" and is null for future dates, where no filtering applies.
@@ -302,7 +311,17 @@ export async function createPublicBooking(
   // may be seconds stale, and this is the last point at which a double-booking can be
   // caught. It is not a true lock — D1 has no row locking here — but it closes the window
   // from "however long the form was open" down to a few milliseconds.
-  const free = await getPublicSlots(db, businessId, staff.id, date, date === todayIso ? nowIsoMinute : null);
+  // Same duration the client was shown, so the re-check applies the identical rule. Passing
+  // nothing here would validate against single-slot availability and let an overlapping
+  // long service through the very check meant to stop it.
+  const free = await getPublicSlots(
+    db,
+    businessId,
+    staff.id,
+    date,
+    date === todayIso ? nowIsoMinute : null,
+    Number(service.duration || 0)
+  );
   if (!free.includes(time)) return { ok: false, error: "slot_taken" };
 
   const insert = await db

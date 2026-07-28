@@ -2089,6 +2089,15 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // NOTE: every handler below is dispatched with `return await`, never a bare
+    // `return handler(...)`. Do not "simplify" that away.
+    //
+    // `return promise` inside try/catch in an async function ADOPTS the promise rather
+    // than awaiting it: the try block completes successfully, the catch goes out of
+    // scope, and a later rejection escapes as an unhandled rejection. Cloudflare then
+    // serves its own "Worker threw exception" HTML page instead of the JSON error below
+    // — which is how an un-run migration turned into a raw 500 for a client mid-booking,
+    // and why the "no such table" hint in the catch could never actually fire.
     try {
       if (url.pathname.startsWith("/api/") && !hasD1Binding(env)) {
         return json(
@@ -2136,19 +2145,19 @@ export default {
       // ────────────────────────────────────────────────────────────────────────
 
       if (url.pathname === "/api/auth/session" && request.method === "GET") {
-        return getSessionState(env, request, tenant);
+        return await getSessionState(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/login" && request.method === "POST") {
-        return login(env, request, tenant);
+        return await login(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/session-login" && request.method === "POST") {
-        return sessionLogin(env, request, tenant);
+        return await sessionLogin(env, request, tenant);
       }
 
       if (url.pathname === "/api/auth/logout" && request.method === "POST") {
-        return logout(request);
+        return await logout(request);
       }
 
       // Public identity of the current tenant host, so the login screen can name the
@@ -2163,11 +2172,11 @@ export default {
       }
 
       if (url.pathname === "/api/signup" && request.method === "POST") {
-        return signupBusiness(env, request);
+        return await signupBusiness(env, request);
       }
 
       if (url.pathname === "/api/subdomain/check" && request.method === "GET") {
-        return checkSubdomain(env, url);
+        return await checkSubdomain(env, url);
       }
 
       // ── Public booking page ─────────────────────────────────────────────────
@@ -2177,23 +2186,23 @@ export default {
         if (!tenant) return json({ error: "Not found" }, { status: 404 });
 
         if (url.pathname === "/api/public/business" && request.method === "GET") {
-          return publicBusinessEndpoint(env, tenant);
+          return await publicBusinessEndpoint(env, tenant);
         }
         if (url.pathname === "/api/public/slots" && request.method === "GET") {
-          return publicSlotsEndpoint(env, tenant, url);
+          return await publicSlotsEndpoint(env, tenant, url);
         }
         if (url.pathname === "/api/public/bookings" && request.method === "POST") {
-          return publicBookingEndpoint(env, tenant, request);
+          return await publicBookingEndpoint(env, tenant, request);
         }
         if (url.pathname === "/api/public/photo" && request.method === "GET") {
-          return publicPhotoEndpoint(env, tenant);
+          return await publicPhotoEndpoint(env, tenant);
         }
 
         return json({ error: "Not found" }, { status: 404 });
       }
 
       if (url.pathname === "/api/captcha" && request.method === "GET") {
-        return getCaptcha(env, request);
+        return await getCaptcha(env, request);
       }
 
       if (url.pathname === "/api/feedback" && request.method === "OPTIONS") {
@@ -2201,11 +2210,11 @@ export default {
       }
 
       if (url.pathname === "/api/feedback" && request.method === "POST") {
-        return submitFeedback(env, request);
+        return await submitFeedback(env, request);
       }
 
       if (url.pathname === "/api/feedback" && request.method === "GET") {
-        return listFeedback(env);
+        return await listFeedback(env);
       }
 
       if (url.pathname === "/api/crm" && request.method === "GET") {
@@ -2217,72 +2226,72 @@ export default {
       if (url.pathname.startsWith("/api/bookings/") && request.method === "PATCH") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const bookingId = Number(url.pathname.split("/")[3]);
-        return updateBookingStatus(env, business, bookingId, await readJson<UpdateBookingStatusInput>(request));
+        return await updateBookingStatus(env, business, bookingId, await readJson<UpdateBookingStatusInput>(request));
       }
 
       if (url.pathname.startsWith("/api/bookings/") && url.pathname.endsWith("/payments") && request.method === "POST") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const bookingId = Number(url.pathname.split("/")[3]);
-        return createBookingPayment(env, business, bookingId, await readJson<CreatePaymentInput>(request));
+        return await createBookingPayment(env, business, bookingId, await readJson<CreatePaymentInput>(request));
       }
 
       if (url.pathname === "/api/employees" && request.method === "POST") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return addEmployee(env, business, await readJson<AddEmployeeInput>(request));
+        return await addEmployee(env, business, await readJson<AddEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "PATCH") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
-        return updateEmployee(env, business, staffId, await readJson<UpdateEmployeeInput>(request));
+        return await updateEmployee(env, business, staffId, await readJson<UpdateEmployeeInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && !url.pathname.endsWith("/slots") && request.method === "DELETE") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
-        return deleteEmployee(env, business, staffId);
+        return await deleteEmployee(env, business, staffId);
       }
 
       if (url.pathname === "/api/services" && request.method === "POST") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return createService(env, business, await readJson<UpsertServiceInput>(request));
+        return await createService(env, business, await readJson<UpsertServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/services/") && request.method === "PATCH") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const serviceId = Number(url.pathname.split("/")[3]);
-        return updateService(env, business, serviceId, await readJson<UpdateServiceInput>(request));
+        return await updateService(env, business, serviceId, await readJson<UpdateServiceInput>(request));
       }
 
       if (url.pathname.startsWith("/api/employees/") && url.pathname.endsWith("/slots") && request.method === "PUT") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
         const staffId = Number(url.pathname.split("/")[3]);
-        return updateEmployeeSlots(env, business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
+        return await updateEmployeeSlots(env, business, staffId, await readJson<UpdateEmployeeSlotsInput>(request));
       }
 
       if (url.pathname === "/api/business" && request.method === "PATCH") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return updateBusinessProfile(env, business, await readJson<UpdateBusinessProfileInput>(request));
+        return await updateBusinessProfile(env, business, await readJson<UpdateBusinessProfileInput>(request));
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return updateBusinessCredentials(env, request, business, await readJson<UpdateCrmCredentialsInput>(request));
+        return await updateBusinessCredentials(env, request, business, await readJson<UpdateCrmCredentialsInput>(request));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "POST") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return uploadBusinessPhoto(env, business, request);
+        return await uploadBusinessPhoto(env, business, request);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "DELETE") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return deleteBusinessPhoto(env, business);
+        return await deleteBusinessPhoto(env, business);
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {
         const business = await requireAuthenticatedBusiness(env, request, tenant);
-        return proxyBusinessPhoto(env, business);
+        return await proxyBusinessPhoto(env, business);
       }
 
       if (url.pathname.startsWith("/api/")) {

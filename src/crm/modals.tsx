@@ -6,7 +6,7 @@ import { fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { isValidPhone, toStoragePhone } from '../shared/phone';
 import { generateDayIntervals, parseBusinessHours, timeToMinutes } from '../lib/date';
-import type { BookingStatus, CalendarBookingCard, ClientRow, EmployeeRow, PaymentMethod, ServiceCatalogItem } from '../types';
+import type { BookingStatus, CalendarBookingCard, ClientRow, EmployeeRow, PaymentMethod, ServiceCatalogItem, StaffAccessRow } from '../types';
 
 /* ===================== cosmetic "+ Add" modals (no backend) ===================== */
 function BookingModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -230,9 +230,31 @@ export function StaffCreateModal({ onClose, onCreate }: { onClose: () => void; o
   );
 }
 
-export function StaffEditModal({ employee, onClose, onSave, onDelete }: { employee: EmployeeRow; onClose: () => void; onSave: (v: StaffFormValue) => void; onDelete: () => void }) {
-  const { t, m } = useCRM();
+export function StaffEditModal({
+  employee,
+  access,
+  issued,
+  onClose,
+  onSave,
+  onDelete,
+  onAccess,
+}: {
+  employee: EmployeeRow;
+  /** Current CRM access for this person. Undefined for non-owners, who cannot see it. */
+  access?: StaffAccessRow;
+  /** Credentials just issued, shown once — they cannot be read back. */
+  issued?: { username: string; password: string } | null;
+  onClose: () => void;
+  onSave: (v: StaffFormValue) => void;
+  onDelete: () => void;
+  /** null revokes. Only passed to owners; access:manage is owner-only server-side too. */
+  onAccess?: (level: 'manager' | 'specialist' | null) => void;
+}) {
+  const { t, m, role } = useCRM();
   const s = m.staff;
+  const st = t.set;
+  const canManageAccess = role === 'owner' && Boolean(onAccess);
+  const currentLevel: 'manager' | 'specialist' | null = access?.enabled ? access.accessRole ?? 'specialist' : null;
   const [f, setF] = useState<StaffFormValue>({ name: employee.name, role: employee.role, phone: employee.phone ?? '' });
   const up = (k: keyof StaffFormValue, v: string) => setF((p) => ({ ...p, [k]: v }));
   const valid = f.name.trim().length >= 2 && (!f.phone.trim() || isValidPhone(f.phone));
@@ -253,8 +275,63 @@ export function StaffEditModal({ employee, onClose, onSave, onDelete }: { employ
       }
     >
       <Field label={s.name}><TextInput value={f.name} onChange={(e) => up('name', e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+      {/* Job title — free text, shown to clients on the booking page. Distinct from the
+          CRM access level below, which is a permission. Labelling both "Role" was the
+          confusing part. */}
       <Field label={s.role}><TextInput value={f.role} onChange={(e) => up('role', e.target.value)} placeholder={s.rolePh} /></Field>
       <Field label={s.phone}><PhoneInput value={f.phone} onChange={(v) => up('phone', v)} /></Field>
+
+      {canManageAccess && (
+        <div style={{ borderTop: '1px solid var(--line)', marginTop: 4, paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{s.access}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s.accessHint}</div>
+          </div>
+
+          {/* Changing the level applies on that person's next request, because the worker
+              re-reads access_role from the staff row rather than trusting the cookie. */}
+          <Segmented
+            value={currentLevel ?? 'none'}
+            onChange={(v) => onAccess?.(v === 'none' ? null : (v as 'manager' | 'specialist'))}
+            options={[
+              { v: 'none', l: s.accessNone },
+              { v: 'specialist', l: st.roleSpecialist },
+              { v: 'manager', l: st.roleManager },
+            ]}
+          />
+
+          {currentLevel && (
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 600 }}>
+              {currentLevel === 'manager' ? st.roleManagerHint : st.roleSpecialistHint}
+            </div>
+          )}
+
+          {currentLevel && access?.username && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span className="mono" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)' }}>{access.username}</span>
+              <button onClick={() => onAccess?.(currentLevel)} style={{ fontSize: 12.5, fontWeight: 700, padding: '7px 12px', borderRadius: 9, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)' }}>
+                {st.resetPass}
+              </button>
+            </div>
+          )}
+
+          {issued && (
+            <div style={{ padding: '12px 13px', borderRadius: 11, background: 'var(--accent-tint)', border: '1px solid var(--accent)' }}>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{st.loginLabel}</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.username}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{st.newPassLabel}</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.password}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--ink-2)', fontWeight: 700 }}>{st.credsWarn}</div>
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

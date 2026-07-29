@@ -47,6 +47,18 @@ import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
 import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
+import {
+  consumeVerification,
+  contactBelongsToSender,
+  createVerification,
+  generateNonce,
+  getVerification,
+  isUsable,
+  markVerified,
+  parseStartPayload,
+  releaseVerification,
+  type TelegramUpdate,
+} from "./server/verification";
 
 interface Env {
   DB: D1Database;

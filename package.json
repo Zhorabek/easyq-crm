@@ -24,9 +24,10 @@
     "db:migrate:remote:brand-theme": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-brand-theme.sql",
     "db:migrate:remote:session-version": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-session-version.sql",
     "build": "vite build",
-    "typecheck": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preflight": "npm run typecheck && npm run build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run typecheck && npm run build && wrangler deploy"
   },
   "dependencies": {
     "react": "^18.3.1",

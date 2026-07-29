@@ -95,22 +95,15 @@ taps a deep link and shares their number, so there is no code to intercept.
 
 `main` still has the `1111` bypass, so production is unaffected until this merges.
 
-> **This section is out of date and the gap is dangerous.** `main` already contains
-> `src/server/verification.ts`, `migrations/2026-07-28-signup-verification.sql`, and the
-> *call sites* in `worker.ts` — but `worker.ts` has **no import** for them. Thirteen names
-> (`generateNonce`, `createVerification`, `getVerification`, `isUsable`, `markVerified`,
-> `consumeVerification`, `releaseVerification`, `contactBelongsToSender`,
-> `parseStartPayload`, `TelegramUpdate`, …) are undefined identifiers on `main` right now.
-> `tsc --noEmit` reports all of them. The Typecheck step in `deploy.yml` has no
-> `continue-on-error`, and it runs *before* Build and Deploy — so **`main` has almost
-> certainly not deployed since that merge landed**, and production is running whatever was
-> live before it. Confirm in the Actions tab before assuming any recent work is live.
+> **The missing import is FIXED** (commit `06e9205`). `worker.ts` had no import for
+> `./server/verification` while calling twelve of its names; `tsc --noEmit` now reports 0
+> errors. The warning that this blocked deploys was half right — it never blocked them,
+> because `npm run deploy` had no typecheck and bypassed CI entirely. That is also fixed:
+> `deploy` now runs `tsc --noEmit` first, and `typecheck` no longer secretly builds.
 >
-> Production survives only because `startVerification` returns 503 before reaching
-> `generateNonce()` while `VERIFY_BOT_TOKEN` is unset. **Step 2 below removes that
-> shield:** the moment the secret exists, signup reaches the undefined call and throws a
-> ReferenceError instead of working. Add the import and get CI red-on-type-error *before*
-> touching the secrets.
+> Production was running the merged code the whole time. `/api/verify/start` answered 503
+> only because the token check runs before `generateNonce()` — setting the secret would
+> have turned that into a ReferenceError. Safe to proceed now.
 
 To resume, in this order:
 

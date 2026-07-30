@@ -2995,6 +2995,57 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
  */
 const LOGO_STAFF_ID = 0;
 
+/**
+ * Image bytes are stored BASE64, as text.
+ *
+ * A BLOB would be smaller and is the obvious choice, but D1's edges around binary are the kind
+ * you only discover in production: the bind types it documents are null, Number, String, Boolean
+ * and ArrayBuffer — a Uint8Array is an ArrayBufferView, not an ArrayBuffer — and on the way back
+ * out a BLOB column arrives as an ARRAY OF INTEGERS, not an ArrayBuffer. Getting either end
+ * wrong stores or serves something that is not an image, which is exactly what happened: the row
+ * saved, the flag flipped, and the page drew a broken image.
+ *
+ * Base64 has one representation in both directions. Text in, text out, no library and no
+ * version-dependent shape. It costs a third more space on a file already capped at 512 KB.
+ *
+ * The column is still declared BLOB, which needs no migration: SQLite's BLOB affinity stores
+ * whatever type it is handed rather than converting, so a string stays a string.
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  // Chunked because String.fromCharCode(...bytes) spreads every byte as an argument, and half a
+  // megabyte of them overflows the call stack.
+  const CHUNK = 0x8000;
+  let out = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    out += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(out);
+}
+
+/**
+ * Whatever D1 hands back, as bytes.
+ *
+ * Handles all four shapes on purpose rather than trusting one: base64 text is what this code
+ * writes now, and the array/ArrayBuffer/typed-array cases cover a row written by the earlier
+ * BLOB attempt so nobody has to go and delete it by hand.
+ */
+function storedToBytes(value: unknown): Uint8Array | null {
+  if (typeof value === "string") {
+    try {
+      const raw = atob(value);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out.length > 0 ? out : null;
+    } catch {
+      return null; // not base64 — a row from the broken BLOB write
+    }
+  }
+  if (value instanceof ArrayBuffer) return value.byteLength ? new Uint8Array(value) : null;
+  if (value instanceof Uint8Array) return value.length ? value : null;
+  if (Array.isArray(value)) return value.length ? new Uint8Array(value) : null;
+  return null;
+}
+
 /** Validate, then store. Shared by the logo and specialist photos so there is one way in. */
 async function storeImage(env: Env, businessId: number, staffId: number, photo: unknown) {
   if (!(photo instanceof File)) {
@@ -3035,7 +3086,7 @@ async function storeImage(env: Env, businessId: number, staffId: number, photo: 
       `INSERT OR REPLACE INTO crm_images (business_id, staff_id, content_type, bytes, updated_at)
        VALUES (?, ?, ?, ?, datetime('now'))`
     )
-    .bind(businessId, staffId, check.kind, bytes)
+    .bind(businessId, staffId, check.kind, bytesToBase64(bytes))
     .run();
 
   return json({ ok: true }, { status: 201 });
@@ -3063,9 +3114,15 @@ async function serveStoredImage(env: Env, businessId: number, staffId: number) {
   const row = await env.DB
     .prepare("SELECT content_type, bytes FROM crm_images WHERE business_id = ? AND staff_id = ? LIMIT 1")
     .bind(businessId, staffId)
-    .first<{ content_type: string; bytes: ArrayBuffer | null }>();
+    // `unknown`, not ArrayBuffer: claiming a type here is what hid the bug. What D1 returns
+    // depends on how the row was written, so storedToBytes decides instead of the annotation.
+    .first<{ content_type: string; bytes: unknown }>();
 
-  if (!row?.bytes) return null;
+  if (!row) return null;
+  const bytes = storedToBytes(row.bytes);
+  // A row that will not decode is treated as no image: the caller 404s and the UI falls back to
+  // initials, which beats serving bytes that are not an image and drawing a broken icon.
+  if (!bytes) return null;
 
   const contentType = safeImageContentType(row.content_type);
   const headers = new Headers();
@@ -3073,7 +3130,11 @@ async function serveStoredImage(env: Env, businessId: number, staffId: number) {
   headers.set("x-content-type-options", "nosniff");
   headers.set("content-disposition", `inline; filename="image.${IMAGE_EXTENSION[contentType]}"`);
   headers.set("cache-control", "public, max-age=300");
-  return new Response(row.bytes, { status: 200, headers });
+  // Copied into its own exact-length ArrayBuffer. A Uint8Array can be a view onto a larger
+  // buffer, and passing one straight to Response is also the one binary body shape the DOM and
+  // Workers type definitions disagree about — an ArrayBuffer is unambiguous to both.
+  const body = new Uint8Array(bytes).buffer as ArrayBuffer;
+  return new Response(body, { status: 200, headers });
 }
 
 /** Which staff ids have a stored photo, plus whether the business has a logo. One cheap query. */

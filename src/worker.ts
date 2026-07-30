@@ -1122,6 +1122,22 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
  */
 const SIGNUP_CAPTCHA_ENABLED = false;
 
+/**
+ * Telegram phone verification, currently OFF at the client's request.
+ *
+ * While false, signup falls back to the demo code `1111`, shown on the form, and takes the
+ * phone number from the request body. That is not verification of anything — it is a
+ * placeholder so registration works with no bot, no secrets and no webhook.
+ *
+ * A constant rather than an env var for the same reason as the captcha: bringing a control
+ * back should go through review and CI. Setting VERIFY_BOT_TOKEN alone will NOT re-enable
+ * it — flip this too, and the matching flag in easyq-landing's Signup.tsx.
+ */
+const PHONE_VERIFICATION_ENABLED = false;
+
+/** Accepted while PHONE_VERIFICATION_ENABLED is false. Displayed on the form. */
+const DEMO_SIGNUP_CODE = "1111";
+
 // Public sign-up endpoint — called cross-origin by the static landing's /signup wizard.
 // Fetch sends no credentials, so a permissive CORS allow-list is sufficient.
 const SIGNUP_CORS: Record<string, string> = {
@@ -1144,12 +1160,15 @@ type SignupInput = {
   captchaAnswer?: string;
   acceptedTerms?: boolean;
   /**
-   * Proof that a Telegram account confirmed a phone number. Replaces the old
-   * `code: "1111"`. Note there is no longer a `phone` field — the number is read from
-   * the verification row, because a client-supplied phone would make the whole
-   * verification decorative.
+   * Proof that a Telegram account confirmed a phone number. Used only while
+   * PHONE_VERIFICATION_ENABLED is true, in which case the phone comes from the
+   * verification row and `phone` below is ignored — a client-supplied number would make
+   * the verification decorative.
    */
   verificationNonce?: string;
+  /** Demo path only: the `1111` code, and the number the visitor typed. */
+  code?: string;
+  phone?: string;
 };
 
 // ─────────────────────────────────────────────────────── Telegram phone verification
@@ -1550,27 +1569,46 @@ async function signupBusiness(env: Env, request: Request) {
   // write, because consuming is a compare-and-swap: it is what stops two concurrent
   // requests holding the same nonce from creating two businesses. Everything cheap and
   // rejectable therefore runs first, so a slug collision does not burn a good nonce.
-  if (!env.VERIFY_BOT_TOKEN) {
-    return json(
-      { error: "Phone verification is not configured.", code: "verify_unconfigured" },
-      { status: 503, headers: SIGNUP_CORS }
-    );
+  let storedPhone: string;
+
+  if (PHONE_VERIFICATION_ENABLED) {
+    if (!env.VERIFY_BOT_TOKEN) {
+      return json(
+        { error: "Phone verification is not configured.", code: "verify_unconfigured" },
+        { status: 503, headers: SIGNUP_CORS }
+      );
+    }
+    const verification = await consumeVerification(env.DB, String(input.verificationNonce ?? ""));
+    if (!verification.ok) {
+      return json(
+        {
+          error:
+            verification.reason === "already_used"
+              ? "That confirmation was already used. Please verify your number again."
+              : "Please confirm your phone number in Telegram first.",
+          code: `verify_${verification.reason}`,
+        },
+        { status: 400, headers: SIGNUP_CORS }
+      );
+    }
+    // Telegram vouched for this number, so it never came from the request body.
+    storedPhone = verification.phone;
+  } else {
+    // Demo path. The code is a constant the form prints, so this proves nothing about
+    // whoever is registering — it only keeps the shape of the flow while verification is
+    // switched off.
+    if (String(input.code ?? "") !== DEMO_SIGNUP_CODE) {
+      return json({ error: "Invalid verification code.", code: "invalid_code" }, { status: 400, headers: SIGNUP_CORS });
+    }
+
+    // Still validated and canonicalized: an unusable number in the row is worse than a
+    // rejected signup, because the business can never be phoned back.
+    const typedPhone = toStoragePhone(String(input.phone ?? ""));
+    if (!typedPhone) {
+      return json({ error: "A valid phone number is required.", code: "invalid_phone" }, { status: 400, headers: SIGNUP_CORS });
+    }
+    storedPhone = typedPhone;
   }
-  const verification = await consumeVerification(env.DB, String(input.verificationNonce ?? ""));
-  if (!verification.ok) {
-    return json(
-      {
-        error:
-          verification.reason === "already_used"
-            ? "That confirmation was already used. Please verify your number again."
-            : "Please confirm your phone number in Telegram first.",
-        code: `verify_${verification.reason}`,
-      },
-      { status: 400, headers: SIGNUP_CORS }
-    );
-  }
-  // Telegram vouched for this number, so it never came from the request body.
-  const storedPhone = verification.phone;
 
   // Web sign-ups have no Telegram account, but users.telegram_id is NOT NULL UNIQUE.
   // Use a synthetic negative id (real Telegram ids are positive) and retry on the rare collision.

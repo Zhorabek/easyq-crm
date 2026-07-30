@@ -76,23 +76,39 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
 
   return (
     <aside className={`crm-sidebar${navOpen ? ' crm-sidebar--open' : ''}`} style={{ width: 248, flex: 'none', background: 'var(--sidebar)', display: 'flex', flexDirection: 'column', padding: '20px 14px', position: 'sticky', top: 0, height: '100vh' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 22px' }}>
-        <CRMLogo />
-        <button className="crm-navclose" onClick={() => setNavOpen(false)} style={{ display: 'none', width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center' }}>
+      {/* Whose CRM this is.
+          For a real business that is THEIR logo and THEIR name, not easyQ's mark. The mark
+          belongs to the platform, and inside one tenant's CRM the tenant is who the sidebar
+          should be naming — easyQ is already on the domain. Scoped per tenant by
+          construction: `bizName` and `logoVersion` come from that business's own payload, so
+          tenant 1 uploading a logo changes tenant 1's sidebar and nothing else.
+
+          The demo keeps the easyQ mark, because there the platform IS the subject. So does
+          the login screen, which runs before any tenant is known.
+
+          `data-tour="biz-header"` moved up here from the pill below, which used to repeat this
+          same logo and name and is now demo-only. */}
+      <div
+        data-tour={demo ? undefined : 'biz-header'}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', padding: '6px 6px 20px' }}
+      >
+        {demo ? <CRMLogo /> : (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+            <BizMark name={bizName} logoVersion={logoVersion} />
+            <span style={{ minWidth: 0, lineHeight: 1.2 }}>
+              <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, letterSpacing: '-.02em', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</span>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--on-sidebar-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizType}</span>
+            </span>
+          </span>
+        )}
+        <button className="crm-navclose" onClick={() => setNavOpen(false)} style={{ display: 'none', width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center', flex: 'none' }}>
           <Ic name="x" size={18} />
         </button>
       </div>
 
-      {/* business header — a static header for real businesses; the branch switcher is demo-only */}
-      {!demo ? (
-        <div data-tour="biz-header" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: 'rgba(255,255,255,.05)', marginBottom: 16 }}>
-          <BizMark name={bizName} logoVersion={logoVersion} />
-          <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</div>
-            <div style={{ fontSize: 11, color: 'var(--on-sidebar-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizType}</div>
-          </div>
-        </div>
-      ) : (
+      {/* Branch switcher — demo only. The static business header it used to alternate with is
+          now the identity row above, so keeping it here would print the logo and name twice. */}
+      {demo && (
       <div ref={bRef} style={{ position: 'relative', marginBottom: 16 }}>
         <button onClick={() => setBranchOpen((o) => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: branchOpen ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.05)', textAlign: 'left' }}>
           <span style={{ width: 34, height: 34, borderRadius: 9, background: curBranch ? 'linear-gradient(135deg,#CBA988,#9c7a58)' : 'var(--accent-nav)', display: 'grid', placeItems: 'center', flex: 'none', color: curBranch ? '#2a1d10' : 'var(--accent-nav-ink)' }}>

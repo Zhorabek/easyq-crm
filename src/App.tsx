@@ -91,6 +91,44 @@ function lsGet(key: string, fallback: string) {
   }
 }
 
+/**
+ * Are we already on this business's own subdomain? Compared against the CURRENT apex so
+ * this keeps working on a preview domain or localhost, rather than hardcoding easyq.uz.
+ */
+function isOwnTenantHost(slug: string) {
+  try {
+    return window.location.hostname.toLowerCase().startsWith(`${slug.toLowerCase()}.`);
+  } catch {
+    return true; // no window: assume we are where we should be and skip the redirect
+  }
+}
+
+/** Apex of the current host — `crm.easyq.uz` -> `easyq.uz`. */
+function apexHost() {
+  const parts = window.location.hostname.split('.');
+  return parts.length > 2 ? parts.slice(1).join('.') : window.location.hostname;
+}
+
+/**
+ * POST the credentials to `<slug>.<apex>/api/auth/session-login` so that host sets its own
+ * cookie. A hidden form rather than fetch(): the response is a 303 the browser must FOLLOW
+ * as a navigation, and fetch would follow it invisibly and leave us on the old host.
+ */
+function submitToTenantHost(slug: string, username: string, password: string) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `https://${slug}.${apexHost()}/api/auth/session-login`;
+  for (const [name, value] of [['username', username], ['password', password]]) {
+    const field = document.createElement('input');
+    field.type = 'hidden';
+    field.name = name;
+    field.value = value;
+    form.appendChild(field);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+
 export default function App() {
   // ---- auth ----
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -225,6 +263,19 @@ export default function App() {
       setAuthSubmitting(true);
       setLoginError(null);
       const res = await apiLogin({ username, password });
+
+      // Land them on their own subdomain when they signed in on the central host.
+      //
+      // A plain redirect would arrive logged OUT: the session cookie carries no `Domain=`,
+      // so it exists only on the host that set it (see buildCookie in server/auth.ts).
+      // Re-posting the credentials as a form to the tenant host makes THAT host mint its
+      // own cookie and 303 to `/` — which is exactly what sessionLogin already does for the
+      // signup flow. Cross-origin form posts are not CORS-blocked, so no extra plumbing.
+      if (res.session.slug && !isOwnTenantHost(res.session.slug)) {
+        submitToTenantHost(res.session.slug, username, password);
+        return; // the browser is navigating away; do not touch state
+      }
+
       setSession(res.session);
       setLoginForm({ username: res.session.username, password: '' });
     } catch (err) {

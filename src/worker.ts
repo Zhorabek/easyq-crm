@@ -1106,9 +1106,40 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
       });
       return new Response(null, { status: 303, headers: { location: "/", "set-cookie": cookie } });
     }
+
+    // Staff fall back the same way `login` does. Without this, a manager or specialist
+    // following the post-login redirect to their business's subdomain would silently land
+    // back on the login screen — the credentials are valid, they are just not in
+    // `businesses`.
+    const member = await env.DB
+      .prepare(
+        `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password,
+                access_role, access_enabled, session_version
+         FROM staff WHERE crm_username = ? LIMIT 1`
+      )
+      .bind(username)
+      .first<StaffLoginRow>();
+
+    if (
+      member &&
+      (await verifyCrmPassword(password, member.crm_password_hash)) &&
+      Number(member.access_enabled) === 1 &&
+      (!tenant || member.business_id === tenant.businessId)
+    ) {
+      const cookie = await createSessionCookie(request, env.CRM_SESSION_SECRET, {
+        businessId: member.business_id,
+        username: member.crm_username ?? username,
+        role: staffAccessRole(member.access_role),
+        staffId: member.id,
+        sessionVersion: Number(member.session_version ?? 0),
+      });
+      return new Response(null, { status: 303, headers: { location: "/", "set-cookie": cookie } });
+    }
   }
 
-  // Bad/missing creds → clear any stale session and land on the login screen.
+  // Bad/missing creds → clear any stale session and land on the login screen. Deliberately
+  // the same response for a wrong password, a revoked account and a wrong tenant, so this
+  // endpoint cannot be used to probe which of those it was.
   return new Response(null, { status: 303, headers: { location: "/", "set-cookie": clearSessionCookie(request) } });
 }
 

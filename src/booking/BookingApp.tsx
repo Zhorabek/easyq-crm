@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
 import { brandTokens } from '../shared/brand';
+import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -170,13 +171,45 @@ export default function BookingApp() {
     root.style.colorScheme = tokens.isDark ? 'dark' : 'light';
   }, [biz]);
 
+  const flow = biz?.bookingFlow ?? DEFAULT_BOOKING_FLOW;
+  const staffFirst = flowStaffFirst(flow);
+  const showStaff = flowShowsStaff(flow);
+  // How many pickers precede Date, so the remaining step numbers stay consecutive.
+  const pickerSteps = showStaff ? 2 : 1;
+
   // Staff who can actually perform the chosen service. A service with no linked staff
   // falls back to the whole team rather than dead-ending the client.
+  //
+  // In staff-first order there is no service yet when this list is drawn, so it is the whole
+  // team — the SERVICE list is the one that narrows instead, further down.
   const eligibleStaff = useMemo(() => {
     if (!biz) return [];
     if (!service || service.staffIds.length === 0) return biz.staff;
     return biz.staff.filter((person) => service.staffIds.includes(person.id));
   }, [biz, service]);
+
+  // Staff-first: once a specialist is chosen, only what they actually do is offered. Without
+  // this the customer could pick a person and then a service that person does not perform,
+  // and the slot lookup would come back empty with nothing on screen explaining why.
+  const offeredServices = useMemo(() => {
+    if (!biz) return [];
+    if (!staffFirst || !staff) return biz.services;
+    const forThisPerson = biz.services.filter((item) => item.staffIds.includes(staff.id));
+    // A team with no service links at all would otherwise show an empty list.
+    return forThisPerson.length > 0 ? forThisPerson : biz.services;
+  }, [biz, staff, staffFirst]);
+
+  /**
+   * service_only: the customer never sees a specialist, so one is chosen for them — the first
+   * who can do the service. Not the least-busy or the cheapest: any of those would be a
+   * scheduling policy invented here, and the shop already said it does not care who by turning
+   * the step off. An owner who does care picks a different flow.
+   */
+  useEffect(() => {
+    if (showStaff || !service) return;
+    const assigned = eligibleStaff[0] ?? null;
+    setStaff((current) => (current && eligibleStaff.some((p) => p.id === current.id) ? current : assigned));
+  }, [showStaff, service, eligibleStaff]);
 
   const days = useMemo(() => {
     if (!biz) return [];
@@ -338,57 +371,80 @@ export default function BookingApp() {
             <div className="bk-empty">{t.noServices}</div>
           ) : (
             <>
-              <Section step={1} title={t.service}>
-                <div className="bk-list">
-                  {biz.services.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        setService(item);
-                        setTime('');
-                      }}
-                      className={`bk-row${service?.id === item.id ? ' is-on' : ''}`}
-                    >
-                      <span className="bk-row-main">
-                        <span className="bk-row-name">{item.name}</span>
-                        {item.duration > 0 && (
-                          <span className="bk-row-meta">
-                            {item.duration} {t.minutes}
-                          </span>
-                        )}
-                      </span>
-                      {/* Omitted entirely, not shown as a dash: the row is a service the
-                          customer is choosing, and an empty price column is quieter than a
-                          placeholder standing in for one. */}
-                      {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
-                    </button>
-                  ))}
-                </div>
-              </Section>
+              {/* Step order is the shop's choice — see shared/bookingFlow.ts. The two blocks below
+                  are the same pickers either way; only which renders first, and whether the
+                  specialist one renders at all, changes. Numbers are computed rather than
+                  written so "Date" is step 3 in one flow and step 2 in another. */}
+              {[
+                staffFirst ? 'staff' : 'service',
+                ...(staffFirst ? ['service'] : showStaff ? ['staff'] : []),
+              ].map((which, index) => {
+                const step = index + 1;
+                // The second picker waits for the first, so a customer is never choosing a
+                // service for a specialist they have not named yet.
+                if (index === 1 && (staffFirst ? !staff : !service)) return null;
 
-              {service && (
-                <Section step={2} title={t.specialist}>
-                  <div className="bk-chips">
-                    {eligibleStaff.map((person) => (
-                      <Chip
-                        key={person.id}
-                        on={staff?.id === person.id}
-                        onClick={() => {
-                          setStaff(person);
-                          setTime('');
-                        }}
-                      >
-                        {person.name}
-                        {person.role && <span className="bk-chip-sub">{person.role}</span>}
-                      </Chip>
-                    ))}
-                  </div>
-                </Section>
-              )}
+                if (which === 'service') {
+                  return (
+                    <Section key="service" step={step} title={t.service}>
+                      <div className="bk-list">
+                        {offeredServices.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setService(item);
+                              setTime('');
+                            }}
+                            className={`bk-row${service?.id === item.id ? ' is-on' : ''}`}
+                          >
+                            <span className="bk-row-main">
+                              <span className="bk-row-name">{item.name}</span>
+                              {item.duration > 0 && (
+                                <span className="bk-row-meta">
+                                  {item.duration} {t.minutes}
+                                </span>
+                              )}
+                            </span>
+                            {/* Omitted entirely, not shown as a dash: the row is a service the
+                                customer is choosing, and an empty price column is quieter than
+                                a placeholder standing in for one. */}
+                            {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </Section>
+                  );
+                }
+
+                return (
+                  <Section key="staff" step={step} title={t.specialist}>
+                    <div className="bk-chips">
+                      {eligibleStaff.map((person) => (
+                        <Chip
+                          key={person.id}
+                          on={staff?.id === person.id}
+                          onClick={() => {
+                            setStaff(person);
+                            setTime('');
+                          }}
+                        >
+                          {/* Requested only when the shop uploaded one — an <img> that 404s
+                              would flash a broken icon on every chip for a team with none. */}
+                          {person.hasPhoto && (
+                            <img className="bk-chip-photo" src={`/api/public/staff/${person.id}/photo`} alt="" />
+                          )}
+                          {person.name}
+                          {person.role && <span className="bk-chip-sub">{person.role}</span>}
+                        </Chip>
+                      ))}
+                    </div>
+                  </Section>
+                );
+              })}
 
               {service && staff && (
-                <Section step={3} title={t.date}>
+                <Section step={pickerSteps + 1} title={t.date}>
                   <div className="bk-days">
                     {days.map((iso) => (
                       <Chip key={iso} on={date === iso} onClick={() => setDate(iso)}>
@@ -401,7 +457,7 @@ export default function BookingApp() {
               )}
 
               {service && staff && date && (
-                <Section step={4} title={t.time}>
+                <Section step={pickerSteps + 2} title={t.time}>
                   {slotsLoading ? (
                     <div className="bk-empty">{t.loading}</div>
                   ) : slots && slots.length > 0 ? (
@@ -422,7 +478,7 @@ export default function BookingApp() {
               )}
 
               {service && staff && date && time && (
-                <Section step={5} title={t.yourDetails}>
+                <Section step={pickerSteps + 3} title={t.yourDetails}>
                   <label className="bk-field">
                     <span>{t.name}</span>
                     <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t.namePh} autoComplete="name" />

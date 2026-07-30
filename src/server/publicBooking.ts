@@ -12,6 +12,7 @@
 
 import { bookableSlots, type ExistingBooking } from "../shared/availability";
 import { isValidPhone, toStoragePhone } from "../shared/phone";
+import { normalizeBookingFlow } from "../shared/bookingFlow";
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor, resolveBrandTheme } from "../shared/brand";
 import type {
   CreatePublicBookingInput,
@@ -39,7 +40,7 @@ export type PublicBookingError =
   | "rate_limited";
 
 type ServiceRow = { id: number; name: string; price: number; duration: number };
-type StaffRow = { id: number; name: string; role: string | null };
+type StaffRow = { id: number; name: string; role: string | null; photo_file_id: string | null };
 
 function isIsoDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -78,7 +79,7 @@ export async function getPublicBusiness(
 ): Promise<PublicBusinessPayload | null> {
   const business = await db
     .prepare(
-      `SELECT name, type, address, phone, schedule, description, photo_file_id, brand_color, brand_theme
+      `SELECT name, type, address, phone, schedule, description, photo_file_id, brand_color, brand_theme, booking_flow
        FROM businesses WHERE id = ? LIMIT 1`
     )
     .bind(businessId)
@@ -92,6 +93,7 @@ export async function getPublicBusiness(
       photo_file_id: string | null;
       brand_color: string | null;
       brand_theme: string | null;
+      booking_flow: string | null;
     }>();
 
   if (!business) return null;
@@ -103,7 +105,7 @@ export async function getPublicBusiness(
       .prepare("SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 ORDER BY name ASC")
       .bind(businessId)
       .all<ServiceRow>(),
-    db.prepare("SELECT id, name, role FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
+    db.prepare("SELECT id, name, role, photo_file_id FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
     db
       .prepare(
         `SELECT ss.staff_id, ss.service_id
@@ -154,6 +156,9 @@ export async function getPublicBusiness(
     // The owner's role wins over the first service name — a client reading "Barber" is
     // better served than one reading "Стрижка", which is what they are booking anyway.
     role: person.role?.trim() || serviceNamesByStaff.get(person.id)?.[0] || "",
+    // A flag, not a URL: the page builds /api/public/staff/<id>/photo itself, and sending a
+    // file_id to an unauthenticated caller would leak a token that fetches from Telegram.
+    hasPhoto: Boolean(person.photo_file_id),
   }));
 
   return {
@@ -169,6 +174,9 @@ export async function getPublicBusiness(
     // Falls back through theme -> accent on the default page -> easyQ, so a business that
     // picked a colour before themes existed renders exactly as it did.
     brandTheme: resolveBrandTheme(business.brand_theme, business.brand_color),
+    // Decides which steps this page shows and in what order. Normalised server-side so an
+    // unrecognised value degrades to the original service-then-specialist flow.
+    bookingFlow: normalizeBookingFlow(business.booking_flow),
     services: publicServices,
     staff: publicStaff,
     timeZone,

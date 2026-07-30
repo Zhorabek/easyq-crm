@@ -46,6 +46,7 @@ import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
+import { BOOKING_FLOWS, normalizeBookingFlow, type BookingFlow } from "./shared/bookingFlow";
 import {
   checkImageBytes,
   safeImageContentType,
@@ -110,6 +111,7 @@ type BusinessRow = {
   session_version: number;
   brand_color: string | null;
   brand_theme: string | null;
+  booking_flow: string | null;
 };
 
 type LoginRow = {
@@ -137,6 +139,7 @@ type StaffRow = {
   name: string;
   role: string | null;
   phone: string | null;
+  photo_file_id: string | null;
   crm_username: string | null;
   crm_temp_password: string | null;
   access_role: string | null;
@@ -289,6 +292,7 @@ async function getBusinessById(db: D1Database, businessId: number) {
            description,
            photo_file_id,
            photo_file_unique_id,
+           booking_flow,
            crm_username,
            crm_password_hash,
            crm_temp_password,
@@ -2023,7 +2027,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       .bind(business.id)
       .all<ServiceRow>(),
     env.DB
-      .prepare("SELECT id, business_id, name, role, phone, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE business_id = ? ORDER BY name ASC")
+      .prepare("SELECT id, business_id, name, role, phone, photo_file_id, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE business_id = ? ORDER BY name ASC")
       .bind(business.id)
       .all<StaffRow>(),
     env.DB
@@ -2296,6 +2300,9 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       name: person.name,
       role: person.role?.trim() || serviceNames[0] || "",
       phone: person.phone,
+      // A flag, not the file_id: the CRM builds /api/staff/<id>/photo from it, and the file_id
+      // is a Telegram token that has no business leaving the server.
+      hasPhoto: Boolean(person.photo_file_id),
       linkedServices: serviceNames,
       totalLinkedServices: serviceNames.length,
       weeklySlotCount: weeklySlots.reduce((sum, day) => sum + day.slots.length, 0),
@@ -2512,6 +2519,9 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       description: business.description,
       photoFileId: business.photo_file_id,
       photoFileUniqueId: business.photo_file_unique_id,
+      // Normalised here, not on the client: NULL means the business predates the feature and
+      // must keep the page it already had.
+      bookingFlow: normalizeBookingFlow(business.booking_flow),
       crmUsername: business.crm_username,
       crmHasTemporaryPassword: Boolean(business.crm_temp_password),
       brandColor: business.brand_color,
@@ -3023,13 +3033,20 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
     return json({ error: "Business category is invalid" }, { status: 400 });
   }
 
+  // Normalised rather than validated-and-rejected: the three values are a closed set the UI
+  // picks from, so anything else is a bug in a caller, not something an owner typed. Falling
+  // back to the original flow keeps a bad request from emptying somebody's booking page.
+  const nextBookingFlow: BookingFlow =
+    input.bookingFlow === undefined ? normalizeBookingFlow(business.booking_flow) : normalizeBookingFlow(input.bookingFlow);
+
   await env.DB
     .prepare(
       `UPDATE businesses
-       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?, brand_color = ?, brand_theme = ?
+       SET name = ?, type = ?, address = ?, phone = ?, schedule = ?, description = ?, brand_color = ?, brand_theme = ?,
+           booking_flow = ?
        WHERE id = ?`
     )
-    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, nextBrandColor, nextBrandTheme, business.id)
+    .bind(nextName, nextType, nextAddress, nextPhone, nextSchedule, nextDescription, nextBrandColor, nextBrandTheme, nextBookingFlow, business.id)
     .run();
 
   return json({ ok: true });
@@ -3072,6 +3089,82 @@ async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Req
     .run();
 
   return json({ ok: true }, { status: 201 });
+}
+
+/**
+ * A photo for one specialist.
+ *
+ * Everything about the file is decided by the same code that guards the business logo — byte
+ * sniffing, the 4 MB cap, the rebuilt File — so there is no second, weaker path into storage.
+ * The only thing added here is the ownership check: the staff row has to belong to the caller's
+ * business, or an owner could set photos on another shop's team by id.
+ */
+async function uploadStaffPhoto(env: Env, business: BusinessRow, staffId: number, request: Request) {
+  if (!env.BUSINESS_BOT_TOKEN) {
+    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
+  }
+
+  const staff = await env.DB
+    .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(staffId, business.id)
+    .first<{ id: number }>();
+  if (!staff) return json({ error: "Employee not found", code: "invalid_staff" }, { status: 404 });
+
+  const formData = await request.formData();
+  const photo = formData.get("photo");
+  if (!(photo instanceof File)) {
+    return json({ error: "Photo file is required" }, { status: 400 });
+  }
+
+  const bytes = new Uint8Array(await photo.arrayBuffer());
+  const check = checkImageBytes(bytes, bytes.byteLength);
+  if (!check.ok) {
+    return json(
+      { error: IMAGE_REJECTION_MESSAGE[check.reason], code: `image_${check.reason}` },
+      { status: check.reason === "too_large" ? 413 : 415 }
+    );
+  }
+
+  const safePhoto = new File([bytes], `staff-${staffId}.${IMAGE_EXTENSION[check.kind]}`, { type: check.kind });
+  const uploaded = await uploadPhotoToBusinessBot(env, business, safePhoto);
+
+  await env.DB
+    .prepare("UPDATE staff SET photo_file_id = ?, photo_file_unique_id = ? WHERE id = ? AND business_id = ?")
+    .bind(uploaded.fileId, uploaded.fileUniqueId, staffId, business.id)
+    .run();
+
+  return json({ ok: true }, { status: 201 });
+}
+
+async function deleteStaffPhoto(env: Env, business: BusinessRow, staffId: number) {
+  // Scoped by business_id in the WHERE rather than checked first: one statement that cannot
+  // match another shop's row is stronger than a check and an update that could drift apart.
+  await env.DB
+    .prepare("UPDATE staff SET photo_file_id = NULL, photo_file_unique_id = NULL WHERE id = ? AND business_id = ?")
+    .bind(staffId, business.id)
+    .run();
+  return json({ ok: true });
+}
+
+/**
+ * Stream one specialist's photo.
+ *
+ * 404 for a staff id belonging to another business, deliberately indistinguishable from a staff
+ * member with no photo — this is reachable unauthenticated via the public route, and a
+ * different answer for the two cases would let anyone enumerate which ids exist.
+ */
+async function proxyStaffPhoto(env: Env, businessId: number, staffId: number) {
+  if (!env.BUSINESS_BOT_TOKEN) {
+    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
+  }
+  const staff = await env.DB
+    .prepare("SELECT photo_file_id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(staffId, businessId)
+    .first<{ photo_file_id: string | null }>();
+  if (!staff?.photo_file_id) return new Response("Not found", { status: 404 });
+
+  const telegramFile = await getTelegramFileResponse(env.BUSINESS_BOT_TOKEN, staff.photo_file_id);
+  return new Response(telegramFile.body, { status: 200, headers: imageResponseHeaders(telegramFile) });
 }
 
 async function deleteBusinessPhoto(env: Env, business: BusinessRow) {
@@ -3439,6 +3532,11 @@ export default {
         if (url.pathname === "/api/public/photo" && request.method === "GET") {
           return await publicPhotoEndpoint(env, tenant);
         }
+        // Scoped to the tenant resolved from the hostname, so one shop's URL cannot serve
+        // another shop's team photo even with a valid staff id.
+        if (/^\/api\/public\/staff\/\d+\/photo$/.test(url.pathname) && request.method === "GET") {
+          return await proxyStaffPhoto(env, tenant.businessId, Number(url.pathname.split("/")[4]));
+        }
 
         return json({ error: "Not found" }, { status: 404 });
       }
@@ -3594,6 +3692,27 @@ export default {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "business:write");
         return await deleteBusinessPhoto(env, actor.business);
+      }
+
+      // ── Specialist photos ───────────────────────────────────────────────────
+      // Writes need staff:write (owner only, matching the rest of staff management); the read
+      // needs only crm:read, so every role sees the same team the calendar shows.
+      if (/^\/api\/staff\/\d+\/photo$/.test(url.pathname) && request.method === "POST") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "staff:write");
+        return await uploadStaffPhoto(env, actor.business, Number(url.pathname.split("/")[3]), request);
+      }
+
+      if (/^\/api\/staff\/\d+\/photo$/.test(url.pathname) && request.method === "DELETE") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "staff:write");
+        return await deleteStaffPhoto(env, actor.business, Number(url.pathname.split("/")[3]));
+      }
+
+      if (/^\/api\/staff\/\d+\/photo$/.test(url.pathname) && request.method === "GET") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "crm:read");
+        return await proxyStaffPhoto(env, actor.business.id, Number(url.pathname.split("/")[3]));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {

@@ -238,6 +238,21 @@
   font-weight: 600;
   opacity: 0.7;
 }
+/* A specialist's photo inside their chip.
+   The chip is a vertical stack (name over role), so the photo goes above both rather than
+   beside them — a horizontal layout would need the whole chip restructured, and centred over
+   the name reads as "this is that person" without it. */
+.bk-chip-photo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 1px auto 5px;
+  display: block;
+  /* Same treatment when selected: the ring is the accent, so it stays visible on the filled
+     chip as well as the unfilled one. */
+  box-shadow: 0 0 0 2px var(--panel);
+}
 .bk-day-dow {
   font-size: 11.5px;
   font-weight: 700;

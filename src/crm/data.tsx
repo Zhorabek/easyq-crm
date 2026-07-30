@@ -35,6 +35,9 @@ export type DataValue = {
   openPasswordEditor: () => void;
   uploadBusinessPhoto: () => void;
   deleteBusinessPhoto: () => void;
+  /** Pick a photo for one specialist. Opens the same file dialog the logo uses. */
+  uploadStaffPhoto: (staffId: number) => void;
+  deleteStaffPhoto: (staffId: number) => void;
 };
 
 export const DataCtx = createContext<DataValue | null>(null);

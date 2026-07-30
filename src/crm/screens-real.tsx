@@ -5,6 +5,7 @@ import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, Statu
 import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
+import type { BookingFlow } from '../shared/bookingFlow';
 import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
 import {
   BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
@@ -559,6 +560,69 @@ export function Customers() {
 
 /* ============ STAFF ============ */
 /**
+ * A specialist's photo, or their initials, with the upload hidden behind it.
+ *
+ * `hasPhoto` decides whether to request the image at all — an <img> that 404s would flash a
+ * broken icon on every card for a team with no photos yet. Cache-busted on `generatedAt` for
+ * the same reason the logo is: the URL does not change when the file behind it does.
+ */
+function StaffPhoto({
+  employee,
+  version,
+  onUpload,
+  onRemove,
+  removeLabel,
+}: {
+  employee: EmployeeRow;
+  version: string;
+  onUpload: (() => void) | null;
+  onRemove: (() => void) | null;
+  removeLabel: string;
+}) {
+  const SIZE = 54;
+  return (
+    <div style={{ position: 'relative', width: SIZE, height: SIZE, flex: 'none' }}>
+      {employee.hasPhoto ? (
+        <img
+          src={`/api/staff/${employee.id}/photo?v=${encodeURIComponent(version)}`}
+          alt={employee.name}
+          style={{ width: SIZE, height: SIZE, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        <Avatar name={employee.name} color={avatarColor(employee.name)} size={SIZE} />
+      )}
+
+      {onUpload && (
+        <button
+          onClick={onUpload}
+          title={removeLabel}
+          style={{
+            position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: '50%',
+            background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center',
+            border: '2px solid var(--panel)',
+          }}
+        >
+          <Ic name="arrowUp" size={11} stroke={3} />
+        </button>
+      )}
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          title={removeLabel}
+          style={{
+            position: 'absolute', left: -2, bottom: -2, width: 22, height: 22, borderRadius: '50%',
+            background: 'var(--panel)', color: 'var(--rose)', display: 'grid', placeItems: 'center',
+            border: `1px solid var(--line-2)`,
+          }}
+        >
+          <Ic name="x" size={11} stroke={3} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * The clients who have booked with one master, newest first, with the visit counts scoped to
  * that master rather than the shop.
  *
@@ -587,7 +651,7 @@ function clientsOfStaff(clients: ClientRow[], staffId: number) {
 
 export function Staff() {
   const { t, role, notify } = useCRM();
-  const { payload, openStaffEditor, openSlots, openClient, openBookingFor, reload } = useData();
+  const { payload, openStaffEditor, openSlots, openClient, openBookingFor, uploadStaffPhoto, deleteStaffPhoto, reload } = useData();
   // Credentials are returned by the API exactly once, so they live in component state and are
   // never refetched. A reload loses them, which is correct.
   const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
@@ -624,7 +688,16 @@ export function Staff() {
             return (
             <Panel key={p.id}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <Avatar name={p.name} color={avatarColor(p.name)} size={54} />
+                {/* The photo doubles as the upload control: a specialist's picture is the one
+                    thing on this card you change by pointing at it, so a separate button would
+                    be a second place to look. Owner-only, matching staff:write. */}
+                <StaffPhoto
+                  employee={p}
+                  version={payload.generatedAt}
+                  onUpload={role === 'owner' ? () => uploadStaffPhoto(p.id) : null}
+                  onRemove={role === 'owner' && p.hasPhoto ? () => deleteStaffPhoto(p.id) : null}
+                  removeLabel={s.photoRemove}
+                />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16.5, fontWeight: 800 }}>{p.name}</div>
                   {/* `s.role` is the field LABEL, so the old fallback printed "Role" as
@@ -1320,6 +1393,10 @@ export function Branding() {
   // the owner touches a field, so a slow first load cannot show the wrong brand.
   const [touched, setTouched] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Saved on click rather than gathered into the colour form's Save: it is one value out of a
+  // closed set, so there is nothing to review before committing it, and pairing it with the
+  // colours would mean a contrast failure blocked an unrelated change.
+  const [flowSaving, setFlowSaving] = useState(false);
   const stored = JSON.stringify(storedTheme(payload));
   useEffect(() => {
     if (!touched) setThemeDraft(JSON.parse(stored) as BrandThemeDraft);
@@ -1339,6 +1416,20 @@ export function Branding() {
     payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
   const link = publicLink?.url || '';
   const copy = () => { try { navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ } setCopied(true); setTimeout(() => setCopied(false), 1600); };
+
+  const onPickFlow = async (flow: BookingFlow) => {
+    if (flow === payload.business.bookingFlow) return;
+    try {
+      setFlowSaving(true);
+      await updateBusinessProfile({ bookingFlow: flow });
+      notify();
+      await reload();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setFlowSaving(false);
+    }
+  };
 
   const editTheme = (next: BrandThemeDraft) => { setTouched(true); setThemeDraft(next); };
   const setThemePart = (key: 'bg' | 'ink' | 'accent') => (value: string) => {
@@ -1516,9 +1607,44 @@ export function Branding() {
   </Panel>
       </div>
 
-      {/* Right: what you hand out. Empty for a specialist, whose payload carries no links —
-          the column just collapses and the left one keeps its width. */}
+      {/* Right: what you hand out, and how it behaves when they open it. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+        <Panel>
+          <SetHead title={s.flow} sub={s.flowSub} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 18 }}>
+            {(['service_first', 'staff_first', 'service_only'] as BookingFlow[]).map((flow) => {
+              const on = payload.business.bookingFlow === flow;
+              const label = { service_first: s.flowServiceFirst, staff_first: s.flowStaffFirst, service_only: s.flowServiceOnly }[flow];
+              const hint = { service_first: s.flowServiceFirstHint, staff_first: s.flowStaffFirstHint, service_only: s.flowServiceOnlyHint }[flow];
+              return (
+                <button
+                  key={flow}
+                  onClick={() => void onPickFlow(flow)}
+                  disabled={flowSaving}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '12px 14px', borderRadius: 12,
+                    background: on ? 'var(--accent-tint)' : 'var(--panel-2)',
+                    border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+                    opacity: flowSaving ? 0.6 : 1,
+                  }}
+                >
+                  <span style={{
+                    width: 18, height: 18, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center',
+                    border: `2px solid ${on ? 'var(--accent-deep)' : 'var(--line-2)'}`,
+                    background: on ? 'var(--accent-deep)' : 'transparent',
+                  }}>
+                    {on && <Ic name="check" size={11} stroke={3.4} style={{ color: 'var(--accent-tint)' }} />}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 800, color: on ? 'var(--accent-deep)' : 'var(--ink)' }}>{label}</span>
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginTop: 1 }}>{hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Panel>
+
     {payload.bookingLinks.length > 0 && (
 
       <Panel>

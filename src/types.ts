@@ -1,3 +1,5 @@
+import type { BookingFlow } from './shared/bookingFlow';
+
 export type BookingStatus = "pending" | "confirmed" | "done" | "cancelled";
 export type AppSection = "overview" | "calendar" | "employees" | "services" | "clients" | "analytics" | "booking" | "profile";
 export type PaymentMethod = "cash" | "card" | "transfer" | "other";
@@ -14,6 +16,8 @@ export interface BusinessProfile {
   description: string | null;
   photoFileId: string | null;
   photoFileUniqueId: string | null;
+  /** What the booking page asks for, and in what order. See shared/bookingFlow.ts. */
+  bookingFlow: BookingFlow;
   crmUsername: string | null;
   crmHasTemporaryPassword: boolean;
   /** Chosen accent as `#rrggbb`, or null to use the easyQ default. */
@@ -136,6 +140,8 @@ export interface EmployeeRow {
   role: string;
   /** Canonical +998XXXXXXXXX, or null. */
   phone: string | null;
+  /** Whether GET /api/staff/<id>/photo will return an image. */
+  hasPhoto: boolean;
   linkedServices: string[];
   totalLinkedServices: number;
   weeklySlotCount: number;
@@ -235,6 +241,8 @@ export interface PublicStaff {
   name: string;
   /** The owner-set role, falling back to the first linked service, or "" if neither. */
   role: string;
+  /** Whether GET /api/public/staff/<id>/photo will return an image. */
+  hasPhoto: boolean;
 }
 
 export interface PublicBusinessPayload {
@@ -249,6 +257,8 @@ export interface PublicBusinessPayload {
   brandColor: string;
   /** Resolved page theme; never null, so the page never has to decide what "unset" means. */
   brandTheme: BrandThemeValue;
+  /** Which steps this page shows and in what order. */
+  bookingFlow: BookingFlow;
   services: PublicService[];
   staff: PublicStaff[];
   /** IANA zone the business runs on, so the client page agrees about "today". */
@@ -385,6 +395,7 @@ export interface UpdateBusinessProfileInput {
   brandColor?: string | null;
   /** Null clears the theme back to easyQ's. Omitted leaves it untouched. */
   brandTheme?: BrandThemeValue | null;
+  bookingFlow?: BookingFlow;
 }
 
 export interface LoginInput {

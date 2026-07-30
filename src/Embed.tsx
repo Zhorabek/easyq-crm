@@ -184,6 +184,8 @@ export default function EmbedApp() {
     openPasswordEditor: noop,
     uploadBusinessPhoto: noop,
     deleteBusinessPhoto: noop,
+    uploadStaffPhoto: noop,
+    deleteStaffPhoto: noop,
   };
 
   return (

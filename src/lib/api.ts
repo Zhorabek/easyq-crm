@@ -151,6 +151,23 @@ export function deleteBusinessPhoto() {
   });
 }
 
+/** A photo for one specialist. Same validation and storage as the business logo. */
+export function uploadStaffPhoto(staffId: number, file: File) {
+  const formData = new FormData();
+  formData.set("photo", file);
+
+  return request<{ ok: true }>(`/api/staff/${staffId}/photo`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function deleteStaffPhoto(staffId: number) {
+  return request<{ ok: true }>(`/api/staff/${staffId}/photo`, {
+    method: "DELETE",
+  });
+}
+
 /**
  * Grant CRM access, or reset the password of someone who already has it. Both issue a NEW
  * temporary password, returned once in the response — it is never readable again.

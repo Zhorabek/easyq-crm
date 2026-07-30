@@ -7,6 +7,8 @@ import {
   createEmployee,
   createService,
   deleteBusinessPhoto as apiDeleteBusinessPhoto,
+  uploadStaffPhoto as apiUploadStaffPhoto,
+  deleteStaffPhoto as apiDeleteStaffPhoto,
   deleteEmployee,
   grantStaffAccess,
   revokeStaffAccess,
@@ -180,6 +182,10 @@ export default function App() {
   const [tourOpen, setTourOpen] = useState(false);
   const tourAutoShown = useRef(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  // Which upload the open file dialog belongs to. One <input type="file"> is reused for the
+  // logo and every specialist, because a dialog is modal — only one can be open — and a ref
+  // per staff member would be an input per row for a control used once in a while.
+  const photoTarget = useRef<{ kind: 'logo' } | { kind: 'staff'; staffId: number }>({ kind: 'logo' });
 
   const t = CRM_T[lang] || CRM_T.uz;
 
@@ -451,7 +457,17 @@ export default function App() {
     // itself. See shared/imageFile.ts.
     const check = await checkImageFile(file);
     if (!check.ok) { notify(t.set[`logoErr_${check.reason}`] ?? t.set.logoErr_not_an_image); return; }
-    try { await apiUploadBusinessPhoto(file); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+    const target = photoTarget.current;
+    try {
+      if (target.kind === 'staff') await apiUploadStaffPhoto(target.staffId, file);
+      else await apiUploadBusinessPhoto(file);
+      notify();
+      await reload();
+    } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+  }
+
+  async function doDeleteStaffPhoto(staffId: number) {
+    try { await apiDeleteStaffPhoto(staffId); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
   async function doDeletePhoto() {
     try { await apiDeleteBusinessPhoto(); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
@@ -616,8 +632,10 @@ export default function App() {
     openBusinessEditor: () => setBusinessEditor(true),
     openCredentialsEditor: () => setCredentialsEditor(true),
     openPasswordEditor: () => setPasswordEditor(true),
-    uploadBusinessPhoto: () => photoInputRef.current?.click(),
+    uploadBusinessPhoto: () => { photoTarget.current = { kind: 'logo' }; photoInputRef.current?.click(); },
     deleteBusinessPhoto: () => void doDeletePhoto(),
+    uploadStaffPhoto: (staffId) => { photoTarget.current = { kind: 'staff', staffId }; photoInputRef.current?.click(); },
+    deleteStaffPhoto: (staffId) => void doDeleteStaffPhoto(staffId),
   };
 
 

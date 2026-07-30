@@ -142,13 +142,27 @@ export async function getPublicBusiness(
     }
   }
 
-  const publicServices: PublicService[] = services.map((service) => ({
-    id: service.id,
-    name: service.name,
-    price: Number(service.price || 0),
-    duration: Number(service.duration || 0),
-    staffIds: staffIdsByService.get(service.id) ?? [],
-  }));
+  /**
+   * Services somebody can actually perform.
+   *
+   * A service with nobody assigned is not bookable: there is no specialist to give it to and
+   * no shift to place it in. It used to be offered anyway, and the page filled the specialist
+   * step with the entire team — so a customer could book "haircut" with the one barber who is
+   * only assigned to beard trims. Dropping it here means the page cannot present a choice that
+   * leads nowhere, and the owner sees the same fact in the CRM services table.
+   *
+   * The trade-off is deliberate: a shop that has assigned nobody to anything gets an empty
+   * booking page. That is the truth about what can be booked, and the CRM says why.
+   */
+  const publicServices: PublicService[] = services
+    .map((service) => ({
+      id: service.id,
+      name: service.name,
+      price: Number(service.price || 0),
+      duration: Number(service.duration || 0),
+      staffIds: staffIdsByService.get(service.id) ?? [],
+    }))
+    .filter((service) => service.staffIds.length > 0);
 
   const publicStaff: PublicStaff[] = staff.map((person) => ({
     id: person.id,

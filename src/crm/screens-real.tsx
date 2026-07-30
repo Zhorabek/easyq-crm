@@ -6,7 +6,7 @@ import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, useData } from 
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import type { BookingFlow } from '../shared/bookingFlow';
-import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
+import { updateBusinessProfile } from '../lib/api';
 import {
   BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
   brandTokens, isValidBrandColor, normalizeBrandColor, normalizeBrandTheme, themeTextContrast,
@@ -650,34 +650,15 @@ function clientsOfStaff(clients: ClientRow[], staffId: number) {
 }
 
 export function Staff() {
-  const { t, role, notify } = useCRM();
-  const { payload, openStaffEditor, openSlots, openClient, openBookingFor, uploadStaffPhoto, deleteStaffPhoto, reload } = useData();
-  // Credentials are returned by the API exactly once, so they live in component state and are
-  // never refetched. A reload loses them, which is correct.
-  const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
-  const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
-    try { const res = await grantStaffAccess(staffId, r); setIssued({ staffId, username: res.username, password: res.password }); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-  // Reset reuses the grant endpoint: both mean "issue a new temporary password".
-  const onReset = onGrant;
-  const onSetRole = async (staffId: number, r: 'manager' | 'specialist') => {
-    try { await updateStaffAccessRole(staffId, r); notify(); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-  const onRevoke = async (staffId: number) => {
-    if (!window.confirm(t.set.confirmRevoke)) return;
-    try { await revokeStaffAccess(staffId); setIssued(null); notify(); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-  const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
+  const { t, role } = useCRM();
+  const { payload, openStaffEditor, openSlots, openClient, openBookingFor, uploadStaffPhoto, deleteStaffPhoto } = useData();
   // Which master's client list is expanded. One at a time: the cards sit in a two-column
   // grid, and letting several open at once makes the row heights jump around.
   const [clientsOpen, setClientsOpen] = useState<number | null>(null);
   if (!payload) return null;
   const s = t.staff;
   return (
-    <div className="fadein" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div className="fadein" style={{ padding: 28 }}>
       {payload.employees.length === 0 ? (
         <Panel><EmptyHint text={s.title} /></Panel>
       ) : (
@@ -787,137 +768,10 @@ export function Staff() {
           })}
         </div>
       )}
-
-      {/* Moved here from Settings. Who can sign in was two screens away from the list of
-          people it applies to, so granting someone access meant leaving the page where you
-          had just created them. Owner-only, matching access:manage on the server. */}
-      {role === 'owner' && <StaffAccessPanel
-        payload={payload}
-        issued={issued}
-        onGrant={onGrant}
-        onReset={onReset}
-        onSetRole={onSetRole}
-        onRevoke={onRevoke}
-        copyText={copyText}
-      />}
     </div>
   );
 }
 
-/**
- * Grant, reset, demote and revoke CRM logins. Extracted as its own component only so the
- * Staff screen above stays readable — it is not reused anywhere.
- */
-function StaffAccessPanel({
-  payload,
-  issued,
-  onGrant,
-  onReset,
-  onSetRole,
-  onRevoke,
-  copyText,
-}: {
-  payload: CrmPayload;
-  issued: { staffId: number; username: string; password: string } | null;
-  onGrant: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
-  onReset: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
-  onSetRole: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
-  onRevoke: (staffId: number) => void | Promise<void>;
-  copyText: (v: string) => void;
-}) {
-  const { t } = useCRM();
-  const { openCredentialsEditor } = useData();
-  const s = t.set;
-  const b = payload.business;
-  return (
-
-      <Panel>
-        <SetHead title={s.team} sub={s.teamSub} />
-
-        {/* The owner's own login sits at the top: it is the account that grants all
-            the others, and it is the one nobody can reset from here. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '13px 14px', borderRadius: 12, background: 'var(--accent-tint)', border: '1px solid var(--accent)' }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="loyalty" size={17} stroke={2} /></span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800 }}>{b.name}</div>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 600 }}>{b.crmUsername} · {s.roleOwner}</div>
-          </div>
-          <button onClick={openCredentialsEditor} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--panel)', border: '1px solid var(--line-2)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>{s.credentials}</button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-          {payload.staffAccess.length === 0 && <EmptyHint text={t.staff.title} />}
-          {payload.staffAccess.map((row) => {
-            const justIssued = issued?.staffId === row.staffId;
-            return (
-              <div key={row.staffId} style={{ borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', padding: '13px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <Avatar name={row.name} color={avatarColor(row.name)} size={34} />
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 800 }}>{row.name}</div>
-                    <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
-                      {row.username ? row.username : s.noAccess}
-                    </div>
-                  </div>
-
-                  {row.enabled ? (
-                    <>
-                      {/* Role is a live control: changing it applies on the staff
-                          member's next request, not at their next login. */}
-                      <div style={{ display: 'inline-flex', background: 'var(--panel)', border: '1px solid var(--line-2)', borderRadius: 999, padding: 3, gap: 2 }}>
-                        {(['manager', 'specialist'] as const).map((r) => {
-                          const on = row.accessRole === r;
-                          return (
-                            <button
-                              key={r}
-                              title={r === 'manager' ? s.roleManagerHint : s.roleSpecialistHint}
-                              onClick={() => { if (!on) void onSetRole(row.staffId, r); }}
-                              style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent', whiteSpace: 'nowrap' }}
-                            >
-                              {r === 'manager' ? s.roleManager : s.roleSpecialist}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <Badge color="var(--accent-deep)" tint="var(--accent-tint)" dot>{s.accessOn}</Badge>
-                      <button onClick={() => void onReset(row.staffId, row.accessRole ?? 'specialist')} style={btnGhost}>{s.resetPass}</button>
-                      <button onClick={() => void onRevoke(row.staffId)} style={{ ...btnGhost, color: 'var(--rose)' }}>{s.revoke}</button>
-                    </>
-                  ) : (
-                    <>
-                      {row.username && <Badge>{s.accessOff}</Badge>}
-                      <button onClick={() => void onGrant(row.staffId, 'specialist')} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', whiteSpace: 'nowrap' }}>{s.grant}</button>
-                    </>
-                  )}
-                </div>
-
-                {/* Shown once, right after issuing. There is no way to read this
-                    password back, which is the point — so it is impossible to miss. */}
-                {justIssued && (
-                  <div style={{ marginTop: 12, padding: '12px 13px', borderRadius: 11, background: 'var(--panel)', border: '1px solid var(--accent)' }}>
-                    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.loginLabel}</div>
-                        <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.username}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.newPassLabel}</div>
-                        <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.password}</div>
-                      </div>
-                      <button onClick={() => copyText(`${issued.username} / ${issued.password}`)} style={{ ...btnGhost, alignSelf: 'flex-end' }}>{s.copyCreds}</button>
-                    </div>
-                    <div style={{ marginTop: 9, fontSize: 12, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Ic name="bell" size={13} stroke={2} />{s.credsWarn}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Panel>
-  );
-}
 const btnGhost = { flex: 1, fontSize: 13, fontWeight: 800, padding: '9px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink)' } as const;
 
 /* ============ SERVICES ============ */
@@ -939,7 +793,17 @@ export function Services() {
               <span style={{ width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="scissors" size={18} stroke={2} /></span>
               <span style={{ fontSize: 14.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.linkedStaffNames.length ? x.linkedStaffNames.join(', ') : '—'}</div>
+            {/* A service with nobody assigned is not on the booking page at all — there is no
+                one to give it to. That used to be hidden behind a dash while the public page
+                quietly offered the whole team instead, so the dash now says what it means. */}
+            {x.linkedStaffNames.length > 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.linkedStaffNames.join(', ')}</div>
+            ) : (
+              <div title={sv.noStaffHint} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--amber)', fontWeight: 700, minWidth: 0 }}>
+                <Ic name="bell" size={13} stroke={2.2} style={{ flex: 'none' }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sv.noStaff}</span>
+              </div>
+            )}
             <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 5 }}><Ic name="clock" size={14} stroke={2} style={{ color: 'var(--ink-3)' }} />{x.duration} {sv.min}</div>
             {/* A dash, not "0 UZS": zero here means the owner has not set a price. The unit is
                 part of the price, so it goes too. */}

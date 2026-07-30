@@ -177,14 +177,22 @@ export default function BookingApp() {
   // How many pickers precede Date, so the remaining step numbers stay consecutive.
   const pickerSteps = showStaff ? 2 : 1;
 
-  // Staff who can actually perform the chosen service. A service with no linked staff
-  // falls back to the whole team rather than dead-ending the client.
-  //
-  // In staff-first order there is no service yet when this list is drawn, so it is the whole
-  // team — the SERVICE list is the one that narrows instead, further down.
+  /**
+   * Only the specialists actually assigned to the chosen service.
+   *
+   * This used to fall back to the WHOLE TEAM when a service had nobody linked, on the theory
+   * that offering everyone beat dead-ending the customer. It did the opposite: a barber
+   * assigned to one service was offered for every service in the shop, so customers booked
+   * haircuts with someone who does not cut hair. The assignment is the shop's answer to "who
+   * can do this" and guessing past it is worse than not offering the service at all — which is
+   * what now happens, since getPublicBusiness drops services with nobody assigned.
+   *
+   * In staff-first order there is no service chosen yet when this list is drawn, so it is the
+   * whole team; the SERVICE list narrows by specialist instead, further down.
+   */
   const eligibleStaff = useMemo(() => {
     if (!biz) return [];
-    if (!service || service.staffIds.length === 0) return biz.staff;
+    if (!service) return biz.staff;
     return biz.staff.filter((person) => service.staffIds.includes(person.id));
   }, [biz, service]);
 

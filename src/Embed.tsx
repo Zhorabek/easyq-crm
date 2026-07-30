@@ -99,6 +99,15 @@ export default function EmbedApp() {
 
   const allowed = ROLE_SCREENS[role];
   const effActive = allowed && !allowed.includes(active) ? 'dashboard' : active;
+  // The screen is keyed on `effActive` ALONE, never on `lang`.
+  //
+  // `key={effActive + lang}` meant switching language changed the key, so React unmounted
+  // and remounted the screen — throwing away the calendar's day/week/month choice, whichever
+  // Settings section was open, search boxes and filters. It read as a page reload.
+  //
+  // It was never needed: `t` reaches these components through context, so a language change
+  // re-renders them regardless. Nothing reads a translation in a useState initialiser, and
+  // the one component that derives state from `t` re-syncs itself with a `[t]` effect.
   const ScreenComp = SCREEN_COMPONENTS[effActive] || Dashboard;
 
   const titles: Record<string, { title: string; sub?: string | null }> = {
@@ -177,7 +186,7 @@ export default function EmbedApp() {
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <Topbar title={meta.title} sub={meta.sub} onMenu={() => setNavOpen(true)} action={null} />
             <main style={{ flex: 1, minWidth: 0 }}>
-              <ScreenComp key={effActive + lang} />
+              <ScreenComp key={effActive} />
             </main>
           </div>
         </div>

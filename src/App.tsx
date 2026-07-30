@@ -429,6 +429,15 @@ export default function App() {
   const roleAllowed = ROLE_SCREENS[role];
   const allowed = REAL_SCREENS.filter((s) => !roleAllowed || roleAllowed.includes(s));
   const effActive = allowed.includes(active) ? active : 'dashboard';
+  // The screen is keyed on `effActive` ALONE, never on `lang`.
+  //
+  // `key={effActive + lang}` meant switching language changed the key, so React unmounted
+  // and remounted the screen — throwing away the calendar's day/week/month choice, whichever
+  // Settings section was open, search boxes and filters. It read as a page reload.
+  //
+  // It was never needed: `t` reaches these components through context, so a language change
+  // re-renders them regardless. Nothing reads a translation in a useState initialiser, and
+  // the one component that derives state from `t` re-syncs itself with a `[t]` effect.
   const ScreenComp = SCREEN_COMPONENTS[effActive] || Dashboard;
 
   const bizName = payload?.business.name || t.biz;
@@ -498,7 +507,7 @@ export default function App() {
               ) : error || !payload ? (
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 600 }}>{error ?? '—'}</div>
               ) : (
-                <ScreenComp key={effActive + lang} />
+                <ScreenComp key={effActive} />
               )}
             </main>
           </div>

@@ -1,19 +1,110 @@
 # EasyQ CRM
 
-React + TypeScript CRM dashboard for EasyQueue businesses, backed by the shared Cloudflare D1 database used by the Telegram bots.
+React + TypeScript CRM for EasyQueue businesses, served by a single Cloudflare Worker that
+also owns the public booking page and the same D1 database the Telegram bots use.
 
-## Current scope
+One Worker serves three things:
 
-- Daily booking calendar by employee
+| Host | What it serves |
+| --- | --- |
+| `crm.easyq.uz` | sign-in, and the CRM for whoever signs in |
+| `<slug>.easyq.uz` | that business's CRM |
+| `<slug>.easyq.uz/booking` | that business's public booking page, no auth |
+
+Signing in on `crm.easyq.uz` redirects to the business's own subdomain, because the session
+cookie is host-only — see `submitToTenantHost` in `src/App.tsx` for why that is a form POST
+and not a `fetch`.
+
+## What the CRM does
+
+- Daily booking calendar by employee, week and month views
 - Today overview and live reservation list
-- Employee list with revenue, load, linked services, and weekly slots
-- Service catalog with create/edit/archive and employee binding
-- Weekly slot management per employee
-- Client list with visit history and spend totals
-- Revenue leaderboard and basic analytics
-- Online booking links to the current Telegram bots
-- Per-business branding for the public booking page — background, text and button colours,
-  with panels, borders and muted text derived from those three
+- Take a booking by hand, picking an existing client or typing a new one
+- Employees with role, phone, photo, revenue, load, linked services and weekly shifts
+- Which clients belong to a given employee, and their visits with that person
+- Service catalogue with create/edit/archive and employee binding
+- Client book with visit history and spend, keyed on phone so repeat visits merge
+- Cash desk and analytics from the shared `payments` ledger
+- Staff logins with three permission levels, enforced server-side
+- Branding: logo, booking-page colours, and what the booking page asks for first
+- Share links and a printable QR for the public booking page
+
+### Roles
+
+`owner`, `manager`, `specialist`. The matrix is one table in `src/server/permissions.ts`,
+written out per role rather than derived from a hierarchy, so reading down a column tells you
+exactly what a manager can do.
+
+The UI hides what a role cannot do, but **that is cosmetic**. The Worker rejects the call:
+every mutating endpoint runs `requireCapability`, and handlers take an `Actor` rather than a
+`BusinessRow` so a forgotten check is a type error.
+
+Two things a capability check cannot express, both handled separately in
+`isScopedToOwnBookings`:
+
+- A specialist holds `booking:status`, which alone would let them cancel a colleague's
+  appointments. Status changes are additionally scoped to their own `staff_id`.
+- A specialist holds `booking:create` so they can take their own regulars — and on create
+  there is no existing row to check ownership against, so `createCrmBooking` **overwrites**
+  the staff id with the actor's own rather than validating what was sent.
+
+`redactPayloadFor` strips the payload down to what the role may see, and **gates on
+capabilities, not role names** — a new role therefore starts restricted rather than
+privileged. A specialist's client book is rebuilt from their own bookings alone, so a
+colleague's takings and visit frequency cannot ride along on a shared client's row.
+
+## Branding
+
+Its own sidebar screen, owner-only. Three parts:
+
+**Logo.** Uploaded through the CRM and stored in D1 (`crm_images`). Shown on the booking
+page, in the CRM sidebar, and in the Branding preview. Without one, the first letter of the
+business name over the business's own accent.
+
+**Colours.** The owner picks background, text and accent; the other nine tokens are derived
+in `src/shared/brand.ts`. The text/background pair must clear WCAG AA (4.5:1) or the save is
+refused — the settings screen and the Worker call the same function, so the disabled button
+and the 400 cannot disagree.
+
+The **booking page** takes all twelve tokens. The **CRM takes the accent only**, because the
+surface tokens are what the light/dark toggle switches, and an inline style on the root
+element beats a stylesheet — writing `--bg` there would leave the toggle visibly doing
+nothing. Appearance owns the surfaces, branding owns the accent. The sidebar gets its own
+accent derived against the navy, or a business with a dark brand would have an invisible
+active nav item. See `src/crm/brand-shell.ts`.
+
+**Booking order** (`businesses.booking_flow`) — what a customer is asked for first:
+
+| Value | Booking page |
+| --- | --- |
+| `service_first` | service, then specialist. The default, and what `NULL` means |
+| `staff_first` | specialist, then service, with services narrowed to that person |
+| `service_only` | service only; the specialist is assigned and never shown |
+
+A service with **no specialist assigned is not offered at all** — there is nobody to give it
+to. The services table flags those in amber so the owner can see why one vanished.
+
+## Image uploads
+
+Logos and specialist photos share one path, in `src/shared/imageFile.ts` and `crm_images`.
+
+- Accepted formats are decided by the file's **leading bytes**, never its name or
+  `Content-Type` — both of those are chosen by whoever is uploading. PNG, JPEG and WebP.
+- **SVG is refused outright.** It is an image to a person and an XML document with `<script>`
+  support to a browser, which is the standard route from "image upload" to stored XSS.
+- The browser downscales to 512px and re-encodes before uploading. That keeps rows small and
+  **launders the file**: the stored bytes are the browser's own encoder output from decoded
+  pixels, so a payload appended to a valid PNG does not survive. It runs client-side and so
+  carries no authority — the Worker repeats every check on bytes it read itself.
+- Responses carry a `Content-Type` from our own allowlist plus `X-Content-Type-Options:
+  nosniff`, which is what keeps anything that did reach storage inert.
+
+**Bytes are stored base64, in a column declared `BLOB`.** Not an accident and not worth
+"optimising": D1 accepts only `ArrayBuffer` for a blob bind — a `Uint8Array` is an
+ArrayBuffer*View* — and returns a blob as an **array of integers**, not an `ArrayBuffer`.
+Getting either end wrong stores or serves something that is not an image while every type
+annotation still checks out. Base64 has one representation in both directions. SQLite's BLOB
+affinity stores what it is handed, so the text needs no schema change.
 
 ## Install
 
@@ -23,58 +114,22 @@ npm install
 
 ## Local env
 
-Copy `.dev.vars.example` to `.dev.vars` and set the local runtime vars:
+Copy `.dev.vars.example` to `.dev.vars`:
 
 ```bash
-APP_TIMEZONE=Asia/Almaty
+APP_TIMEZONE=Asia/Tashkent
 CRM_SESSION_SECRET=easyq-crm-dev-session-secret
 CLIENT_BOT_USERNAME=easyqueue_client_bot
 BUSINESS_BOT_USERNAME=easyqueue_business_bot
-BUSINESS_BOT_TOKEN=your_business_bot_token_here
 ```
 
-CRM now uses login/password per business, so `CRM_BUSINESS_ID` is no longer required for the normal UI flow.
-Open the business in Telegram, go to the profile, tap `CRM доступ`, and use the shown test credentials to sign in.
+`CRM_BUSINESS_ID` is not used — the CRM signs in with a username and password per business.
 
-## Phone verification bot (required for web sign-up)
-
-Web sign-up confirms a phone number by having the visitor share their Telegram contact.
-This needs its **own** bot — a bot has exactly one webhook, so reusing
-`easyqueue_business_bot` would take its updates away from the bot service that owns it.
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) — e.g. `easyq_verify_bot`.
-2. Set the Worker secrets:
-
-```bash
-npx wrangler secret put VERIFY_BOT_TOKEN
-```
-
-```bash
-npx wrangler secret put VERIFY_WEBHOOK_SECRET
-```
-
-`VERIFY_WEBHOOK_SECRET` is any random string you invent; Telegram echoes it back in the
-`X-Telegram-Bot-Api-Secret-Token` header and the Worker rejects anything else. Also set
-`VERIFY_BOT_USERNAME` (a plain var, not a secret) if the bot is not `easyq_verify_bot`.
-
-3. Point the bot's webhook at the CRM, using the same secret:
-
-```bash
-curl "https://api.telegram.org/bot<VERIFY_BOT_TOKEN>/setWebhook" -d "url=https://crm.easyq.uz/api/telegram/verify-webhook" -d "secret_token=<VERIFY_WEBHOOK_SECRET>"
-```
-
-4. Apply the migration:
-
-```bash
-npm run db:migrate:remote:verification
-```
-
-Until `VERIFY_BOT_TOKEN` is set, `POST /api/signup` returns 503 `verify_unconfigured`
-rather than creating anything — the old `code: "1111"` bypass is gone.
+`BUSINESS_BOT_TOKEN` is **no longer needed for logos.** It is only read to serve a photo that
+was uploaded through the Telegram bot before `crm_images` existed, and that path 404s rather
+than erroring when the token is absent.
 
 ## Run
-
-Frontend build check:
 
 ```bash
 npm run typecheck
@@ -86,47 +141,63 @@ Frontend only:
 npm run dev
 ```
 
-CRM with Worker API and D1:
+With the Worker API and a local D1:
 
 ```bash
 npm run dev:worker
 ```
 
-CRM with the real shared Cloudflare D1 database:
+Against the real shared D1:
 
 ```bash
 npm run dev:worker:remote
 ```
 
-If you want to run against a local D1 database instead, initialize the schema first:
+Deploy — push to `main`; GitHub Actions builds and deploys. To deploy by hand:
+
+```bash
+npm run deploy
+```
+
+Both paths run `tsc --noEmit` first. `vite build` alone strips types without resolving them,
+which is how a file calling twelve names it never imported once deployed green.
+
+## Local D1 setup
 
 ```bash
 npm run db:init:local
 ```
 
-If your local DB was already created before the latest slot migration, also run:
+Then, in order — each adds columns or tables the CRM needs and the bot repo's own migrations
+do not create:
 
 ```bash
 npm run db:migrate:local
 ```
 
-If your local DB was created before the payments ledger was added, also run:
-
 ```bash
 npm run db:migrate:local:payments
 ```
-
-Then add the tables the CRM itself owns — `captcha_used`, `landing_feedback` and
-`businesses.slug`. Without these the Worker cannot serve signup, feedback or per-tenant
-subdomains, because the migrations that created them live in the bot repo:
 
 ```bash
 npm run db:migrate:local:crm
 ```
 
-Booking-page branding stores its colours on `businesses`, in two additive columns added at
-different times. Both are nullable, so skipping them only means every booking page renders
-in the stock easyQ palette:
+```bash
+npm run db:migrate:local:booking-phone
+```
+
+```bash
+npm run db:migrate:local:staff-role
+```
+
+```bash
+npm run db:migrate:local:staff-access
+```
+
+```bash
+npm run db:migrate:local:session-version
+```
 
 ```bash
 npm run db:migrate:local:brand
@@ -136,22 +207,37 @@ npm run db:migrate:local:brand
 npm run db:migrate:local:brand-theme
 ```
 
-Deploy:
+```bash
+npm run db:migrate:local:booking-flow
+```
 
 ```bash
-npm run deploy
+npm run db:migrate:local:images
 ```
+
+Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migration rule in
+[TODO.md](TODO.md) before running one against production** — migrate first, deploy second,
+and verify the column exists rather than trusting the console's report. Doing it the other
+way round cost a login outage.
+
+## Phone verification bot
+
+Web sign-up currently accepts the hard-coded code `1111`
+(`PHONE_VERIFICATION_ENABLED = false` in `src/worker.ts`). The Telegram contact-sharing flow
+that replaces it is parked — see the *Parked* section of [TODO.md](TODO.md) for how to
+finish it and why it needs its own bot.
 
 ## Notes
 
-- The CRM reads the same D1 schema as the bots.
+- The CRM reads the same D1 schema as the bots, and shares `businesses`, `staff`, `services`,
+  `bookings` and `payments` with them. Additive columns only.
 - Set `CRM_SESSION_SECRET` in Cloudflare secrets for production auth cookies.
-- `BUSINESS_BOT_TOKEN` is required for business photo preview/upload in CRM, because CRM proxies the photo through the business bot's Telegram file access.
-- Earnings and finance analytics now come from the shared `payments` ledger, not only from booking status.
-- `wrangler dev` uses a local D1 by default, so it will be empty until you initialize it.
-- It does not store Telegram bot tokens in the source tree.
-- Booking-page branding derives eleven CSS tokens from three stored colours. The text and
-  background pair must clear WCAG AA (4.5:1) or the save is refused — `src/shared/brand.ts`
-  holds that rule, and both the settings screen and the Worker call the same function, so
-  the disabled button and the 400 cannot disagree.
-- Client phone/WhatsApp data is not available from the current bot schema, so the CRM currently focuses on booking history and spend analytics.
+- No Telegram bot token is stored in the source tree.
+- Phone numbers have one definition — `src/shared/phone.ts`, canonical `+998XXXXXXXXX` for
+  storage and `+998 90 123 45 67` for display. Mirrored verbatim into `easyq-landing`.
+- Availability has one definition — `src/shared/availability.ts`, shared by the owner's
+  calendar and the public booking API. Do not fork it.
+- Money is UZS. A **price** of 0 prints nothing, because it means nobody set one; a **total**
+  of 0 prints `0`, because the day really did take zero. `fmtPrice` vs `fmtSom`.
+- The bots can still double-book, and a bot booking will not merge with a web booking by the
+  same person. Both need changes in the bot repo — see *Known limits* in [TODO.md](TODO.md).

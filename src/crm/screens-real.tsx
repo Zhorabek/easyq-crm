@@ -935,43 +935,6 @@ export function Settings() {
   // Credentials are returned by the API exactly once, so they live in component state
   // and are never refetched. A reload loses them, which is correct.
   const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
-  // Draft holds raw strings, not validated colours: the owner may be mid-way through
-  // typing a hex, and snapping it to a valid value on every keystroke fights them.
-  //
-  // A business that picked an accent before themes existed has no stored theme, so it
-  // opens on that accent over the default page — which is exactly what its booking page
-  // renders today, so the preview is not lying about the current state.
-  const [themeDraft, setThemeDraft] = useState(() => ({
-    ...DEFAULT_BRAND_THEME,
-    accent: payload?.business.brandColor ?? DEFAULT_BRAND_COLOR,
-    ...(payload?.business.brandTheme ?? {}),
-  }));
-  const setThemePart = (key: 'bg' | 'ink' | 'accent') => (value: string) =>
-    setThemeDraft((draft) => ({ ...draft, [key]: value }));
-  // Preview falls back per field, so one half-typed hex does not blank the whole preview.
-  const themeSafe = {
-    bg: isValidBrandColor(themeDraft.bg) ? themeDraft.bg : DEFAULT_BRAND_THEME.bg,
-    ink: isValidBrandColor(themeDraft.ink) ? themeDraft.ink : DEFAULT_BRAND_THEME.ink,
-    accent: isValidBrandColor(themeDraft.accent) ? themeDraft.accent : DEFAULT_BRAND_THEME.accent,
-  };
-  const brandPreview = brandTokens(themeSafe);
-  const brandHexInvalid = !isValidBrandColor(themeDraft.bg) || !isValidBrandColor(themeDraft.ink) || !isValidBrandColor(themeDraft.accent);
-  const brandContrast = themeTextContrast(themeSafe);
-  // The worker rejects with this same function, so a disabled button and a 400 can never
-  // disagree about what is saveable.
-  const canSaveBrand = normalizeBrandTheme(themeDraft) !== null;
-  const onSaveBrand = async () => {
-    const theme = normalizeBrandTheme(themeDraft);
-    if (!theme) return;
-    try {
-      // Only the theme is sent: the worker writes brand_color from its accent, so the
-      // Telegram bots and any deploy still mid-rollout keep reading the right colour.
-      await updateBusinessProfile({ brandTheme: theme });
-      notify();
-      await reload();
-    } catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-
   const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
   const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
     try { const res = await grantStaffAccess(staffId, r); setIssued({ staffId, username: res.username, password: res.password }); await reload(); }
@@ -1001,10 +964,12 @@ export function Settings() {
 
   // `team` was translated in all three languages but never rendered — the section simply
   // did not exist. Owner-only, since granting access is an owner capability server-side.
+  // `booking` is hidden for anyone whose payload has no links: bookingLinks is redacted
+  // to [] for specialists, so the section rendered as a heading with nothing under it.
   const navItems: Array<[string, string]> = [
     ['profile', 'user'],
-    ['booking', 'grid'],
-    ...(role === 'owner' ? ([['brand', 'star'], ['team', 'staff']] as Array<[string, string]>) : []),
+    ...(payload.bookingLinks.length > 0 ? ([['booking', 'grid']] as Array<[string, string]>) : []),
+    ...(role === 'owner' ? ([['team', 'staff']] as Array<[string, string]>) : []),
     ['appearance', 'sun'],
   ];
 
@@ -1193,111 +1158,6 @@ export function Settings() {
             </Panel>
           )}
 
-          {sec === 'brand' && (
-            <Panel>
-              <SetHead title={s.brand} sub={s.brandSub} />
-
-              {/* Picking one of these and stopping is the expected path. Each one is a
-                  coordinated background/text/button set that clears AA, so an owner who
-                  never opens the hex fields cannot produce an unreadable page. */}
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 18, marginBottom: 9 }}>{s.brandThemes}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(124px, 1fr))', gap: 9 }}>
-                {BRAND_THEME_PRESETS.map((preset) => {
-                  const on =
-                    normalizeBrandColor(themeDraft.bg) === preset.theme.bg &&
-                    normalizeBrandColor(themeDraft.ink) === preset.theme.ink &&
-                    normalizeBrandColor(themeDraft.accent) === preset.theme.accent;
-                  const tokens = brandTokens(preset.theme);
-                  return (
-                    <button
-                      key={preset.id}
-                      onClick={() => setThemeDraft({ ...preset.theme })}
-                      style={{
-                        textAlign: 'left', padding: 11, borderRadius: 12, background: tokens.bg,
-                        border: on ? '2px solid var(--ink)' : `1px solid var(--line-2)`,
-                        display: 'flex', flexDirection: 'column', gap: 9,
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: tokens.ink }}>
-                          {s.brandThemeNames[preset.id] ?? preset.id}
-                        </span>
-                        {on && <Ic name="check" size={15} stroke={3} style={{ color: tokens.accentDeep }} />}
-                      </div>
-                      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                        <span style={{ flex: 1, height: 16, borderRadius: 5, background: tokens.panel, border: `1px solid ${tokens.line}` }} />
-                        <span style={{ width: 30, height: 16, borderRadius: 5, background: tokens.accent }} />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 20, marginBottom: 10 }}>{s.brandCustom}</div>
-              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                <BrandField label={s.brandBg} value={themeDraft.bg} onChange={setThemePart('bg')} />
-                <BrandField label={s.brandInk} value={themeDraft.ink} onChange={setThemePart('ink')} />
-                <BrandField label={s.brandAccent} value={themeDraft.accent} onChange={setThemePart('accent')} swatches={BRAND_PRESETS} />
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-                <button onClick={() => setThemeDraft({ ...DEFAULT_BRAND_THEME })} style={{ ...btnGhost, flex: 'none', padding: '9px 15px' }}>{s.brandReset}</button>
-              </div>
-
-              {brandHexInvalid && (
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 12 }}>{s.brandInvalid}</div>
-              )}
-
-              {/* The contrast number is shown, not just a pass/fail, because an owner who
-                  is 0.2 short needs to know they are close rather than guessing which of
-                  the two colours to move. Below AA the save button is disabled — the
-                  worker refuses it anyway, and a button that submits and fails is worse
-                  than one that explains itself. */}
-              {!brandHexInvalid && (
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 11,
-                    background: canSaveBrand ? 'var(--panel-2)' : 'var(--rose-t)',
-                    border: `1px solid ${canSaveBrand ? 'var(--line)' : 'var(--rose)'}`,
-                  }}
-                >
-                  <Ic name={canSaveBrand ? 'check' : 'bell'} size={15} stroke={2.2} style={{ color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)', flex: 'none' }} />
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)' }}>
-                    {s.brandContrast}: {brandContrast.toFixed(1)}:1 · {canSaveBrand ? s.brandContrastOk : s.brandContrastLow}
-                  </span>
-                </div>
-              )}
-
-              {/* Live preview of the derived tokens, so the owner sees the panel, border
-                  and button-text colours that get picked for them rather than discovering
-                  them on the client-facing page. */}
-              <div style={{ marginTop: 20 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
-                <BrandPreview
-                  tokens={brandPreview}
-                  name={b.name}
-                  schedule={b.schedule}
-                  serviceLabel={payload.services.find((sv) => sv.isActive)?.name ?? t.nav.services}
-                  bookLabel={s.brandBook}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-                <button
-                  onClick={() => void onSaveBrand()}
-                  disabled={!canSaveBrand}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
-                    color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
-                    opacity: canSaveBrand ? 1 : 0.5,
-                  }}
-                >
-                  <Ic name="check" size={16} stroke={2.4} />{s.save}
-                </button>
-              </div>
-            </Panel>
-          )}
-
           {sec === 'appearance' && (
             <Panel>
               <SetHead title={s.appearance} sub={s.appearanceSub} />
@@ -1324,6 +1184,198 @@ export function Settings() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+type BrandThemeDraft = { bg: string; ink: string; accent: string };
+
+/**
+ * The theme as currently stored, per field, as raw strings for the draft to edit.
+ * A business with no saved theme falls back to its legacy `brandColor` accent over the
+ * default page, which is what its booking page already renders.
+ */
+function storedTheme(payload: CrmPayload | null): BrandThemeDraft {
+  return {
+    ...DEFAULT_BRAND_THEME,
+    accent: payload?.business.brandColor ?? DEFAULT_BRAND_COLOR,
+    ...(payload?.business.brandTheme ?? {}),
+  };
+}
+
+/**
+ * Branding — promoted out of Settings to its own screen.
+ *
+ * It was a Settings sub-section, three clicks deep, which undersold it: this is the
+ * only place a business changes how its booking page looks to customers. It also fixes
+ * an unlabelled nav entry — the Settings nav renders `s.nav[k]`, and `brand` was only
+ * ever added to `t.set`, so the item showed an icon and no text.
+ *
+ * Owner-only, matching `business:write` on the server. The `role` check here is
+ * cosmetic; the Worker rejects the save regardless.
+ */
+export function Branding() {
+  const { t, role, notify } = useCRM();
+  const { payload, reload } = useData();
+  // Draft holds raw strings, not validated colours: the owner may be mid-way through
+  // typing a hex, and snapping it to a valid value on every keystroke fights them.
+  //
+  // A business that picked an accent before themes existed has no stored theme, so it
+  // opens on that accent over the default page — which is exactly what its booking page
+  // renders today, so the preview is not lying about the current state.
+  const [themeDraft, setThemeDraft] = useState(() => storedTheme(payload));
+  // As its own screen this can mount before the payload lands, where the initialiser
+  // above sees nothing and falls back to the defaults. Re-sync from the payload until
+  // the owner touches a field, so a slow first load cannot show the wrong brand.
+  const [touched, setTouched] = useState(false);
+  const stored = JSON.stringify(storedTheme(payload));
+  useEffect(() => {
+    if (!touched) setThemeDraft(JSON.parse(stored) as BrandThemeDraft);
+  }, [stored, touched]);
+
+  const s = t.set;
+  if (role !== 'owner') {
+    return <div className="fadein" style={{ padding: 28 }}><EmptyHint text={s.ownerOnly} /></div>;
+  }
+  if (!payload) return null;
+  const b = payload.business;
+
+  const editTheme = (next: BrandThemeDraft) => { setTouched(true); setThemeDraft(next); };
+  const setThemePart = (key: 'bg' | 'ink' | 'accent') => (value: string) => {
+    setTouched(true);
+    setThemeDraft((draft) => ({ ...draft, [key]: value }));
+  };
+  // Preview falls back per field, so one half-typed hex does not blank the whole preview.
+  const themeSafe = {
+    bg: isValidBrandColor(themeDraft.bg) ? themeDraft.bg : DEFAULT_BRAND_THEME.bg,
+    ink: isValidBrandColor(themeDraft.ink) ? themeDraft.ink : DEFAULT_BRAND_THEME.ink,
+    accent: isValidBrandColor(themeDraft.accent) ? themeDraft.accent : DEFAULT_BRAND_THEME.accent,
+  };
+  const brandPreview = brandTokens(themeSafe);
+  const brandHexInvalid = !isValidBrandColor(themeDraft.bg) || !isValidBrandColor(themeDraft.ink) || !isValidBrandColor(themeDraft.accent);
+  const brandContrast = themeTextContrast(themeSafe);
+  // The worker rejects with this same function, so a disabled button and a 400 can never
+  // disagree about what is saveable.
+  const canSaveBrand = normalizeBrandTheme(themeDraft) !== null;
+  const onSaveBrand = async () => {
+    const theme = normalizeBrandTheme(themeDraft);
+    if (!theme) return;
+    try {
+      // Only the theme is sent: the worker writes brand_color from its accent, so the
+      // Telegram bots and any deploy still mid-rollout keep reading the right colour.
+      await updateBusinessProfile({ brandTheme: theme });
+      // The save is now the truth, so hand control back to the payload.
+      setTouched(false);
+      notify();
+      await reload();
+    } catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+
+  return (
+    <div className="fadein" style={{ padding: 28, maxWidth: 760 }}>
+
+    <Panel>
+      <SetHead title={s.brand} sub={s.brandSub} />
+
+      {/* Picking one of these and stopping is the expected path. Each one is a
+          coordinated background/text/button set that clears AA, so an owner who
+          never opens the hex fields cannot produce an unreadable page. */}
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 18, marginBottom: 9 }}>{s.brandThemes}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(124px, 1fr))', gap: 9 }}>
+        {BRAND_THEME_PRESETS.map((preset) => {
+          const on =
+            normalizeBrandColor(themeDraft.bg) === preset.theme.bg &&
+            normalizeBrandColor(themeDraft.ink) === preset.theme.ink &&
+            normalizeBrandColor(themeDraft.accent) === preset.theme.accent;
+          const tokens = brandTokens(preset.theme);
+          return (
+            <button
+              key={preset.id}
+              onClick={() => editTheme({ ...preset.theme })}
+              style={{
+                textAlign: 'left', padding: 11, borderRadius: 12, background: tokens.bg,
+                border: on ? '2px solid var(--ink)' : `1px solid var(--line-2)`,
+                display: 'flex', flexDirection: 'column', gap: 9,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: tokens.ink }}>
+                  {s.brandThemeNames[preset.id] ?? preset.id}
+                </span>
+                {on && <Ic name="check" size={15} stroke={3} style={{ color: tokens.accentDeep }} />}
+              </div>
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                <span style={{ flex: 1, height: 16, borderRadius: 5, background: tokens.panel, border: `1px solid ${tokens.line}` }} />
+                <span style={{ width: 30, height: 16, borderRadius: 5, background: tokens.accent }} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 20, marginBottom: 10 }}>{s.brandCustom}</div>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+        <BrandField label={s.brandBg} value={themeDraft.bg} onChange={setThemePart('bg')} />
+        <BrandField label={s.brandInk} value={themeDraft.ink} onChange={setThemePart('ink')} />
+        <BrandField label={s.brandAccent} value={themeDraft.accent} onChange={setThemePart('accent')} swatches={BRAND_PRESETS} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+        <button onClick={() => editTheme({ ...DEFAULT_BRAND_THEME })} style={{ ...btnGhost, flex: 'none', padding: '9px 15px' }}>{s.brandReset}</button>
+      </div>
+
+      {brandHexInvalid && (
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 12 }}>{s.brandInvalid}</div>
+      )}
+
+      {/* The contrast number is shown, not just a pass/fail, because an owner who
+          is 0.2 short needs to know they are close rather than guessing which of
+          the two colours to move. Below AA the save button is disabled — the
+          worker refuses it anyway, and a button that submits and fails is worse
+          than one that explains itself. */}
+      {!brandHexInvalid && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 11,
+            background: canSaveBrand ? 'var(--panel-2)' : 'var(--rose-t)',
+            border: `1px solid ${canSaveBrand ? 'var(--line)' : 'var(--rose)'}`,
+          }}
+        >
+          <Ic name={canSaveBrand ? 'check' : 'bell'} size={15} stroke={2.2} style={{ color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)', flex: 'none' }} />
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)' }}>
+            {s.brandContrast}: {brandContrast.toFixed(1)}:1 · {canSaveBrand ? s.brandContrastOk : s.brandContrastLow}
+          </span>
+        </div>
+      )}
+
+      {/* Live preview of the derived tokens, so the owner sees the panel, border
+          and button-text colours that get picked for them rather than discovering
+          them on the client-facing page. */}
+      <div style={{ marginTop: 20 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
+        <BrandPreview
+          tokens={brandPreview}
+          name={b.name}
+          schedule={b.schedule}
+          serviceLabel={payload.services.find((sv) => sv.isActive)?.name ?? t.nav.services}
+          bookLabel={s.brandBook}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+        <button
+          onClick={() => void onSaveBrand()}
+          disabled={!canSaveBrand}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
+            color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
+            opacity: canSaveBrand ? 1 : 0.5,
+          }}
+        >
+          <Ic name="check" size={16} stroke={2.4} />{s.save}
+        </button>
+      </div>
+    </Panel>
     </div>
   );
 }

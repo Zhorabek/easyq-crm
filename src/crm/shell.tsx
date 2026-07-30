@@ -17,6 +17,7 @@ const NAV_ITEMS: Array<[string, string]> = [
   ['marketing', 'marketing'],
   ['automations', 'automations'],
   ['analytics', 'analytics'],
+  ['branding', 'star'],
 ];
 
 export function Sidebar({ active, setActive, navOpen }: { active: string; setActive: (s: string) => void; navOpen: boolean }) {

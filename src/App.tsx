@@ -40,7 +40,7 @@ import { DataCtx, type DataValue } from './crm/data';
 import { Toast } from './crm/ui';
 import { Tour } from './crm/Tour';
 import { Sidebar, Topbar } from './crm/shell';
-import { Analytics, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
+import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
 import {
   BookingDetailModal,
   BusinessModal,
@@ -67,15 +67,17 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
   services: Services,
   finance: Finance,
   analytics: Analytics,
+  branding: Branding,
   settings: Settings,
 };
 
-const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'];
+const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'branding', 'settings'];
 
 // Which screens each role sees. This MIRRORS server/permissions.ts to keep the nav tidy —
 // it is NOT the enforcement. Hiding a button stops nobody; the worker rejects the call.
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
+  // No branding: it needs business:write, which only an owner has.
   manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'],
   // No customers screen: the client book is redacted out of a specialist's payload anyway.
   specialist: ['dashboard', 'calendar', 'settings'],
@@ -515,6 +517,7 @@ export default function App() {
     marketing: { title: t.nav.marketing, sub: t.mkt.sub, action: null },
     automations: { title: t.nav.automations, sub: t.auto.sub, action: { label: t.auto.add, run: () => setModal({ type: 'rule' }) } },
     analytics: { title: t.an.title, sub: t.an.sub, action: null },
+    branding: { title: t.nav.branding, sub: t.set.brandSub, action: null },
     settings: { title: t.nav.settings, sub: t.set.sub, action: null },
   };
   const meta = titles[effActive] || titles.dashboard;

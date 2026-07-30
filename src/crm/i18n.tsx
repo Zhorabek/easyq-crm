@@ -14,7 +14,7 @@ export const CRM_LANGS: Array<{ code: Lang; label: string }> = [
 // Permissive types: the design accesses many keys dynamically (t.status[x], t.via[x], s.nav[k]).
 export const CRM_T: Record<Lang, any> = {
   uz: {
-    nav: { dashboard: 'Boshqaruv paneli', calendar: 'Jadval', customers: 'Mijozlar', staff: 'Xodimlar', services: 'Xizmatlar', inventory: 'Ombor', finance: 'Kassa', loyalty: 'Sodiqlik', payroll: 'Ish haqi', reviews: 'Sharhlar', marketing: 'Marketing', automations: 'Avtomatlashtirish', analytics: 'Tahlil', settings: 'Sozlamalar' },
+    nav: { dashboard: 'Boshqaruv paneli', calendar: 'Jadval', customers: 'Mijozlar', staff: 'Xodimlar', services: 'Xizmatlar', inventory: 'Ombor', finance: 'Kassa', loyalty: 'Sodiqlik', payroll: 'Ish haqi', reviews: 'Sharhlar', marketing: 'Marketing', automations: 'Avtomatlashtirish', analytics: 'Tahlil', branding: 'Brending', settings: 'Sozlamalar' },
     search: 'Mijoz, navbat yoki xizmat qidirish…',
     newBooking: 'Yangi navbat',
     notif: {
@@ -130,7 +130,7 @@ export const CRM_T: Record<Lang, any> = {
   },
 
   ru: {
-    nav: { dashboard: 'Панель', calendar: 'Расписание', customers: 'Клиенты', staff: 'Сотрудники', services: 'Услуги', inventory: 'Склад', finance: 'Касса', loyalty: 'Лояльность', payroll: 'Зарплата', reviews: 'Отзывы', marketing: 'Маркетинг', automations: 'Автоматизация', analytics: 'Аналитика', settings: 'Настройки' },
+    nav: { dashboard: 'Панель', calendar: 'Расписание', customers: 'Клиенты', staff: 'Сотрудники', services: 'Услуги', inventory: 'Склад', finance: 'Касса', loyalty: 'Лояльность', payroll: 'Зарплата', reviews: 'Отзывы', marketing: 'Маркетинг', automations: 'Автоматизация', analytics: 'Аналитика', branding: 'Брендинг', settings: 'Настройки' },
     search: 'Поиск клиента, записи или услуги…',
     newBooking: 'Новая запись',
     notif: {
@@ -246,7 +246,7 @@ export const CRM_T: Record<Lang, any> = {
   },
 
   en: {
-    nav: { dashboard: 'Dashboard', calendar: 'Schedule', customers: 'Customers', staff: 'Staff', services: 'Services', inventory: 'Inventory', finance: 'Cash desk', loyalty: 'Loyalty', payroll: 'Payroll', reviews: 'Reviews', marketing: 'Marketing', automations: 'Automations', analytics: 'Analytics', settings: 'Settings' },
+    nav: { dashboard: 'Dashboard', calendar: 'Schedule', customers: 'Customers', staff: 'Staff', services: 'Services', inventory: 'Inventory', finance: 'Cash desk', loyalty: 'Loyalty', payroll: 'Payroll', reviews: 'Reviews', marketing: 'Marketing', automations: 'Automations', analytics: 'Analytics', branding: 'Branding', settings: 'Settings' },
     search: 'Search customer, booking or service…',
     newBooking: 'New booking',
     notif: {

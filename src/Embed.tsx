@@ -34,8 +34,14 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
   settings: Settings,
 };
 
+const DEMO_SCREENS = [
+  'dashboard', 'calendar', 'customers', 'staff', 'services', 'inventory', 'finance',
+  'loyalty', 'payroll', 'reviews', 'marketing', 'automations', 'analytics', 'settings',
+];
+
 const ROLE_SCREENS: Record<Role, string[] | null> = {
-  owner: null,
+  // Not null: the demo deliberately omits Branding, which would save against the live API.
+  owner: DEMO_SCREENS,
   manager: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'settings'],
   specialist: ['dashboard', 'calendar', 'customers', 'settings'],
 };

@@ -27,7 +27,14 @@ function isoWeekday(iso: string) {
   return new Date(`${iso}T00:00:00Z`).getUTCDay();
 }
 
+/**
+ * A service price, or null when there is none to show.
+ *
+ * A price of 0 means the shop has not set one — this is the customer-facing page, and "0 so'm"
+ * there reads as a promise that the haircut is free. Better to say nothing and let them ask.
+ */
 function money(amount: number) {
+  if (!Number.isFinite(amount) || amount <= 0) return null;
   // The catalogue is priced in whole som; grouping is all the formatting it needs.
   return `${new Intl.NumberFormat('ru-RU').format(Math.round(amount))} so'm`;
 }
@@ -351,7 +358,10 @@ export default function BookingApp() {
                           </span>
                         )}
                       </span>
-                      <span className="bk-row-price">{money(item.price)}</span>
+                      {/* Omitted entirely, not shown as a dash: the row is a service the
+                          customer is choosing, and an empty price column is quieter than a
+                          placeholder standing in for one. */}
+                      {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
                     </button>
                   ))}
                 </div>

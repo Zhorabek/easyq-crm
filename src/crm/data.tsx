@@ -65,6 +65,23 @@ export function fmtSom(n: number): string {
   return Math.round(n).toLocaleString('ru-RU').replace(/,/g, ' ').replace(/ /g, ' ');
 }
 
+/**
+ * A PRICE for display, or null when there is no price to show.
+ *
+ * Deliberately separate from fmtSom rather than folded into it. A price of 0 means nobody set
+ * one — a barber who has not decided yet, or a service that is genuinely free — and printing
+ * "0" there states a price that does not exist. A *total* of 0 is the opposite: a day with no
+ * takings really did take zero, and blanking that would look like the number failed to load.
+ * Same formatter, two different meanings for the same digit, so the callers have to say which
+ * one they are.
+ *
+ * Returning null instead of a dash keeps the choice with the caller: a table cell wants "—" to
+ * hold the column, a line of running text wants the money and its separator to vanish.
+ */
+export function fmtPrice(n: number): string | null {
+  return Number.isFinite(n) && n > 0 ? fmtSom(n) : null;
+}
+
 export function fmtCompact(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, '') + 'K';

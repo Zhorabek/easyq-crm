@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
-import { avatarColor, fmtSom } from './data';
+import { avatarColor, fmtPrice, fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { formatPhone, isValidPhone, toStoragePhone } from '../shared/phone';
 import { generateDayIntervals, normalizeTime, parseBusinessHours, timeToMinutes } from '../lib/date';
@@ -75,7 +75,8 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
         <Badge color="var(--ink-2)" tint="var(--panel-2)">{booking.duration} {t.serv.min}</Badge>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-        {[[fmtSom(booking.price), t.serv.colPrice], [fmtSom(booking.payment.net), f.incoming], [fmtSom(Math.max(booking.payment.remaining, 0)), t.an.outstanding]].map((s, i) => (
+        {/* Price can be unset; the two payment figures are real totals and 0 is meaningful. */}
+        {[[fmtPrice(booking.price) ?? '—', t.serv.colPrice], [fmtSom(booking.payment.net), f.incoming], [fmtSom(Math.max(booking.payment.remaining, 0)), t.an.outstanding]].map((s, i) => (
           <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 11, padding: '12px 10px', textAlign: 'center' }}>
             <div className="tnum" style={{ fontSize: 15, fontWeight: 800 }}>{s[0]}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s[1]}</div>
@@ -150,7 +151,7 @@ export function ClientHistoryModal({ client, onClose }: { client: ClientRow; onC
               <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{v.date} · {v.time} · {v.staffName}</div>
             </div>
             <StatusBadge status={v.status} />
-            <span className="tnum" style={{ fontSize: 13.5, fontWeight: 800, width: 80, textAlign: 'right' }}>{fmtSom(v.price)}</span>
+            <span className="tnum" style={{ fontSize: 13.5, fontWeight: 800, width: 80, textAlign: 'right' }}>{fmtPrice(v.price) ?? ''}</span>
           </div>
         ))}
       </div>
@@ -595,7 +596,8 @@ export function CrmBookingModal({
       <div style={{ display: 'flex', gap: 12 }}>
         <Field label={mb.service} half>
           <SelectInput value={String(serviceId)} onChange={(e) => setServiceId(Number(e.target.value))}>
-            {active.map((s) => <option key={s.id} value={s.id}>{s.name} · {fmtSom(s.price)}</option>)}
+            {/* The price and its separator both go when there is no price — a bare "Beard cut ·" is worse than the 0 it replaced. */}
+            {active.map((s) => { const price = fmtPrice(s.price); return <option key={s.id} value={s.id}>{price ? `${s.name} · ${price}` : s.name}</option>; })}
           </SelectInput>
         </Field>
         <Field label={mb.staff} half>

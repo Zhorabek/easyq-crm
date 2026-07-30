@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
-import { avatarColor, colorForId, dayPayments, fmtSom, useData } from './data';
+import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import { grantStaffAccess, revokeStaffAccess, updateBusinessProfile, updateStaffAccessRole } from '../lib/api';
@@ -546,7 +546,7 @@ export function Customers() {
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: colorForId(v.id), flex: 'none' }} />
                   <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.serviceName}</span>
                   <span className="tnum" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{v.date.slice(5)}</span>
-                  <span className="tnum" style={{ fontSize: 12.5, fontWeight: 800, width: 70, textAlign: 'right' }}>{fmtSom(v.price)}</span>
+                  <span className="tnum" style={{ fontSize: 12.5, fontWeight: 800, width: 70, textAlign: 'right' }}>{fmtPrice(v.price) ?? ''}</span>
                 </div>
               ))}
             </div>
@@ -868,7 +868,13 @@ export function Services() {
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.linkedStaffNames.length ? x.linkedStaffNames.join(', ') : '—'}</div>
             <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 5 }}><Ic name="clock" size={14} stroke={2} style={{ color: 'var(--ink-3)' }} />{x.duration} {sv.min}</div>
-            <div className="tnum" style={{ fontSize: 14, fontWeight: 800 }}>{fmtSom(x.price)} <span style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>UZS</span></div>
+            {/* A dash, not "0 UZS": zero here means the owner has not set a price. The unit is
+                part of the price, so it goes too. */}
+            <div className="tnum" style={{ fontSize: 14, fontWeight: 800 }}>
+              {fmtPrice(x.price)
+                ? <>{fmtPrice(x.price)} <span style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>UZS</span></>
+                : <span style={{ color: 'var(--ink-3)', fontWeight: 600 }}>—</span>}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
               <span className="tnum" style={{ fontSize: 14, fontWeight: 800 }}>{x.bookingsCount}</span>
               <button onClick={() => openServiceEditor(x)} title={sv.edit} style={{ color: 'var(--ink-3)' }}><Ic name="dots" size={18} /></button>

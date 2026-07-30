@@ -34,6 +34,22 @@ Nothing here can be done from the repo.
 
 ---
 
+## Security — captcha is currently OFF
+
+- [ ] **Turn the signup captcha back on when the client is ready.** Off at their request
+      (commit `22b0984`). Flip `SIGNUP_CAPTCHA_ENABLED` to `true` in **both**
+      `easyq-crm/src/worker.ts` and `easyq-landing/src/components/Signup.tsx` — they must
+      agree, or submit either always fails or shows pointless friction. Nothing else needs
+      changing; the module, table, endpoint, field and strings are all still in place.
+
+      While it is off, `POST /api/signup` is unauthenticated and writes a `users` row and a
+      `businesses` row per call, with nothing in between. The per-phone and per-IP limits
+      cover bookings and feedback, not signup. **If it gets abused before the captcha comes
+      back**, the quickest stopgaps are an IP rate limit on the endpoint, or a Cloudflare
+      WAF rate-limiting rule on `/api/signup` — that one needs no deploy at all.
+
+---
+
 ## Security — open since the first review, never fixed
 
 These are real and unaddressed. The captcha machinery to fix the first one already exists

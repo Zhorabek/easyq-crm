@@ -81,8 +81,10 @@ const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
   // No branding: it needs business:write, which only an owner has.
   manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'],
-  // No customers screen: the client book is redacted out of a specialist's payload anyway.
-  specialist: ['dashboard', 'calendar', 'settings'],
+  // Customers is theirs now: the payload used to send them an empty book, and now sends the
+  // clients they have personally served (see clientsScopedToStaff in worker.ts). Still no
+  // staff screen — that is the whole team, including colleagues' numbers.
+  specialist: ['dashboard', 'calendar', 'customers', 'settings'],
 };
 
 const LOGIN_LABEL: Record<Lang, string> = { uz: 'Kirish', ru: 'Войти', en: 'Sign in' };
@@ -169,7 +171,7 @@ export default function App() {
   const [businessEditor, setBusinessEditor] = useState(false);
   const [credentialsEditor, setCredentialsEditor] = useState(false);
   const [passwordEditor, setPasswordEditor] = useState(false);
-  const [bookingCreator, setBookingCreator] = useState(false);
+  const [bookingCreator, setBookingCreator] = useState<{ staffId: number | null } | null>(null);
   // Times already taken for the staff and day chosen inside the modal, so it can warn
   // about a clash. Fetched per selection rather than read off `payload`, which only
   // holds the currently selected date.
@@ -417,7 +419,7 @@ export default function App() {
   async function doCreateBooking(v: Parameters<typeof createCrmBooking>[0]) {
     try {
       await createCrmBooking(v);
-      setBookingCreator(false);
+      setBookingCreator(null);
       notify();
       await reload();
     } catch (err) {
@@ -552,8 +554,12 @@ export default function App() {
   const bizName = payload?.business.name || t.biz;
   const bizType = payload?.business.type || t.bizType;
 
-  const canBook = role === 'owner' || role === 'manager';
-  const newBooking = canBook ? { label: t.newBooking, run: () => setBookingCreator(true) } : null;
+  // Mirrors booking:create in server/permissions.ts, where a specialist now holds it.
+  const canBook = role === 'owner' || role === 'manager' || role === 'specialist';
+  // A specialist can only ever book onto themselves, so the modal opens on them. Cosmetic:
+  // createCrmBooking overwrites the staff id for any scoped role whatever is sent.
+  const ownStaffId = role === 'specialist' ? session.staffId : null;
+  const newBooking = canBook ? { label: t.newBooking, run: () => setBookingCreator({ staffId: ownStaffId }) } : null;
 
   const titles: Record<string, { title: string; sub?: string | null; action?: { label: string; run: () => void } | null }> = {
     dashboard: { title: t.nav.dashboard, sub: t.dash.subtitle, action: newBooking },
@@ -561,7 +567,7 @@ export default function App() {
     customers: {
       title: t.cust.title,
       sub: `${payload?.clients.length ?? 0} ${t.cust.count}`,
-      action: canBook ? { label: t.cust.add, run: () => setBookingCreator(true) } : null,
+      action: canBook ? { label: t.cust.add, run: () => setBookingCreator({ staffId: ownStaffId }) } : null,
     },
     staff: { title: t.staff.title, sub: null, action: { label: t.staff.add, run: () => setStaffCreateOpen(true) } },
     services: { title: t.serv.title, sub: null, action: { label: t.serv.add, run: () => setServiceEditor({ initial: null }) } },
@@ -590,6 +596,9 @@ export default function App() {
     payload, selectedDate, setSelectedDate, reload: () => void reload(), loading, dayCache, ensureDays,
     openBooking: setSelectedBooking,
     openClient: setSelectedClient,
+    // Guarded rather than passed straight through: this reaches the Staff screen, which a
+    // manager can open, and canBook is the same condition the topbar action uses.
+    openBookingFor: (staffId) => { if (canBook) setBookingCreator({ staffId: ownStaffId ?? staffId }); },
     openStaffEditor: (e) => (e ? setStaffEditor(e) : setStaffCreateOpen(true)),
     openSlots: setSlotEditor,
     createStaff: (name) => void doCreateStaff({ name, role: '', phone: '' }),
@@ -650,8 +659,10 @@ export default function App() {
           <CrmBookingModal
             payload={payload}
             takenTimes={takenTimes}
+            staffId={bookingCreator.staffId}
+            lockStaff={role === 'specialist'}
             onDateChange={(d, sid) => void loadTakenTimes(d, sid)}
-            onClose={() => { setBookingCreator(false); setTakenTimes([]); }}
+            onClose={() => { setBookingCreator(null); setTakenTimes([]); }}
             onSave={(v) => void doCreateBooking(v)}
           />
         )}

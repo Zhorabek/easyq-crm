@@ -2386,6 +2386,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       clientName: booking.client_name,
       serviceName: booking.service_name,
       staffName: booking.staff_name,
+      staffId: booking.staff_id,
       date: getDatePart(booking.datetime),
       time: getTimePart(booking.datetime),
       datetime: booking.datetime,
@@ -2565,6 +2566,57 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
  * temporary password. Gating on `can(...)` makes a new role restrictive until somebody
  * grants it the capability, rather than privileged until somebody remembers to redact.
  */
+/**
+ * The client book as one master sees it: only clients they have served, and for each one only
+ * their own visits.
+ *
+ * Every total is recomputed from the filtered history rather than carried over, because the
+ * totals on the full row are the client's relationship with the SHOP. Handing those to one
+ * master would tell them what colleagues charged, and `favoriteStaff` would name the
+ * colleague outright.
+ *
+ * `spentTotal` is deliberately dropped to 0 rather than re-totalled: a specialist has no
+ * payment:write and their payload zeroes revenue everywhere else, so filling it in here
+ * would reintroduce the money they are not supposed to see, just narrowed to one client.
+ */
+function clientsScopedToStaff(
+  clients: CrmPayload["clients"],
+  staffId: number,
+  selectedDate: string
+): CrmPayload["clients"] {
+  const scoped: CrmPayload["clients"] = [];
+  for (const client of clients) {
+    const history = client.history.filter((item) => item.staffId === staffId);
+    if (history.length === 0) continue;
+
+    let completedVisits = 0;
+    let cancelledVisits = 0;
+    let lastVisit: string | null = null;
+    for (const item of history) {
+      if (item.status === "done") completedVisits += 1;
+      if (item.status === "cancelled") cancelledVisits += 1;
+      if (!lastVisit || item.datetime > lastVisit) lastVisit = item.datetime;
+    }
+
+    scoped.push({
+      ...client,
+      totalVisits: history.length,
+      completedVisits,
+      cancelledVisits,
+      // Recounted by the same rule getCrmPayload used — still-open bookings dated from the
+      // selected day on — which is why that date has to be passed in rather than guessed at.
+      upcomingVisits: history.filter(
+        (item) => (item.status === "pending" || item.status === "confirmed") && item.datetime >= `${selectedDate} 00:00:00`
+      ).length,
+      spentTotal: 0,
+      lastVisit,
+      favoriteStaff: "—",
+      history,
+    });
+  }
+  return scoped.sort((a, b) => (b.lastVisit ?? "").localeCompare(a.lastVisit ?? "") || a.name.localeCompare(b.name));
+}
+
 function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
   let visible = payload;
 
@@ -2587,9 +2639,17 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         totalCompletedVisits: 0,
         totalCancelledVisits: 0,
       },
-      // The client book is a business asset; a specialist sees who is in front of them
-      // today through the calendar instead.
-      clients: [],
+      // Their own clients — the people who have actually sat in their chair — and nobody
+      // else's. This used to be `[]` on the grounds that the client book is a business
+      // asset, which is true of the WHOLE book and not of a master's own regulars: they
+      // know these people by name already, and the number they need to call them back is
+      // the reason to open the CRM at all.
+      //
+      // Each client is rebuilt from only the bookings that are this master's, not merely
+      // filtered by "has one booking with me". Passing the row through intact would have
+      // handed over what a colleague charged the same person, how often they see them, and
+      // named that colleague in `favoriteStaff`.
+      clients: clientsScopedToStaff(visible.clients, mine, visible.selectedDate),
       reservationsToday: visible.reservationsToday.filter((booking) =>
         visible.calendar.bookings.some((card) => card.id === booking.id && isMine(card.staffId))
       ),
@@ -2675,6 +2735,22 @@ async function createCrmBooking(env: Env, actor: Actor, input: CreateCrmBookingI
     }
   }
 
+  // WHO the booking lands on is decided here, not by the client.
+  //
+  // A specialist holds booking:create so they can take their own regulars, but they must not
+  // be able to put work on a colleague's day. The staff id they send is therefore ignored
+  // outright and replaced with their own — not compared to it and rejected on mismatch, which
+  // would leave the endpoint one refactor away from trusting the input again.
+  let targetStaffId = Number(input.staffId);
+  if (isScopedToOwnBookings(actor.role)) {
+    if (!actor.staffId) {
+      // A scoped role with no staff row cannot own a booking, and defaulting to the sent id
+      // here would hand them exactly the ability this branch exists to remove.
+      return json({ error: "This login is not linked to an employee", code: "no_staff_row" }, { status: 403 });
+    }
+    targetStaffId = actor.staffId;
+  }
+
   const [service, staff] = await Promise.all([
     env.DB
       .prepare("SELECT id, name, price, duration FROM services WHERE id = ? AND business_id = ? LIMIT 1")
@@ -2682,7 +2758,7 @@ async function createCrmBooking(env: Env, actor: Actor, input: CreateCrmBookingI
       .first<{ id: number; name: string; price: number; duration: number }>(),
     env.DB
       .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
-      .bind(Number(input.staffId), business.id)
+      .bind(targetStaffId, business.id)
       .first<{ id: number; name: string }>(),
   ]);
 

@@ -434,6 +434,8 @@ export function PasswordModal({ onClose, onSave }: { onClose: () => void; onSave
 export function CrmBookingModal({
   payload,
   takenTimes,
+  staffId: presetStaffId = null,
+  lockStaff = false,
   onDateChange,
   onClose,
   onSave,
@@ -441,6 +443,14 @@ export function CrmBookingModal({
   payload: CrmPayload;
   /** Times already booked on the chosen day for the chosen person, for the clash warning. */
   takenTimes: string[];
+  /** Master to open on, when the caller already knows — a master's own card, or their own login. */
+  staffId?: number | null;
+  /**
+   * Show the master as fixed instead of as a dropdown. For a specialist, who can only book
+   * onto themselves: the server overwrites the staff id for them regardless, so offering a
+   * list of colleagues would be offering a choice that silently does not happen.
+   */
+  lockStaff?: boolean;
   onDateChange: (date: string, staffId: number) => void;
   onClose: () => void;
   onSave: (v: CreateCrmBookingInput) => void;
@@ -450,7 +460,7 @@ export function CrmBookingModal({
   const active = payload.services.filter((s) => s.isActive);
 
   const [serviceId, setServiceId] = useState(active[0]?.id ?? 0);
-  const [staffId, setStaffId] = useState(payload.employees[0]?.id ?? 0);
+  const [staffId, setStaffId] = useState(presetStaffId ?? payload.employees[0]?.id ?? 0);
   const [date, setDate] = useState(payload.selectedDate);
   const [time, setTime] = useState('');
   const [clientName, setClientName] = useState('');
@@ -465,8 +475,12 @@ export function CrmBookingModal({
     : payload.employees;
 
   useEffect(() => {
+    // Not when the master is fixed: a specialist not linked to the chosen service would
+    // otherwise be silently switched to a colleague, and the server would then reject or
+    // reassign the booking they thought they were making.
+    if (lockStaff) return;
     if (eligible.length > 0 && !eligible.some((e) => e.id === staffId)) setStaffId(eligible[0].id);
-  }, [eligible, staffId]);
+  }, [eligible, staffId, lockStaff]);
 
   useEffect(() => {
     if (date && staffId) onDateChange(date, staffId);
@@ -515,9 +529,16 @@ export function CrmBookingModal({
           </SelectInput>
         </Field>
         <Field label={mb.staff} half>
-          <SelectInput value={String(staffId)} onChange={(e) => setStaffId(Number(e.target.value))}>
-            {eligible.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </SelectInput>
+          {lockStaff ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '11px 13px', fontSize: 14, fontWeight: 700 }}>
+              <Ic name="user" size={15} stroke={2.2} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+              {payload.employees.find((e) => e.id === staffId)?.name ?? '—'}
+            </div>
+          ) : (
+            <SelectInput value={String(staffId)} onChange={(e) => setStaffId(Number(e.target.value))}>
+              {eligible.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </SelectInput>
+          )}
         </Field>
       </div>
 

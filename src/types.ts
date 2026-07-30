@@ -177,6 +177,15 @@ export interface ServiceCatalogItem {
 
 export interface ClientHistoryItem extends ReservationItem {
   businessName: string;
+  /**
+   * Which master performed it.
+   *
+   * `staffName` is already on the row but cannot be used to attribute a client to a master:
+   * it is a snapshot taken when the booking was made, so it keeps the old spelling after a
+   * rename, and two people called Aziz are indistinguishable. Null for a booking whose staff
+   * row was deleted.
+   */
+  staffId: number | null;
 }
 
 export interface ClientRow {

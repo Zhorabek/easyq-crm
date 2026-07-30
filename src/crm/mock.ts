@@ -219,6 +219,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
         clientName: c.name,
         serviceName: SERV_NAME[lang][sv.key],
         staffName: fav.name,
+        staffId: fav.id,
         date: addDays(date, -(k + 1) * 7),
         time: '12:00',
         datetime: `${addDays(date, -(k + 1) * 7)}T12:00:00`,

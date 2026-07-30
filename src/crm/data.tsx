@@ -19,6 +19,11 @@ export type DataValue = {
   /* actions wired by App */
   openBooking: (b: CalendarBookingCard) => void;
   openClient: (c: ClientRow) => void;
+  /**
+   * Open the new-booking modal with a master already chosen. Called from a master's card,
+   * where they are the context; pass null to let the modal pick as it always has.
+   */
+  openBookingFor: (staffId: number | null) => void;
   openStaffEditor: (e: EmployeeRow | null) => void;
   openSlots: (e: EmployeeRow) => void;
   createStaff: (name: string) => void;

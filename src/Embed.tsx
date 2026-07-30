@@ -171,6 +171,7 @@ export default function EmbedApp() {
     ensureDays,
     openBooking: noop,
     openClient: noop,
+    openBookingFor: noop,
     openStaffEditor: noop,
     openSlots: noop,
     createStaff: noop,

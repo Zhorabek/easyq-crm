@@ -424,7 +424,17 @@ function tierForClient(c: ClientRow): 'vip' | 'reg' | 'new' {
 }
 
 export function Customers() {
-  const { t } = useCRM();
+  const { t, role } = useCRM();
+  /**
+   * A specialist's copy of this screen shows only their own clients, with money stripped —
+   * `spentTotal` arrives as 0 and `favoriteStaff` as "—" for every row (see
+   * clientsScopedToStaff in worker.ts). Rendering the owner's layout over that gives a column
+   * of zeros and a "preferred specialist" panel that is always a dash, so those two are
+   * swapped for the facts they DO have: when the client last came, and what is booked next.
+   *
+   * Cosmetic only. The server decides what is in the payload; this decides how to show it.
+   */
+  const scoped = role === 'specialist';
   const { payload, openClient } = useData();
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -468,7 +478,7 @@ export function Customers() {
           </div>
         </div>
         <div className="crm-cust-head" style={{ display: 'grid', gridTemplateColumns: '2.4fr .8fr 1fr .9fr', gap: 12, padding: '10px 18px', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-          <div>{c.colName}</div><div>{c.colVisits}</div><div>{c.colSpent}</div><div>{c.colStatus}</div>
+          <div>{c.colName}</div><div>{c.colVisits}</div><div>{scoped ? c.colLast : c.colSpent}</div><div>{c.colStatus}</div>
         </div>
         <div>
           {list.length === 0 && <EmptyHint text={c.title} />}
@@ -482,11 +492,15 @@ export function Customers() {
                   <Avatar name={x.name} color={avatarColor(x.name)} size={36} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>{x.favoriteStaff}</div>
+                    <div className={scoped ? 'tnum' : undefined} style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>
+                      {scoped ? (x.phone ? formatPhone(x.phone) : '—') : x.favoriteStaff}
+                    </div>
                   </div>
                 </div>
                 <div className="tnum" style={{ fontSize: 13.5, fontWeight: 800 }}>{x.totalVisits}</div>
-                <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-2)' }}>{fmtSom(x.spentTotal)}</div>
+                <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-2)' }}>
+                  {scoped ? (x.lastVisit ? x.lastVisit.slice(0, 10) : '—') : fmtSom(x.spentTotal)}
+                </div>
                 <div><Badge color={tc} tint={tt} dot>{tl}</Badge></div>
               </button>
             );
@@ -507,14 +521,17 @@ export function Customers() {
             </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, padding: '18px 0', borderBottom: '1px solid var(--line)' }}>
-            {[[cust.totalVisits, c.detailVisits], [fmtSom(cust.spentTotal), c.detailSpent], [cust.cancelledVisits, c.detailNoshow]].map((s, i) => (
+            {(scoped
+              ? ([[cust.totalVisits, c.detailVisits], [cust.upcomingVisits, c.detailUpcoming], [cust.cancelledVisits, c.detailNoshow]] as Array<[string | number, string]>)
+              : ([[cust.totalVisits, c.detailVisits], [fmtSom(cust.spentTotal), c.detailSpent], [cust.cancelledVisits, c.detailNoshow]] as Array<[string | number, string]>)
+            ).map((s, i) => (
               <div key={i} style={{ textAlign: 'center' }}>
                 <div className="tnum" style={{ fontSize: 17, fontWeight: 800 }}>{s[0]}</div>
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s[1]}</div>
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '14px 0' }}>
+          <div style={{ display: scoped ? 'none' : 'flex', alignItems: 'center', gap: 11, padding: '14px 0' }}>
             <Avatar name={cust.favoriteStaff || '—'} color={avatarColor(cust.favoriteStaff || 'x')} size={36} />
             <div>
               <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{c.pref}</div>
@@ -541,9 +558,39 @@ export function Customers() {
 }
 
 /* ============ STAFF ============ */
+/**
+ * The clients who have booked with one master, newest first, with the visit counts scoped to
+ * that master rather than the shop.
+ *
+ * Derived here from `history` instead of asking the API for it. The payload already carries
+ * every client's full history, so a `staffClients` field would be the same rows sent twice,
+ * and a separate endpoint would be a round trip for data already in memory. `staffId` is the
+ * key, not `staffName`: the name on a booking is a snapshot, so it keeps the old spelling
+ * after a rename and cannot tell two people with the same name apart.
+ */
+function clientsOfStaff(clients: ClientRow[], staffId: number) {
+  const rows = clients
+    .map((client) => {
+      const mine = client.history.filter((item) => item.staffId === staffId);
+      if (mine.length === 0) return null;
+      return {
+        client,
+        visits: mine.length,
+        // Their last visit TO THIS MASTER, which is the question being asked. The client's
+        // own `lastVisit` is shop-wide and would show a date they saw somebody else.
+        lastVisit: mine.reduce((latest, item) => (item.datetime > latest ? item.datetime : latest), ''),
+      };
+    })
+    .filter((row): row is { client: ClientRow; visits: number; lastVisit: string } => row !== null);
+  return rows.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
+}
+
 export function Staff() {
   const { t } = useCRM();
-  const { payload, openStaffEditor, openSlots } = useData();
+  const { payload, openStaffEditor, openSlots, openClient, openBookingFor } = useData();
+  // Which master's client list is expanded. One at a time: the cards sit in a two-column
+  // grid, and letting several open at once makes the row heights jump around.
+  const [clientsOpen, setClientsOpen] = useState<number | null>(null);
   if (!payload) return null;
   const s = t.staff;
   return (
@@ -552,7 +599,10 @@ export function Staff() {
         <Panel><EmptyHint text={s.title} /></Panel>
       ) : (
         <div className="crm-staff-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 18 }}>
-          {payload.employees.map((p) => (
+          {payload.employees.map((p) => {
+            const mine = clientsOfStaff(payload.clients, p.id);
+            const open = clientsOpen === p.id;
+            return (
             <Panel key={p.id}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <Avatar name={p.name} color={avatarColor(p.name)} size={54} />
@@ -586,12 +636,63 @@ export function Staff() {
                   <div style={{ width: Math.min(100, p.utilization) + '%', height: '100%', background: colorForId(p.id) }} />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              {/* Who this master's clients are, folded away by default. The count is on the
+                  button so it answers "how many regulars has she built up?" without a click,
+                  which is most of what the owner wants from this. */}
+              <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+                <button
+                  onClick={() => setClientsOpen(open ? null : p.id)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
+                >
+                  <Ic name="customers" size={16} stroke={2.2} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, flex: 1 }}>{s.clients}</span>
+                  <span className="tnum" style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-2)' }}>{mine.length}</span>
+                  <Ic name={open ? 'chevD' : 'chevR'} size={15} stroke={2.4} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+                </button>
+
+                {open && (
+                  <div style={{ marginTop: 12 }}>
+                    {mine.length === 0 ? (
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-3)', padding: '4px 0 2px' }}>{s.noClients}</div>
+                    ) : (
+                      <div className="scrollarea noscroll" style={{ maxHeight: 232, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {mine.map(({ client, visits, lastVisit }) => (
+                          <button
+                            key={client.key}
+                            onClick={() => openClient(client)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 8px', borderRadius: 9, textAlign: 'left', width: '100%' }}
+                          >
+                            <Avatar name={client.name} color={avatarColor(client.name)} size={30} />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.name}</div>
+                              {/* The phone is the point of this list for an owner covering a
+                                  sick master's day: they need to ring these people. */}
+                              <div className="tnum" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)' }}>
+                                {client.phone ? formatPhone(client.phone) : lastVisit.slice(5, 10)}
+                              </div>
+                            </div>
+                            <span className="tnum" style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink-3)', flex: 'none' }}>
+                              {visits} · {lastVisit.slice(5, 10)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                 <button onClick={() => openStaffEditor(p)} style={btnGhost}>{s.edit}</button>
                 <button onClick={() => openSlots(p)} style={btnGhost}>{s.slots}</button>
+                {/* Straight into the booking modal with this master already chosen — from
+                    here the master IS the context, so re-picking them in the modal is a step
+                    that exists only because the modal was built to be opened from elsewhere. */}
+                <button onClick={() => openBookingFor(p.id)} style={btnGhost}>{t.cust.book}</button>
               </div>
             </Panel>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

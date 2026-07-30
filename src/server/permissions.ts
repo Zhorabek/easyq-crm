@@ -69,9 +69,16 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
   specialist: {
     "crm:read": true,
     "booking:status": true,
-    // Taking a booking means choosing who it lands on. A specialist working their own
-    // day should not be assigning work to colleagues, so this stays with the desk.
-    "booking:create": false,
+    // A master takes their own bookings — a regular calls them directly, or walks in — and
+    // the alternative was that work never reached the CRM at all.
+    //
+    // This was false, on the reasoning that taking a booking means choosing who it lands on
+    // and a specialist should not assign work to colleagues. That reasoning was right about
+    // the risk and wrong about the fix: the risk is the TARGET of the booking, not the act
+    // of creating one. So the capability opens and `isScopedToOwnBookings` closes the hole —
+    // createCrmBooking overwrites staff_id with the actor's own for any scoped role, so a
+    // specialist cannot land a booking on anyone but themselves whatever they send.
+    "booking:create": true,
     "payment:write": false,
     "staff:write": false,
     "schedule:write": false,
@@ -92,6 +99,10 @@ export function can(role: ActorRole, capability: Capability) {
  * Capability alone is not enough for booking:status — a specialist holds it, but holding
  * it must not let them cancel a colleague's appointments. Owners and managers are not
  * scoped, since running the calendar for everyone is the job.
+ *
+ * The same scoping is what makes booking:create safe to grant them: on create there is no
+ * existing row to check ownership against, so the server assigns the staff id rather than
+ * validating the one it was sent.
  */
 export function isScopedToOwnBookings(role: ActorRole) {
   return role === "specialist";

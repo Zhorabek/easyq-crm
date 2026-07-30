@@ -45,6 +45,12 @@ export const CI: Record<string, string> = {
   box: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01',
+  copy: 'M9 9h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V9ZM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  // Branding: a paint drop. The sidebar renders `Ic name={key}`, so this key MUST match the
+  // screen key 'branding' or the nav item draws nothing at all — which is how it shipped.
+  branding: 'M12 2.7 6.8 8.6a7.35 7.35 0 1 0 10.4 0L12 2.7Z',
+  automations: 'M13.5 2 4 14h6l-1.5 8L18 10h-6l1.5-8Z',
+  shield: 'M12 22s8-3.7 8-10V5.2L12 2 4 5.2V12c0 6.3 8 10 8 10ZM9.6 12l1.7 1.7 3.4-3.4',
   eye: 'M1.5 12S6 5 12 5s10.5 7 10.5 7-4.5 7-10.5 7S1.5 12 1.5 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
   eyeOff: 'M9.9 4.2A9.9 9.9 0 0 1 12 4c6 0 10.5 7 10.5 7a19 19 0 0 1-2.4 3.2M6.3 6.3A18.6 18.6 0 0 0 1.5 11s4.5 7 10.5 7a9.9 9.9 0 0 0 4-.8M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20',
 };

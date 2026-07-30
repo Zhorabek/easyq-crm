@@ -140,6 +140,8 @@ export default function EmbedApp() {
     m: CRM_M[lang],
     bizName: payload.business.name,
     bizType: payload.business.type,
+    // The demo has no uploaded logo, and /api/business/photo needs a session.
+    logoVersion: null,
     demo: true,
     startTour: () => {},
     setLang,

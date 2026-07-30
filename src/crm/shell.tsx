@@ -3,25 +3,56 @@ import { Ic } from './icons';
 import { CRM_LANGS, type Role, useCRM } from './i18n';
 import { Avatar, CRMLogo, iconBtn } from './ui';
 
-const NAV_ITEMS: Array<[string, string]> = [
-  ['dashboard', 'dashboard'],
-  ['calendar', 'calendar'],
-  ['customers', 'customers'],
-  ['staff', 'staff'],
-  ['services', 'services'],
-  ['inventory', 'inventory'],
-  ['finance', 'finance'],
-  ['loyalty', 'loyalty'],
-  ['payroll', 'payroll'],
-  ['reviews', 'reviews'],
-  ['marketing', 'marketing'],
-  ['automations', 'automations'],
-  ['analytics', 'analytics'],
-  ['branding', 'star'],
+// Just the screen keys. There used to be an icon name alongside each one, which was never
+// read: the nav renders `Ic name={key}`, so the icon has to be registered under the screen's
+// own key in icons.tsx. Branding shipped with a blank icon because its tuple said 'star' and
+// nobody noticed the second column went nowhere. Keeping the list as plain keys means the
+// icon can only ever come from one place.
+const NAV_ITEMS: string[] = [
+  'dashboard',
+  'calendar',
+  'customers',
+  'staff',
+  'services',
+  'inventory',
+  'finance',
+  'loyalty',
+  'payroll',
+  'reviews',
+  'marketing',
+  'automations',
+  'analytics',
+  'branding',
 ];
 
+/**
+ * The business's own mark in the sidebar: their uploaded logo, or the first letter of their
+ * name over the brand accent.
+ *
+ * It replaced a generic four-square `grid` icon, which was the same for every business — so
+ * the one place in the CRM that says whose shop this is said it with a stock glyph. The
+ * fallback is a letter rather than another icon for the same reason: an initial is at least
+ * theirs.
+ */
+function BizMark({ name, logoVersion }: { name: string; logoVersion: string | null }) {
+  const tile: CSSProperties = {
+    width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'grid', placeItems: 'center',
+    overflow: 'hidden', background: 'var(--accent-nav)', color: 'var(--accent-nav-ink)',
+  };
+  // No logoVersion means no upload. The version is `generatedAt`, which busts the cache after
+  // a replacement — the URL is otherwise identical and the browser would keep the old file.
+  if (!logoVersion) {
+    return <span style={tile}><span style={{ fontSize: 16, fontWeight: 800 }}>{name.slice(0, 1).toUpperCase()}</span></span>;
+  }
+  return (
+    <span style={tile}>
+      <img src={`/api/business/photo?v=${encodeURIComponent(logoVersion)}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    </span>
+  );
+}
+
 export function Sidebar({ active, setActive, navOpen }: { active: string; setActive: (s: string) => void; navOpen: boolean }) {
-  const { t, lang, setLang, branch, setBranch, role, staffName, setRole, allowed, bizName, bizType, demo, setNavOpen, logout } = useCRM();
+  const { t, lang, setLang, branch, setBranch, role, staffName, setRole, allowed, bizName, bizType, demo, logoVersion, setNavOpen, logout } = useCRM();
   const [branchOpen, setBranchOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const bRef = useRef<HTMLDivElement>(null);
@@ -36,7 +67,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
-  const items = NAV_ITEMS.filter(([k]) => !allowed || allowed.includes(k));
+  const items = NAV_ITEMS.filter((k) => !allowed || allowed.includes(k));
   const curBranch = branch < 0 ? null : t.branches[branch];
   const headName = curBranch ? bizName + ' · ' + curBranch.name : bizName;
   const headSub = curBranch ? curBranch.type : t.branchAll;
@@ -55,9 +86,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
       {/* business header — a static header for real businesses; the branch switcher is demo-only */}
       {!demo ? (
         <div data-tour="biz-header" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: 'rgba(255,255,255,.05)', marginBottom: 16 }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-nav)', display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--accent-nav-ink)' }}>
-            <Ic name="grid" size={17} stroke={2} />
-          </span>
+          <BizMark name={bizName} logoVersion={logoVersion} />
           <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizName}</div>
             <div style={{ fontSize: 11, color: 'var(--on-sidebar-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bizType}</div>
@@ -100,7 +129,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
       )}
 
       <nav className="crm-navscroll" style={{ display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 }}>
-        {items.map(([key]) => {
+        {items.map((key) => {
           const on = active === key;
           return (
             <button

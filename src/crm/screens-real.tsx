@@ -586,15 +586,34 @@ function clientsOfStaff(clients: ClientRow[], staffId: number) {
 }
 
 export function Staff() {
-  const { t } = useCRM();
-  const { payload, openStaffEditor, openSlots, openClient, openBookingFor } = useData();
+  const { t, role, notify } = useCRM();
+  const { payload, openStaffEditor, openSlots, openClient, openBookingFor, reload } = useData();
+  // Credentials are returned by the API exactly once, so they live in component state and are
+  // never refetched. A reload loses them, which is correct.
+  const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
+  const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
+    try { const res = await grantStaffAccess(staffId, r); setIssued({ staffId, username: res.username, password: res.password }); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+  // Reset reuses the grant endpoint: both mean "issue a new temporary password".
+  const onReset = onGrant;
+  const onSetRole = async (staffId: number, r: 'manager' | 'specialist') => {
+    try { await updateStaffAccessRole(staffId, r); notify(); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+  const onRevoke = async (staffId: number) => {
+    if (!window.confirm(t.set.confirmRevoke)) return;
+    try { await revokeStaffAccess(staffId); setIssued(null); notify(); await reload(); }
+    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
+  };
+  const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
   // Which master's client list is expanded. One at a time: the cards sit in a two-column
   // grid, and letting several open at once makes the row heights jump around.
   const [clientsOpen, setClientsOpen] = useState<number | null>(null);
   if (!payload) return null;
   const s = t.staff;
   return (
-    <div className="fadein" style={{ padding: 28 }}>
+    <div className="fadein" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 18 }}>
       {payload.employees.length === 0 ? (
         <Panel><EmptyHint text={s.title} /></Panel>
       ) : (
@@ -695,7 +714,135 @@ export function Staff() {
           })}
         </div>
       )}
+
+      {/* Moved here from Settings. Who can sign in was two screens away from the list of
+          people it applies to, so granting someone access meant leaving the page where you
+          had just created them. Owner-only, matching access:manage on the server. */}
+      {role === 'owner' && <StaffAccessPanel
+        payload={payload}
+        issued={issued}
+        onGrant={onGrant}
+        onReset={onReset}
+        onSetRole={onSetRole}
+        onRevoke={onRevoke}
+        copyText={copyText}
+      />}
     </div>
+  );
+}
+
+/**
+ * Grant, reset, demote and revoke CRM logins. Extracted as its own component only so the
+ * Staff screen above stays readable — it is not reused anywhere.
+ */
+function StaffAccessPanel({
+  payload,
+  issued,
+  onGrant,
+  onReset,
+  onSetRole,
+  onRevoke,
+  copyText,
+}: {
+  payload: CrmPayload;
+  issued: { staffId: number; username: string; password: string } | null;
+  onGrant: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
+  onReset: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
+  onSetRole: (staffId: number, r: 'manager' | 'specialist') => void | Promise<void>;
+  onRevoke: (staffId: number) => void | Promise<void>;
+  copyText: (v: string) => void;
+}) {
+  const { t } = useCRM();
+  const { openCredentialsEditor } = useData();
+  const s = t.set;
+  const b = payload.business;
+  return (
+
+      <Panel>
+        <SetHead title={s.team} sub={s.teamSub} />
+
+        {/* The owner's own login sits at the top: it is the account that grants all
+            the others, and it is the one nobody can reset from here. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '13px 14px', borderRadius: 12, background: 'var(--accent-tint)', border: '1px solid var(--accent)' }}>
+          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="loyalty" size={17} stroke={2} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800 }}>{b.name}</div>
+            <div className="mono" style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 600 }}>{b.crmUsername} · {s.roleOwner}</div>
+          </div>
+          <button onClick={openCredentialsEditor} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--panel)', border: '1px solid var(--line-2)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>{s.credentials}</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+          {payload.staffAccess.length === 0 && <EmptyHint text={t.staff.title} />}
+          {payload.staffAccess.map((row) => {
+            const justIssued = issued?.staffId === row.staffId;
+            return (
+              <div key={row.staffId} style={{ borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', padding: '13px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <Avatar name={row.name} color={avatarColor(row.name)} size={34} />
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 800 }}>{row.name}</div>
+                    <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
+                      {row.username ? row.username : s.noAccess}
+                    </div>
+                  </div>
+
+                  {row.enabled ? (
+                    <>
+                      {/* Role is a live control: changing it applies on the staff
+                          member's next request, not at their next login. */}
+                      <div style={{ display: 'inline-flex', background: 'var(--panel)', border: '1px solid var(--line-2)', borderRadius: 999, padding: 3, gap: 2 }}>
+                        {(['manager', 'specialist'] as const).map((r) => {
+                          const on = row.accessRole === r;
+                          return (
+                            <button
+                              key={r}
+                              title={r === 'manager' ? s.roleManagerHint : s.roleSpecialistHint}
+                              onClick={() => { if (!on) void onSetRole(row.staffId, r); }}
+                              style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent', whiteSpace: 'nowrap' }}
+                            >
+                              {r === 'manager' ? s.roleManager : s.roleSpecialist}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <Badge color="var(--accent-deep)" tint="var(--accent-tint)" dot>{s.accessOn}</Badge>
+                      <button onClick={() => void onReset(row.staffId, row.accessRole ?? 'specialist')} style={btnGhost}>{s.resetPass}</button>
+                      <button onClick={() => void onRevoke(row.staffId)} style={{ ...btnGhost, color: 'var(--rose)' }}>{s.revoke}</button>
+                    </>
+                  ) : (
+                    <>
+                      {row.username && <Badge>{s.accessOff}</Badge>}
+                      <button onClick={() => void onGrant(row.staffId, 'specialist')} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', whiteSpace: 'nowrap' }}>{s.grant}</button>
+                    </>
+                  )}
+                </div>
+
+                {/* Shown once, right after issuing. There is no way to read this
+                    password back, which is the point — so it is impossible to miss. */}
+                {justIssued && (
+                  <div style={{ marginTop: 12, padding: '12px 13px', borderRadius: 11, background: 'var(--panel)', border: '1px solid var(--accent)' }}>
+                    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.loginLabel}</div>
+                        <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.username}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.newPassLabel}</div>
+                        <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.password}</div>
+                      </div>
+                      <button onClick={() => copyText(`${issued.username} / ${issued.password}`)} style={{ ...btnGhost, alignSelf: 'flex-end' }}>{s.copyCreds}</button>
+                    </div>
+                    <div style={{ marginTop: 9, fontSize: 12, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Ic name="bell" size={13} stroke={2} />{s.credsWarn}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
   );
 }
 const btnGhost = { flex: 1, fontSize: 13, fontWeight: 800, padding: '9px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink)' } as const;
@@ -1029,48 +1176,17 @@ function BrandPreview({ tokens, name, schedule, serviceLabel, bookLabel }: {
 }
 
 export function Settings() {
-  const { t, lang, setLang, theme, setTheme, role, notify, isTemporaryPassword } = useCRM();
-  const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor, uploadBusinessPhoto, deleteBusinessPhoto, reload } = useData();
+  const { t, lang, setLang, theme, setTheme, role, isTemporaryPassword } = useCRM();
+  const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor } = useData();
   const [sec, setSec] = useState('profile');
-  const [copied, setCopied] = useState(false);
-  // Credentials are returned by the API exactly once, so they live in component state
-  // and are never refetched. A reload loses them, which is correct.
-  const [issued, setIssued] = useState<{ staffId: number; username: string; password: string } | null>(null);
-  const copyText = (v: string) => { try { void navigator.clipboard.writeText(v); notify(); } catch { /* clipboard blocked */ } };
-  const onGrant = async (staffId: number, r: 'manager' | 'specialist') => {
-    try { const res = await grantStaffAccess(staffId, r); setIssued({ staffId, username: res.username, password: res.password }); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-  // Reset reuses the grant endpoint: both mean "issue a new temporary password".
-  const onReset = onGrant;
-  const onSetRole = async (staffId: number, r: 'manager' | 'specialist') => {
-    try { await updateStaffAccessRole(staffId, r); notify(); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
-  const onRevoke = async (staffId: number) => {
-    if (!window.confirm(t.set.confirmRevoke)) return;
-    try { await revokeStaffAccess(staffId); setIssued(null); notify(); await reload(); }
-    catch (e) { notify(e instanceof Error ? e.message : 'Error'); }
-  };
   if (!payload) return null;
   const s = t.set;
   const b = payload.business;
-  // Prefer the business's own booking page for the headline link and the QR. It only
-  // exists once a slug is assigned; before that fall back to the generic client bot,
-  // which is the best available answer to "what do I send my customers?".
-  const publicLink =
-    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
-  const link = publicLink?.url || '';
-  const copy = () => { try { navigator.clipboard.writeText(link); } catch (e) {} setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
-  // `team` was translated in all three languages but never rendered — the section simply
-  // did not exist. Owner-only, since granting access is an owner capability server-side.
-  // `booking` is hidden for anyone whose payload has no links: bookingLinks is redacted
-  // to [] for specialists, so the section rendered as a heading with nothing under it.
+  // Down to two sections. `booking` moved to Branding, which is the other half of what a
+  // customer sees, and `team` moved to Staff, next to the people it grants access to.
   const navItems: Array<[string, string]> = [
     ['profile', 'user'],
-    ...(payload.bookingLinks.length > 0 ? ([['booking', 'grid']] as Array<[string, string]>) : []),
-    ...(role === 'owner' ? ([['team', 'staff']] as Array<[string, string]>) : []),
     ['appearance', 'sun'],
   ];
 
@@ -1092,19 +1208,8 @@ export function Settings() {
           {sec === 'profile' && (
             <Panel>
               <SetHead title={s.profile} sub={s.profileSub} />
-              <div style={{ display: 'flex', gap: 16, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-                <div style={{ width: 96, height: 96, borderRadius: 16, overflow: 'hidden', flex: 'none', background: 'var(--panel-2)', border: '1px solid var(--line)', display: 'grid', placeItems: 'center' }}>
-                  {b.photoFileId ? (
-                    <img src={`/api/business/photo?v=${encodeURIComponent(payload.generatedAt)}`} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink-3)' }}>{b.name.slice(0, 1).toUpperCase()}</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button onClick={uploadBusinessPhoto} style={{ fontSize: 13, fontWeight: 800, padding: '9px 15px', borderRadius: 10, background: 'var(--accent)', color: 'var(--accent-ink)' }}>{b.photoFileId ? s.download : s.download}</button>
-                  {b.photoFileId && <button onClick={deleteBusinessPhoto} style={{ fontSize: 13, fontWeight: 700, padding: '9px 15px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--rose)' }}>{t.serv.archive}</button>}
-                </div>
-              </div>
+              {/* The photo moved to Branding and became the logo, which is what it is used
+                  for: the booking page header and the CRM sidebar. */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14, marginTop: 18 }}>
                 {[[s.bizName, b.name], [s.category, b.type], [s.phone, formatPhone(b.phone)], [s.address, b.address], [s.schedule, b.schedule], [s.description, b.description || '—']].map(([label, val], i) => (
                   <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 12, padding: '12px 14px', gridColumn: i >= 3 ? 'span 2' : 'auto' }}>
@@ -1135,127 +1240,6 @@ export function Settings() {
                   <Ic name="bell" size={14} stroke={2} />{isTemporaryPassword ? s.tempPasswordWarn : s.tempPassword}
                 </button>
               )}
-            </Panel>
-          )}
-
-          {sec === 'booking' && (
-            <Panel>
-              <SetHead title={s.booking} sub={s.bookingSub} />
-              {link && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '18px 0 6px' }}>
-                  <Ic name="grid" size={16} stroke={2} style={{ color: 'var(--accent-deep)', flex: 'none' }} />
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
-                  <button onClick={copy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copied ? 'var(--accent)' : 'var(--panel)', color: copied ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
-                    <Ic name={copied ? 'check' : 'dots'} size={14} stroke={2.4} />{copied ? s.copied : s.copy}
-                  </button>
-                  <a href={link} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: 'var(--ink)', color: 'var(--panel)', whiteSpace: 'nowrap' }}>
-                    <Ic name="send" size={14} stroke={2.2} />{s.open}
-                  </a>
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-                {payload.bookingLinks.map((bl) => (
-                  <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      {/* Title comes from a key, not the payload — the worker cannot know
-                          which language this owner reads. */}
-                      <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
-                      <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
-                    </div>
-                    <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
-                  </a>
-                ))}
-              </div>
-              {link && <QRBlock link={link} />}
-            </Panel>
-          )}
-
-          {sec === 'team' && (
-            <Panel>
-              <SetHead title={s.team} sub={s.teamSub} />
-
-              {/* The owner's own login sits at the top: it is the account that grants all
-                  the others, and it is the one nobody can reset from here. */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '13px 14px', borderRadius: 12, background: 'var(--accent-tint)', border: '1px solid var(--accent)' }}>
-                <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="loyalty" size={17} stroke={2} /></span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 800 }}>{b.name}</div>
-                  <div className="mono" style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 600 }}>{b.crmUsername} · {s.roleOwner}</div>
-                </div>
-                <button onClick={openCredentialsEditor} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--panel)', border: '1px solid var(--line-2)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>{s.credentials}</button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-                {payload.staffAccess.length === 0 && <EmptyHint text={t.staff.title} />}
-                {payload.staffAccess.map((row) => {
-                  const justIssued = issued?.staffId === row.staffId;
-                  return (
-                    <div key={row.staffId} style={{ borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', padding: '13px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <Avatar name={row.name} color={avatarColor(row.name)} size={34} />
-                        <div style={{ flex: 1, minWidth: 120 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 800 }}>{row.name}</div>
-                          <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
-                            {row.username ? row.username : s.noAccess}
-                          </div>
-                        </div>
-
-                        {row.enabled ? (
-                          <>
-                            {/* Role is a live control: changing it applies on the staff
-                                member's next request, not at their next login. */}
-                            <div style={{ display: 'inline-flex', background: 'var(--panel)', border: '1px solid var(--line-2)', borderRadius: 999, padding: 3, gap: 2 }}>
-                              {(['manager', 'specialist'] as const).map((r) => {
-                                const on = row.accessRole === r;
-                                return (
-                                  <button
-                                    key={r}
-                                    title={r === 'manager' ? s.roleManagerHint : s.roleSpecialistHint}
-                                    onClick={() => { if (!on) void onSetRole(row.staffId, r); }}
-                                    style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent', whiteSpace: 'nowrap' }}
-                                  >
-                                    {r === 'manager' ? s.roleManager : s.roleSpecialist}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <Badge color="var(--accent-deep)" tint="var(--accent-tint)" dot>{s.accessOn}</Badge>
-                            <button onClick={() => void onReset(row.staffId, row.accessRole ?? 'specialist')} style={btnGhost}>{s.resetPass}</button>
-                            <button onClick={() => void onRevoke(row.staffId)} style={{ ...btnGhost, color: 'var(--rose)' }}>{s.revoke}</button>
-                          </>
-                        ) : (
-                          <>
-                            {row.username && <Badge>{s.accessOff}</Badge>}
-                            <button onClick={() => void onGrant(row.staffId, 'specialist')} style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 13px', borderRadius: 9, background: 'var(--accent)', color: 'var(--accent-ink)', whiteSpace: 'nowrap' }}>{s.grant}</button>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Shown once, right after issuing. There is no way to read this
-                          password back, which is the point — so it is impossible to miss. */}
-                      {justIssued && (
-                        <div style={{ marginTop: 12, padding: '12px 13px', borderRadius: 11, background: 'var(--panel)', border: '1px solid var(--accent)' }}>
-                          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                            <div>
-                              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.loginLabel}</div>
-                              <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.username}</div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700 }}>{s.newPassLabel}</div>
-                              <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>{issued.password}</div>
-                            </div>
-                            <button onClick={() => copyText(`${issued.username} / ${issued.password}`)} style={{ ...btnGhost, alignSelf: 'flex-end' }}>{s.copyCreds}</button>
-                          </div>
-                          <div style={{ marginTop: 9, fontSize: 12, color: 'var(--amber)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Ic name="bell" size={13} stroke={2} />{s.credsWarn}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
             </Panel>
           )}
 
@@ -1317,7 +1301,7 @@ function storedTheme(payload: CrmPayload | null): BrandThemeDraft {
  */
 export function Branding() {
   const { t, role, notify } = useCRM();
-  const { payload, reload } = useData();
+  const { payload, reload, uploadBusinessPhoto, deleteBusinessPhoto } = useData();
   // Draft holds raw strings, not validated colours: the owner may be mid-way through
   // typing a hex, and snapping it to a valid value on every keystroke fights them.
   //
@@ -1329,6 +1313,7 @@ export function Branding() {
   // above sees nothing and falls back to the defaults. Re-sync from the payload until
   // the owner touches a field, so a slow first load cannot show the wrong brand.
   const [touched, setTouched] = useState(false);
+  const [copied, setCopied] = useState(false);
   const stored = JSON.stringify(storedTheme(payload));
   useEffect(() => {
     if (!touched) setThemeDraft(JSON.parse(stored) as BrandThemeDraft);
@@ -1340,6 +1325,14 @@ export function Branding() {
   }
   if (!payload) return null;
   const b = payload.business;
+
+  // Prefer the business's own booking page for the headline link and the QR. It only exists
+  // once a slug is assigned; before that fall back to the generic client bot, which is the
+  // best available answer to "what do I send my customers?".
+  const publicLink =
+    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
+  const link = publicLink?.url || '';
+  const copy = () => { try { navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ } setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
   const editTheme = (next: BrandThemeDraft) => { setTouched(true); setThemeDraft(next); };
   const setThemePart = (key: 'bg' | 'ink' | 'accent') => (value: string) => {
@@ -1373,7 +1366,71 @@ export function Branding() {
   };
 
   return (
-    <div className="fadein" style={{ padding: 28, maxWidth: 760 }}>
+    <div className="fadein" style={{ padding: 28, maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 18 }}>
+    {/* The logo, the share link and the colours are one subject: what a customer sees. The
+        first two used to live in Settings, two screens from the third. */}
+    <Panel>
+      <SetHead title={s.logo} sub={s.logoSub} />
+      <div style={{ display: 'flex', gap: 18, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ width: 96, height: 96, borderRadius: 20, overflow: 'hidden', flex: 'none', background: brandPreview.accentTint, border: `1px solid ${brandPreview.line}`, display: 'grid', placeItems: 'center' }}>
+          {b.photoFileId ? (
+            // Cache-busted on generatedAt: the URL is otherwise identical after an upload, so
+            // the browser would keep showing the old logo until a hard refresh.
+            <img src={`/api/business/photo?v=${encodeURIComponent(payload.generatedAt)}`} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            /* No upload: the business's initial over its own accent. A shop with no logo file
+               still gets something that looks deliberate rather than an empty grey box. */
+            <span style={{ fontSize: 38, fontWeight: 800, color: brandPreview.accentDeep }}>{b.name.slice(0, 1).toUpperCase()}</span>
+          )}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-3)', lineHeight: 1.5, marginBottom: 11 }}>{s.logoHint}</div>
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+            <button onClick={uploadBusinessPhoto} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, padding: '9px 15px', borderRadius: 10, background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+              <Ic name="arrowUp" size={15} stroke={2.4} />{b.photoFileId ? s.logoReplace : s.logoUpload}
+            </button>
+            {b.photoFileId && (
+              <button onClick={deleteBusinessPhoto} style={{ fontSize: 13, fontWeight: 700, padding: '9px 15px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--rose)' }}>{s.logoRemove}</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Panel>
+
+    {/* Hidden when the payload carries no links, which is how a specialist's arrives. */}
+    {payload.bookingLinks.length > 0 && (
+
+      <Panel>
+        <SetHead title={s.booking} sub={s.bookingSub} />
+        {link && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '18px 0 6px' }}>
+            <Ic name="grid" size={16} stroke={2} style={{ color: 'var(--accent-deep)', flex: 'none' }} />
+            <span className="mono" style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
+            <button onClick={copy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copied ? 'var(--accent)' : 'var(--panel)', color: copied ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
+              <Ic name={copied ? 'check' : 'copy'} size={14} stroke={2.4} />{copied ? s.copied : s.copy}
+            </button>
+            <a href={link} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: 'var(--ink)', color: 'var(--panel)', whiteSpace: 'nowrap' }}>
+              <Ic name="send" size={14} stroke={2.2} />{s.open}
+            </a>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+          {payload.bookingLinks.map((bl) => (
+            <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
+              <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Title comes from a key, not the payload — the worker cannot know
+                    which language this owner reads. */}
+                <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
+                <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
+              </div>
+              <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+            </a>
+          ))}
+        </div>
+        {link && <QRBlock link={link} />}
+      </Panel>
+    )}
 
     <Panel>
       <SetHead title={s.brand} sub={s.brandSub} />

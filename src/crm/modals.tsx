@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
-import { fmtSom } from './data';
+import { avatarColor, fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
-import { isValidPhone, toStoragePhone } from '../shared/phone';
+import { formatPhone, isValidPhone, toStoragePhone } from '../shared/phone';
 import { generateDayIntervals, normalizeTime, parseBusinessHours, timeToMinutes } from '../lib/date';
 import type { BookingStatus, CalendarBookingCard, ClientRow, CreateCrmBookingInput, CrmPayload, EmployeeRow, PaymentMethod, ServiceCatalogItem, StaffAccessRow } from '../types';
 
@@ -466,6 +466,33 @@ export function CrmBookingModal({
   const [clientName, setClientName] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
+  // Which existing client was picked, so the UI can say so. Not sent to the server: bookings
+  // carry a name and a phone, and the client rows are DERIVED from those by phone. Picking
+  // therefore just fills the two fields correctly, which is exactly what stops a regular
+  // turning into a second client because their name was typed differently this time.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Matched on name AND phone: half the time the person on the phone is remembered by their
+  // number. Digits only on both sides so a search for "901234567" finds "+998 90 123 45 67".
+  const query = clientName.trim().toLowerCase();
+  const queryDigits = query.replace(/\D/g, '');
+  const matches = query.length < 2 ? [] : payload.clients
+    .filter((c) =>
+      c.name.toLowerCase().includes(query) ||
+      (queryDigits.length >= 3 && (c.phone ?? '').replace(/\D/g, '').includes(queryDigits))
+    )
+    .slice(0, 6);
+  // An exact hit is not a suggestion worth showing — it is what they already typed.
+  const showPicker = pickerOpen && !picked && matches.length > 0 &&
+    !(matches.length === 1 && matches[0].name.toLowerCase() === query);
+
+  const pickClient = (c: (typeof payload.clients)[number]) => {
+    setClientName(c.name);
+    if (c.phone) setPhone(c.phone);
+    setPicked(c.key);
+    setPickerOpen(false);
+  };
 
   const service = active.find((s) => s.id === serviceId) ?? null;
   // Only staff who actually perform this service, unless nobody is linked — in which case
@@ -516,7 +543,50 @@ export function CrmBookingModal({
       }
     >
       <Field label={mb.customer}>
-        <TextInput value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder={m.customer.namePh} autoFocus />
+        <div style={{ position: 'relative' }}>
+          <TextInput
+            value={clientName}
+            onChange={(e) => { setClientName(e.target.value); setPicked(null); setPickerOpen(true); }}
+            onFocus={() => setPickerOpen(true)}
+            placeholder={m.customer.namePh}
+            autoFocus
+          />
+          {/* Marks that this is a known client rather than a new one, so nobody wonders
+              whether the visit history is about to attach. */}
+          {picked && (
+            <span style={{ position: 'absolute', top: '50%', right: 11, transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 800, color: 'var(--accent-deep)', background: 'var(--accent-tint)', padding: '3px 8px', borderRadius: 999, pointerEvents: 'none' }}>
+              <Ic name="check" size={12} stroke={3} />{payload.clients.find((c) => c.key === picked)?.totalVisits ?? 0} {mb.visits}
+            </span>
+          )}
+
+          {showPicker && (
+            <>
+              {/* Click-away closes it. Fixed, so it covers the modal too — otherwise the
+                  first click outside the list only dismisses the list and feels swallowed. */}
+              <div onClick={() => setPickerOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+              <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0, zIndex: 31, background: 'var(--panel)', border: '1px solid var(--line-2)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', padding: 5, maxHeight: 224, overflowY: 'auto' }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 8px 4px' }}>{mb.existing}</div>
+                {matches.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => pickClient(c)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 9, textAlign: 'left' }}
+                  >
+                    <Avatar name={c.name} color={avatarColor(c.name)} size={30} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                      <div className="tnum" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink-3)' }}>
+                        {c.phone ? formatPhone(c.phone) : mb.newClient}
+                      </div>
+                    </div>
+                    <span className="tnum" style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink-3)', flex: 'none' }}>{c.totalVisits} {mb.visits}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </Field>
       <Field label={m.customer.phone}>
         <PhoneInput value={phone} onChange={setPhone} />

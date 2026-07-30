@@ -106,7 +106,7 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Faol', accessOff: 'O‘chirilgan', loginLabel: 'Login', newPassLabel: 'Yangi parol',
       copyCreds: 'Nusxa olish', credsWarn: 'Bu parol boshqa ko‘rsatilmaydi — xodimga hozir yuboring.',
       confirmRevoke: 'Bu xodimning kirishini o‘chirasizmi?', ownerOnly: 'Faqat egasi uchun',
-      brand: 'Brend', brandSub: 'Navbat sahifangiz shu ranglarda ko‘rinadi', brandCustom: 'O‘z ranglaringiz',
+      brand: 'Brend', logo: 'Logotip', logoSub: 'Navbat sahifasi va CRM’da ko‘rinadi', logoHint: 'PNG yoki JPG, kvadrat rasm eng yaxshi ko‘rinadi. Yuklamasangiz biznes nomining birinchi harfi ishlatiladi.', logoUpload: 'Logotip yuklash', logoReplace: 'Almashtirish', logoRemove: 'O‘chirish', brandSub: 'Navbat sahifangiz shu ranglarda ko‘rinadi', brandCustom: 'O‘z ranglaringiz',
       brandPreview: 'Ko‘rinishi', brandReset: 'Standart ko‘rinish', brandInvalid: 'Rang #1d4ed8 ko‘rinishida bo‘lishi kerak.',
       brandBook: 'Navbatga yozilish',
       brandThemes: 'Tayyor ko‘rinishlar', brandBg: 'Fon', brandInk: 'Matn', brandAccent: 'Tugmalar',
@@ -229,7 +229,7 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Активен', accessOff: 'Отключён', loginLabel: 'Логин', newPassLabel: 'Новый пароль',
       copyCreds: 'Скопировать', credsWarn: 'Этот пароль больше не будет показан — отправьте его сотруднику сейчас.',
       confirmRevoke: 'Отключить доступ этому сотруднику?', ownerOnly: 'Только для владельца',
-      brand: 'Бренд', brandSub: 'В этих цветах будет ваша страница записи', brandCustom: 'Свои цвета',
+      brand: 'Бренд', logo: 'Логотип', logoSub: 'Показывается на странице записи и в CRM', logoHint: 'PNG или JPG, лучше всего квадратное изображение. Без загрузки используется первая буква названия.', logoUpload: 'Загрузить логотип', logoReplace: 'Заменить', logoRemove: 'Удалить', brandSub: 'В этих цветах будет ваша страница записи', brandCustom: 'Свои цвета',
       brandPreview: 'Предпросмотр', brandReset: 'Оформление по умолчанию', brandInvalid: 'Цвет должен быть в формате #1d4ed8.',
       brandBook: 'Записаться',
       brandThemes: 'Готовые темы', brandBg: 'Фон', brandInk: 'Текст', brandAccent: 'Кнопки',
@@ -352,7 +352,7 @@ export const CRM_T: Record<Lang, any> = {
       accessOn: 'Active', accessOff: 'Turned off', loginLabel: 'Username', newPassLabel: 'New password',
       copyCreds: 'Copy', credsWarn: 'This password will not be shown again — send it to your staff member now.',
       confirmRevoke: 'Turn off access for this employee?', ownerOnly: 'Owner only',
-      brand: 'Branding', brandSub: 'Your booking page is shown in these colours', brandCustom: 'Your own colours',
+      brand: 'Branding', logo: 'Logo', logoSub: 'Shown on your booking page and in the CRM', logoHint: 'PNG or JPG; a square image works best. Without one, the first letter of the business name is used.', logoUpload: 'Upload logo', logoReplace: 'Replace', logoRemove: 'Remove', brandSub: 'Your booking page is shown in these colours', brandCustom: 'Your own colours',
       brandPreview: 'Preview', brandReset: 'Default look', brandInvalid: 'Colour must look like #1d4ed8.',
       brandBook: 'Book an appointment',
       brandThemes: 'Ready-made themes', brandBg: 'Background', brandInk: 'Text', brandAccent: 'Buttons',
@@ -386,7 +386,7 @@ export const CRM_T: Record<Lang, any> = {
 export const CRM_M: Record<Lang, any> = {
   uz: {
     cancel: 'Bekor qilish',
-    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang', clash: 'Bu vaqt allaqachon band — baribir qo‘shish mumkin.' },
+    booking: { title: 'Yangi navbat', sub: 'Mijoz uchun navbatni qo‘lda qo‘shing', customer: 'Mijoz', service: 'Xizmat', staff: 'Usta', date: 'Sana', time: 'Vaqt', note: 'Izoh', notePh: 'Qo‘shimcha izoh…', submit: 'Navbat yaratish', pick: 'Tanlang', existing: 'Mavjud mijozlar', newClient: 'Yangi mijoz', visits: 'tashrif', clash: 'Bu vaqt allaqachon band — baribir qo‘shish mumkin.' },
     customer: { title: 'Mijoz qo‘shish', sub: 'Yangi mijoz ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Jasur Aliyev', phone: 'Telefon', tier: 'Toifa', source: 'Manba', note: 'Izoh', notePh: 'Eslatma…', submit: 'Mijozni qo‘shish' },
     service: { title: 'Xizmat qo‘shish', sub: 'Yangi xizmat ma’lumotlari', name: 'Xizmat nomi', namePh: 'Masalan, Soch olish', cat: 'Turkum', dur: 'Davomiyligi', price: 'Narx', min: 'daqiqa', submit: 'Xizmatni qo‘shish', staff: 'Ustalar' },
     staff: { title: 'Xodim qo‘shish', sub: 'Yangi xodim ma’lumotlari', name: 'Ism-familiya', namePh: 'Masalan, Sardor Karimov', role: 'Lavozim', rolePh: 'Masalan, Usta', phone: 'Telefon', access: 'CRM kirish', accessNone: 'Kirish yo‘q', accessHint: 'Bu odam CRM’da nima qila oladi', services: 'Ko‘rsatadigan xizmatlar', servicesHint: 'Bu usta bajaradigan xizmatlarni belgilang', selected: 'ta tanlandi', submit: 'Xodimni qo‘shish' },
@@ -400,7 +400,7 @@ export const CRM_M: Record<Lang, any> = {
   },
   ru: {
     cancel: 'Отмена',
-    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите', clash: 'Это время уже занято — запись всё равно можно создать.' },
+    booking: { title: 'Новая запись', sub: 'Добавьте запись для клиента вручную', customer: 'Клиент', service: 'Услуга', staff: 'Мастер', date: 'Дата', time: 'Время', note: 'Комментарий', notePh: 'Дополнительно…', submit: 'Создать запись', pick: 'Выберите', existing: 'Существующие клиенты', newClient: 'Новый клиент', visits: 'визит.', clash: 'Это время уже занято — запись всё равно можно создать.' },
     customer: { title: 'Добавить клиента', sub: 'Данные нового клиента', name: 'Имя и фамилия', namePh: 'Например, Жасур Алиев', phone: 'Телефон', tier: 'Категория', source: 'Источник', note: 'Заметка', notePh: 'Заметка…', submit: 'Добавить клиента' },
     service: { title: 'Добавить услугу', sub: 'Данные новой услуги', name: 'Название услуги', namePh: 'Например, Стрижка', cat: 'Категория', dur: 'Длительность', price: 'Цена', min: 'минут', submit: 'Добавить услугу', staff: 'Мастера' },
     staff: { title: 'Добавить сотрудника', sub: 'Данные нового сотрудника', name: 'Имя и фамилия', namePh: 'Например, Сардор Каримов', role: 'Должность', rolePh: 'Например, Мастер', phone: 'Телефон', access: 'Доступ в CRM', accessNone: 'Нет доступа', accessHint: 'Что этот человек может делать в CRM', services: 'Оказываемые услуги', servicesHint: 'Отметьте услуги, которые выполняет этот мастер', selected: 'выбрано', submit: 'Добавить сотрудника' },
@@ -414,7 +414,7 @@ export const CRM_M: Record<Lang, any> = {
   },
   en: {
     cancel: 'Cancel',
-    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select', clash: 'That time is already booked — you can still add it.' },
+    booking: { title: 'New booking', sub: 'Add a booking for a customer manually', customer: 'Customer', service: 'Service', staff: 'Specialist', date: 'Date', time: 'Time', note: 'Note', notePh: 'Additional note…', submit: 'Create booking', pick: 'Select', existing: 'Existing customers', newClient: 'New customer', visits: 'visits', clash: 'That time is already booked — you can still add it.' },
     customer: { title: 'Add customer', sub: 'New customer details', name: 'Full name', namePh: 'e.g. Jasur Aliyev', phone: 'Phone', tier: 'Tier', source: 'Source', note: 'Note', notePh: 'Note…', submit: 'Add customer' },
     service: { title: 'Add service', sub: 'New service details', name: 'Service name', namePh: 'e.g. Haircut', cat: 'Category', dur: 'Duration', price: 'Price', min: 'minutes', submit: 'Add service', staff: 'Specialists' },
     staff: { title: 'Add staff', sub: 'New staff member details', name: 'Full name', namePh: 'e.g. Sardor Karimov', role: 'Position', rolePh: 'e.g. Barber', phone: 'Phone', access: 'CRM access', accessNone: 'No access', accessHint: 'What this person can do in the CRM', services: 'Services performed', servicesHint: 'Select the services this specialist provides', selected: 'selected', submit: 'Add staff member' },
@@ -436,6 +436,11 @@ export type CRMContextValue = {
   m: any;
   bizName: string;
   bizType: string;
+  /**
+   * Cache-busting token for `/api/business/photo`, or null when no logo is uploaded.
+   * `payload.generatedAt`, so replacing the logo changes the URL and the browser refetches.
+   */
+  logoVersion: string | null;
   /** true only in the public landing embed (?embed=1) — gates all demo/mock UI. */
   demo: boolean;
   setLang: (l: Lang) => void;

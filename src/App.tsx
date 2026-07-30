@@ -585,7 +585,9 @@ export default function App() {
   const meta = titles[effActive] || titles.dashboard;
 
   const crmValue: CRMContextValue = {
-    lang, t, m: CRM_M[lang], bizName, bizType, demo: false, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
+    lang, t, m: CRM_M[lang], bizName, bizType, demo: false,
+    // null when nothing is uploaded, so the sidebar falls back to the name's initial.
+    logoVersion: payload?.business.photoFileId ? payload.generatedAt : null, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),

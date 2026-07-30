@@ -46,6 +46,12 @@ import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
+import {
+  checkImageBytes,
+  safeImageContentType,
+  type ImageKind,
+  type RejectionReason,
+} from "./shared/imageFile";
 import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
 import {
   consumeVerification,
@@ -3041,7 +3047,24 @@ async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Req
     return json({ error: "Photo file is required" }, { status: 400 });
   }
 
-  const uploaded = await uploadPhotoToBusinessBot(env, business, photo);
+  // Decided on the BYTES, never on photo.name or photo.type — both are set by whoever is
+  // uploading, so `logo.png` with `Content-Type: image/png` says nothing about the content.
+  // The browser runs the same check for a quick error, but this is the one that counts.
+  const bytes = new Uint8Array(await photo.arrayBuffer());
+  const check = checkImageBytes(bytes, bytes.byteLength);
+  if (!check.ok) {
+    return json(
+      { error: IMAGE_REJECTION_MESSAGE[check.reason], code: `image_${check.reason}` },
+      { status: check.reason === "too_large" ? 413 : 415 }
+    );
+  }
+
+  // Rebuilt from the bytes we validated, with a name and type WE chose. Forwarding the
+  // original File would hand Telegram — and anything downstream reading the filename — a
+  // string from the request, which is how a path or a second extension gets in.
+  const safePhoto = new File([bytes], `logo.${IMAGE_EXTENSION[check.kind]}`, { type: check.kind });
+
+  const uploaded = await uploadPhotoToBusinessBot(env, business, safePhoto);
 
   await env.DB
     .prepare("UPDATE businesses SET photo_file_id = ?, photo_file_unique_id = ? WHERE id = ?")
@@ -3060,6 +3083,48 @@ async function deleteBusinessPhoto(env: Env, business: BusinessRow) {
   return json({ ok: true });
 }
 
+/**
+ * Why an upload was refused, in words an owner can act on.
+ *
+ * Naming the actual format matters: somebody who picked the wrong file from a folder needs to
+ * hear "that is a Windows program", not "invalid image". English only, like the other API
+ * errors — the client surfaces `code` when it wants a translated string.
+ */
+const IMAGE_REJECTION_MESSAGE: Record<RejectionReason, string> = {
+  empty: "That file is empty.",
+  too_large: "That image is larger than 4 MB. Please upload a smaller file.",
+  svg_or_html: "SVG and HTML files are not accepted as logos. Please upload a PNG, JPG or WebP.",
+  executable: "That is a program, not an image. Please upload a PNG, JPG or WebP.",
+  archive: "That is an archive, not an image. Please upload a PNG, JPG or WebP.",
+  pdf: "That is a PDF, not an image. Please upload a PNG, JPG or WebP.",
+  not_an_image: "That file is not a PNG, JPG or WebP image.",
+};
+
+const IMAGE_EXTENSION: Record<ImageKind, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+/**
+ * Headers for a stored logo, on the way back out to a browser.
+ *
+ * The Content-Type comes from our own allowlist rather than being echoed from upstream, and
+ * `nosniff` stops a browser second-guessing it. Together they are what makes a bad upload
+ * inert: even if something that is not an image reached storage, it is served as an image and
+ * the browser is told not to look for a reason to treat it as anything else. `inline` with a
+ * fixed filename keeps a download from inheriting a name from the request.
+ */
+function imageResponseHeaders(upstream: Response) {
+  const contentType = safeImageContentType(upstream.headers.get("content-type"));
+  const headers = new Headers();
+  headers.set("content-type", contentType);
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-disposition", `inline; filename="logo.${IMAGE_EXTENSION[contentType]}"`);
+  headers.set("cache-control", "public, max-age=300");
+  return headers;
+}
+
 async function proxyBusinessPhoto(env: Env, business: BusinessRow) {
   if (!business.photo_file_id) {
     return new Response("Not found", { status: 404 });
@@ -3070,14 +3135,7 @@ async function proxyBusinessPhoto(env: Env, business: BusinessRow) {
   }
 
   const telegramFile = await getTelegramFileResponse(env.BUSINESS_BOT_TOKEN, business.photo_file_id);
-  const headers = new Headers();
-  headers.set("content-type", telegramFile.headers.get("content-type") ?? "image/jpeg");
-  headers.set("cache-control", "public, max-age=300");
-
-  return new Response(telegramFile.body, {
-    status: 200,
-    headers,
-  });
+  return new Response(telegramFile.body, { status: 200, headers: imageResponseHeaders(telegramFile) });
 }
 
 async function createService(env: Env, business: BusinessRow, input: UpsertServiceInput) {

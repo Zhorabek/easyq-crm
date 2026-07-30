@@ -515,6 +515,9 @@ a {
   .crm-cust {
     grid-template-columns: 1fr !important;
   }
+  .crm-brand {
+    grid-template-columns: 1fr !important;
+  }
   .crm-cust > div:last-child {
     position: static !important;
   }

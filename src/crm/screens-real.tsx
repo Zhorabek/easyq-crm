@@ -1366,38 +1366,153 @@ export function Branding() {
   };
 
   return (
-    <div className="fadein" style={{ padding: 28, maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 18 }}>
-    {/* The logo, the share link and the colours are one subject: what a customer sees. The
-        first two used to live in Settings, two screens from the third. */}
-    <Panel>
-      <SetHead title={s.logo} sub={s.logoSub} />
-      <div style={{ display: 'flex', gap: 18, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ width: 96, height: 96, borderRadius: 20, overflow: 'hidden', flex: 'none', background: brandPreview.accentTint, border: `1px solid ${brandPreview.line}`, display: 'grid', placeItems: 'center' }}>
-          {b.photoFileId ? (
-            // Cache-busted on generatedAt: the URL is otherwise identical after an upload, so
-            // the browser would keep showing the old logo until a hard refresh.
-            <img src={`/api/business/photo?v=${encodeURIComponent(payload.generatedAt)}`} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            /* No upload: the business's initial over its own accent. A shop with no logo file
-               still gets something that looks deliberate rather than an empty grey box. */
-            <span style={{ fontSize: 38, fontWeight: 800, color: brandPreview.accentDeep }}>{b.name.slice(0, 1).toUpperCase()}</span>
+    /* Two columns. The three panels are one subject but not one task: the logo and the
+       colours are things you change, the link and the QR are things you fetch and hand to a
+       customer. Stacked, Branding was a 760px ribbon down the left of a wide screen with the
+       QR pushed under the fold; side by side it fits on one screen.
+
+       Collapses to one column under 1100px — see .crm-brand in crm.css. */
+    <div className="fadein crm-brand" style={{ padding: 28, maxWidth: 1180, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
+      {/* Left: what you change. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+  {/* The logo, the share link and the colours are one subject: what a customer sees. The
+      first two used to live in Settings, two screens from the third. */}
+  <Panel>
+    <SetHead title={s.logo} sub={s.logoSub} />
+    <div style={{ display: 'flex', gap: 18, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ width: 96, height: 96, borderRadius: 20, overflow: 'hidden', flex: 'none', background: brandPreview.accentTint, border: `1px solid ${brandPreview.line}`, display: 'grid', placeItems: 'center' }}>
+        {b.photoFileId ? (
+          // Cache-busted on generatedAt: the URL is otherwise identical after an upload, so
+          // the browser would keep showing the old logo until a hard refresh.
+          <img src={`/api/business/photo?v=${encodeURIComponent(payload.generatedAt)}`} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          /* No upload: the business's initial over its own accent. A shop with no logo file
+             still gets something that looks deliberate rather than an empty grey box. */
+          <span style={{ fontSize: 38, fontWeight: 800, color: brandPreview.accentDeep }}>{b.name.slice(0, 1).toUpperCase()}</span>
+        )}
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-3)', lineHeight: 1.5, marginBottom: 11 }}>{s.logoHint}</div>
+        <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+          <button onClick={uploadBusinessPhoto} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, padding: '9px 15px', borderRadius: 10, background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+            <Ic name="arrowUp" size={15} stroke={2.4} />{b.photoFileId ? s.logoReplace : s.logoUpload}
+          </button>
+          {b.photoFileId && (
+            <button onClick={deleteBusinessPhoto} style={{ fontSize: 13, fontWeight: 700, padding: '9px 15px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--rose)' }}>{s.logoRemove}</button>
           )}
         </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-3)', lineHeight: 1.5, marginBottom: 11 }}>{s.logoHint}</div>
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-            <button onClick={uploadBusinessPhoto} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, padding: '9px 15px', borderRadius: 10, background: 'var(--accent)', color: 'var(--accent-ink)' }}>
-              <Ic name="arrowUp" size={15} stroke={2.4} />{b.photoFileId ? s.logoReplace : s.logoUpload}
-            </button>
-            {b.photoFileId && (
-              <button onClick={deleteBusinessPhoto} style={{ fontSize: 13, fontWeight: 700, padding: '9px 15px', borderRadius: 10, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--rose)' }}>{s.logoRemove}</button>
-            )}
-          </div>
-        </div>
       </div>
-    </Panel>
+    </div>
+  </Panel>
 
-    {/* Hidden when the payload carries no links, which is how a specialist's arrives. */}
+  {/* Hidden when the payload carries no links, which is how a specialist's arrives. */}
+  <Panel>
+    <SetHead title={s.brand} sub={s.brandSub} />
+
+    {/* Picking one of these and stopping is the expected path. Each one is a
+        coordinated background/text/button set that clears AA, so an owner who
+        never opens the hex fields cannot produce an unreadable page. */}
+    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 18, marginBottom: 9 }}>{s.brandThemes}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(124px, 1fr))', gap: 9 }}>
+      {BRAND_THEME_PRESETS.map((preset) => {
+        const on =
+          normalizeBrandColor(themeDraft.bg) === preset.theme.bg &&
+          normalizeBrandColor(themeDraft.ink) === preset.theme.ink &&
+          normalizeBrandColor(themeDraft.accent) === preset.theme.accent;
+        const tokens = brandTokens(preset.theme);
+        return (
+          <button
+            key={preset.id}
+            onClick={() => editTheme({ ...preset.theme })}
+            style={{
+              textAlign: 'left', padding: 11, borderRadius: 12, background: tokens.bg,
+              border: on ? '2px solid var(--ink)' : `1px solid var(--line-2)`,
+              display: 'flex', flexDirection: 'column', gap: 9,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: tokens.ink }}>
+                {s.brandThemeNames[preset.id] ?? preset.id}
+              </span>
+              {on && <Ic name="check" size={15} stroke={3} style={{ color: tokens.accentDeep }} />}
+            </div>
+            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+              <span style={{ flex: 1, height: 16, borderRadius: 5, background: tokens.panel, border: `1px solid ${tokens.line}` }} />
+              <span style={{ width: 30, height: 16, borderRadius: 5, background: tokens.accent }} />
+            </div>
+          </button>
+        );
+      })}
+    </div>
+
+    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 20, marginBottom: 10 }}>{s.brandCustom}</div>
+    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+      <BrandField label={s.brandBg} value={themeDraft.bg} onChange={setThemePart('bg')} />
+      <BrandField label={s.brandInk} value={themeDraft.ink} onChange={setThemePart('ink')} />
+      <BrandField label={s.brandAccent} value={themeDraft.accent} onChange={setThemePart('accent')} swatches={BRAND_PRESETS} />
+    </div>
+
+    <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+      <button onClick={() => editTheme({ ...DEFAULT_BRAND_THEME })} style={{ ...btnGhost, flex: 'none', padding: '9px 15px' }}>{s.brandReset}</button>
+    </div>
+
+    {brandHexInvalid && (
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 12 }}>{s.brandInvalid}</div>
+    )}
+
+    {/* The contrast number is shown, not just a pass/fail, because an owner who
+        is 0.2 short needs to know they are close rather than guessing which of
+        the two colours to move. Below AA the save button is disabled — the
+        worker refuses it anyway, and a button that submits and fails is worse
+        than one that explains itself. */}
+    {!brandHexInvalid && (
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 11,
+          background: canSaveBrand ? 'var(--panel-2)' : 'var(--rose-t)',
+          border: `1px solid ${canSaveBrand ? 'var(--line)' : 'var(--rose)'}`,
+        }}
+      >
+        <Ic name={canSaveBrand ? 'check' : 'bell'} size={15} stroke={2.2} style={{ color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)', flex: 'none' }} />
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)' }}>
+          {s.brandContrast}: {brandContrast.toFixed(1)}:1 · {canSaveBrand ? s.brandContrastOk : s.brandContrastLow}
+        </span>
+      </div>
+    )}
+
+    {/* Live preview of the derived tokens, so the owner sees the panel, border
+        and button-text colours that get picked for them rather than discovering
+        them on the client-facing page. */}
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
+      <BrandPreview
+        tokens={brandPreview}
+        name={b.name}
+        schedule={b.schedule}
+        serviceLabel={payload.services.find((sv) => sv.isActive)?.name ?? t.nav.services}
+        bookLabel={s.brandBook}
+      />
+    </div>
+
+    <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+      <button
+        onClick={() => void onSaveBrand()}
+        disabled={!canSaveBrand}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
+          color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
+          opacity: canSaveBrand ? 1 : 0.5,
+        }}
+      >
+        <Ic name="check" size={16} stroke={2.4} />{s.save}
+      </button>
+    </div>
+  </Panel>
+      </div>
+
+      {/* Right: what you hand out. Empty for a specialist, whose payload carries no links —
+          the column just collapses and the left one keeps its width. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
     {payload.bookingLinks.length > 0 && (
 
       <Panel>
@@ -1432,108 +1547,7 @@ export function Branding() {
       </Panel>
     )}
 
-    <Panel>
-      <SetHead title={s.brand} sub={s.brandSub} />
-
-      {/* Picking one of these and stopping is the expected path. Each one is a
-          coordinated background/text/button set that clears AA, so an owner who
-          never opens the hex fields cannot produce an unreadable page. */}
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 18, marginBottom: 9 }}>{s.brandThemes}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(124px, 1fr))', gap: 9 }}>
-        {BRAND_THEME_PRESETS.map((preset) => {
-          const on =
-            normalizeBrandColor(themeDraft.bg) === preset.theme.bg &&
-            normalizeBrandColor(themeDraft.ink) === preset.theme.ink &&
-            normalizeBrandColor(themeDraft.accent) === preset.theme.accent;
-          const tokens = brandTokens(preset.theme);
-          return (
-            <button
-              key={preset.id}
-              onClick={() => editTheme({ ...preset.theme })}
-              style={{
-                textAlign: 'left', padding: 11, borderRadius: 12, background: tokens.bg,
-                border: on ? '2px solid var(--ink)' : `1px solid var(--line-2)`,
-                display: 'flex', flexDirection: 'column', gap: 9,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: tokens.ink }}>
-                  {s.brandThemeNames[preset.id] ?? preset.id}
-                </span>
-                {on && <Ic name="check" size={15} stroke={3} style={{ color: tokens.accentDeep }} />}
-              </div>
-              <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                <span style={{ flex: 1, height: 16, borderRadius: 5, background: tokens.panel, border: `1px solid ${tokens.line}` }} />
-                <span style={{ width: 30, height: 16, borderRadius: 5, background: tokens.accent }} />
-              </div>
-            </button>
-          );
-        })}
       </div>
-
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginTop: 20, marginBottom: 10 }}>{s.brandCustom}</div>
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-        <BrandField label={s.brandBg} value={themeDraft.bg} onChange={setThemePart('bg')} />
-        <BrandField label={s.brandInk} value={themeDraft.ink} onChange={setThemePart('ink')} />
-        <BrandField label={s.brandAccent} value={themeDraft.accent} onChange={setThemePart('accent')} swatches={BRAND_PRESETS} />
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-        <button onClick={() => editTheme({ ...DEFAULT_BRAND_THEME })} style={{ ...btnGhost, flex: 'none', padding: '9px 15px' }}>{s.brandReset}</button>
-      </div>
-
-      {brandHexInvalid && (
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', marginTop: 12 }}>{s.brandInvalid}</div>
-      )}
-
-      {/* The contrast number is shown, not just a pass/fail, because an owner who
-          is 0.2 short needs to know they are close rather than guessing which of
-          the two colours to move. Below AA the save button is disabled — the
-          worker refuses it anyway, and a button that submits and fails is worse
-          than one that explains itself. */}
-      {!brandHexInvalid && (
-        <div
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 12px', borderRadius: 11,
-            background: canSaveBrand ? 'var(--panel-2)' : 'var(--rose-t)',
-            border: `1px solid ${canSaveBrand ? 'var(--line)' : 'var(--rose)'}`,
-          }}
-        >
-          <Ic name={canSaveBrand ? 'check' : 'bell'} size={15} stroke={2.2} style={{ color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)', flex: 'none' }} />
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: canSaveBrand ? 'var(--ink-2)' : 'var(--rose)' }}>
-            {s.brandContrast}: {brandContrast.toFixed(1)}:1 · {canSaveBrand ? s.brandContrastOk : s.brandContrastLow}
-          </span>
-        </div>
-      )}
-
-      {/* Live preview of the derived tokens, so the owner sees the panel, border
-          and button-text colours that get picked for them rather than discovering
-          them on the client-facing page. */}
-      <div style={{ marginTop: 20 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 9 }}>{s.brandPreview}</div>
-        <BrandPreview
-          tokens={brandPreview}
-          name={b.name}
-          schedule={b.schedule}
-          serviceLabel={payload.services.find((sv) => sv.isActive)?.name ?? t.nav.services}
-          bookLabel={s.brandBook}
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-        <button
-          onClick={() => void onSaveBrand()}
-          disabled={!canSaveBrand}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)',
-            color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11,
-            opacity: canSaveBrand ? 1 : 0.5,
-          }}
-        >
-          <Ic name="check" size={16} stroke={2.4} />{s.save}
-        </button>
-      </div>
-    </Panel>
     </div>
   );
 }

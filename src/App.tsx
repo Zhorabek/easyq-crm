@@ -24,6 +24,7 @@ import {
   uploadBusinessPhoto as apiUploadBusinessPhoto,
 } from './lib/api';
 import { isoToday } from './lib/date';
+import { IMAGE_ACCEPT_ATTR, checkImageFile } from './shared/imageFile';
 import type {
   AuthSession,
   BookingStatus,
@@ -444,6 +445,12 @@ export default function App() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    // Checked here on the file's leading bytes so a wrong pick is refused instantly instead of
+    // after uploading 4 MB to be rejected. Courtesy only: `accept` on the input is a dialog
+    // filter and this runs in a browser, so the Worker repeats every check on bytes it read
+    // itself. See shared/imageFile.ts.
+    const check = await checkImageFile(file);
+    if (!check.ok) { notify(t.set[`logoErr_${check.reason}`] ?? t.set.logoErr_not_an_image); return; }
     try { await apiUploadBusinessPhoto(file); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
   async function doDeletePhoto() {
@@ -634,7 +641,9 @@ export default function App() {
           </div>
         </div>
 
-        <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => void handlePhotoSelected(e)} />
+        {/* `accept` is narrowed off image/* to the three formats actually allowed, so the
+            picker stops offering files that the server will refuse — GIF and SVG included. */}
+        <input ref={photoInputRef} type="file" accept={IMAGE_ACCEPT_ATTR} style={{ display: 'none' }} onChange={(e) => void handlePhotoSelected(e)} />
 
         <ModalLayer modal={modal} onClose={() => setModal(null)} onSaved={() => { setModal(null); notify(); }} />
 

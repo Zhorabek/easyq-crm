@@ -26,7 +26,7 @@ import {
   uploadBusinessPhoto as apiUploadBusinessPhoto,
 } from './lib/api';
 import { isoToday } from './lib/date';
-import { IMAGE_ACCEPT_ATTR, checkImageFile } from './shared/imageFile';
+import { IMAGE_ACCEPT_ATTR, checkImageFile, downscaleImage } from './shared/imageFile';
 import type {
   AuthSession,
   BookingStatus,
@@ -457,10 +457,15 @@ export default function App() {
     // itself. See shared/imageFile.ts.
     const check = await checkImageFile(file);
     if (!check.ok) { notify(t.set[`logoErr_${check.reason}`] ?? t.set.logoErr_not_an_image); return; }
+    // Shrunk and re-encoded before it leaves the browser: the stored row is small, and only
+    // decoded pixels survive the round trip, so nothing hidden in the original file is stored.
+    // A file the browser cannot decode is not an image it could display either.
+    const shrunk = await downscaleImage(file);
+    if (!shrunk) { notify(t.set.logoErr_not_an_image); return; }
     const target = photoTarget.current;
     try {
-      if (target.kind === 'staff') await apiUploadStaffPhoto(target.staffId, file);
-      else await apiUploadBusinessPhoto(file);
+      if (target.kind === 'staff') await apiUploadStaffPhoto(target.staffId, shrunk);
+      else await apiUploadBusinessPhoto(shrunk);
       notify();
       await reload();
     } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }

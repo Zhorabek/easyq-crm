@@ -98,7 +98,7 @@ export async function getPublicBusiness(
 
   if (!business) return null;
 
-  const [servicesRes, staffRes, linksRes] = await Promise.all([
+  const [servicesRes, staffRes, imagesRes, linksRes] = await Promise.all([
     // Only is_active services. An archived service must not be bookable, even though the
     // owner still sees it in the CRM catalogue.
     db
@@ -106,6 +106,12 @@ export async function getPublicBusiness(
       .bind(businessId)
       .all<ServiceRow>(),
     db.prepare("SELECT id, name, role, photo_file_id FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
+    // Ids only, never the blobs: this decides whether to render an <img>, and the page
+    // fetches the bytes per specialist from /api/public/staff/<id>/photo.
+    // .catch for the same reason as storedImageIds in worker.ts: this is the public booking
+    // page, and an absent crm_images table must cost photos, not the whole page.
+    db.prepare("SELECT staff_id FROM crm_images WHERE business_id = ?").bind(businessId)
+      .all<{ staff_id: number }>().catch(() => ({ results: [] as Array<{ staff_id: number }> })),
     db
       .prepare(
         `SELECT ss.staff_id, ss.service_id
@@ -164,6 +170,8 @@ export async function getPublicBusiness(
     }))
     .filter((service) => service.staffIds.length > 0);
 
+  const imageIds = new Set((imagesRes.results ?? []).map((r) => Number(r.staff_id)));
+
   const publicStaff: PublicStaff[] = staff.map((person) => ({
     id: person.id,
     name: person.name,
@@ -172,7 +180,7 @@ export async function getPublicBusiness(
     role: person.role?.trim() || serviceNamesByStaff.get(person.id)?.[0] || "",
     // A flag, not a URL: the page builds /api/public/staff/<id>/photo itself, and sending a
     // file_id to an unauthenticated caller would leak a token that fetches from Telegram.
-    hasPhoto: Boolean(person.photo_file_id),
+    hasPhoto: imageIds.has(person.id) || Boolean(person.photo_file_id),
   }));
 
   return {
@@ -182,7 +190,8 @@ export async function getPublicBusiness(
     phone: business.phone,
     schedule: business.schedule,
     description: business.description,
-    hasPhoto: Boolean(business.photo_file_id),
+    // 0 is the logo's slot in crm_images; the old Telegram file_id still counts.
+    hasPhoto: imageIds.has(0) || Boolean(business.photo_file_id),
     // Resolved here so the page never has to decide what "no colour" means.
     brandColor: normalizeBrandColor(business.brand_color ?? "") ?? DEFAULT_BRAND_COLOR,
     // Falls back through theme -> accent on the default page -> easyQ, so a business that

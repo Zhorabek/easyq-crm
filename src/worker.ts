@@ -207,18 +207,6 @@ type TelegramGetFileResult = {
   };
 };
 
-type TelegramSendPhotoResult = {
-  ok?: boolean;
-  result?: {
-    message_id?: number;
-    photo?: Array<{
-      file_id?: string;
-      file_unique_id?: string;
-      file_size?: number;
-    }>;
-  };
-};
-
 const CARD_COLORS = ["#c9ebdd", "#eaf59e", "#dff1c4", "#d4ede2", "#f1f6cf", "#c4e5d4"];
 const WEEKDAY_LABELS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const ALLOWED_BUSINESS_TYPES = new Set([
@@ -412,31 +400,6 @@ async function tgCallJson<T>(token: string, method: string, payload: unknown) {
   return (await response.json()) as T;
 }
 
-async function tgCallMultipart<T>(token: string, method: string, formData: FormData) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Telegram ${method} failed: ${response.status} ${text}`);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function getBusinessOwnerTelegramId(env: Env, business: BusinessRow) {
-  if (!business.user_id) return null;
-
-  const owner = await env.DB
-    .prepare("SELECT telegram_id FROM users WHERE id = ? LIMIT 1")
-    .bind(business.user_id)
-    .first<{ telegram_id: number | null }>();
-
-  return owner?.telegram_id ? Number(owner.telegram_id) : null;
-}
-
 async function getTelegramFileResponse(token: string, fileId: string) {
   const payload = await fetch(
     `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`
@@ -459,43 +422,6 @@ async function getTelegramFileResponse(token: string, fileId: string) {
   }
 
   return fileResponse;
-}
-
-async function uploadPhotoToBusinessBot(env: Env, business: BusinessRow, photo: File) {
-  if (!env.BUSINESS_BOT_TOKEN) {
-    throw new Error("BUSINESS_BOT_TOKEN is not configured for CRM.");
-  }
-
-  const ownerTelegramId = await getBusinessOwnerTelegramId(env, business);
-  if (!ownerTelegramId) {
-    throw new Error("Could not resolve the business owner Telegram account.");
-  }
-
-  const formData = new FormData();
-  formData.set("chat_id", String(ownerTelegramId));
-  formData.set("photo", photo, photo.name || "business-photo.jpg");
-  formData.set("caption", "CRM business profile photo upload");
-
-  const response = await tgCallMultipart<TelegramSendPhotoResult>(env.BUSINESS_BOT_TOKEN, "sendPhoto", formData);
-  const telegramPhotos = response.result?.photo ? [...response.result.photo] : [];
-  const telegramPhoto = telegramPhotos.sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0))[0];
-
-  if (!response.ok || !response.result?.message_id || !telegramPhoto?.file_id) {
-    throw new Error("Telegram did not return a valid business photo file_id.");
-  }
-
-  await tgCallJson(env.BUSINESS_BOT_TOKEN, "deleteMessage", {
-    chat_id: ownerTelegramId,
-    message_id: response.result.message_id,
-  }).catch((error) => {
-    console.log("deleteMessage error:", error);
-    return null;
-  });
-
-  return {
-    fileId: telegramPhoto.file_id,
-    fileUniqueId: telegramPhoto.file_unique_id ?? null,
-  };
 }
 
 function summarizePayments(totalAmount: number, payments: PaymentRow[]): PaymentSummary {
@@ -2018,6 +1944,11 @@ async function replaceServiceBindings(db: D1Database, serviceId: number, staffId
 async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: string): Promise<CrmPayload> {
   const weekday = new Date(`${selectedDate}T00:00:00`).getDay();
 
+  // Which images this business has, WITHOUT reading any blob — the ids alone answer "show a
+  // photo or fall back to initials?", and pulling the bytes into every payload would put a
+  // logo and a photo per specialist on the wire on every poll.
+  const imageIds = await storedImageIds(env, business.id);
+
   const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes] =
     await Promise.all([
     env.DB
@@ -2300,9 +2231,8 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       name: person.name,
       role: person.role?.trim() || serviceNames[0] || "",
       phone: person.phone,
-      // A flag, not the file_id: the CRM builds /api/staff/<id>/photo from it, and the file_id
-      // is a Telegram token that has no business leaving the server.
-      hasPhoto: Boolean(person.photo_file_id),
+      // A flag, not an id. Either store counts; the CRM asks /api/staff/<id>/photo for bytes.
+      hasPhoto: imageIds.has(person.id) || Boolean(person.photo_file_id),
       linkedServices: serviceNames,
       totalLinkedServices: serviceNames.length,
       weeklySlotCount: weeklySlots.reduce((sum, day) => sum + day.slots.length, 0),
@@ -2517,7 +2447,10 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       phone: business.phone,
       schedule: business.schedule,
       description: business.description,
-      photoFileId: business.photo_file_id,
+      // True when EITHER store has one: D1 for anything uploaded through the CRM, the old
+      // Telegram file_id for a business that uploaded through the bot. The client only needs
+      // "is there a logo", and it asks /api/business/photo for the bytes.
+      photoFileId: imageIds.has(LOGO_STAFF_ID) ? "stored" : business.photo_file_id,
       photoFileUniqueId: business.photo_file_unique_id,
       // Normalised here, not on the client: NULL means the business predates the feature and
       // must keep the page it already had.
@@ -3052,21 +2985,23 @@ async function updateBusinessProfile(env: Env, business: BusinessRow, input: Upd
   return json({ ok: true });
 }
 
-async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Request) {
-  if (!env.BUSINESS_BOT_TOKEN) {
-    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
-  }
+/**
+ * Images live in D1, keyed by business and staff id (0 = the business logo).
+ *
+ * They used to be pushed to Telegram and referenced by file_id. That path needed a bot token
+ * AND a real chat to send to — and a web-signed-up business has a synthetic negative
+ * telegram_id, so there was no such chat and the upload could never succeed. See
+ * migrations/2026-07-30-crm-images.sql.
+ */
+const LOGO_STAFF_ID = 0;
 
-  const formData = await request.formData();
-  const photo = formData.get("photo");
-
+/** Validate, then store. Shared by the logo and specialist photos so there is one way in. */
+async function storeImage(env: Env, businessId: number, staffId: number, photo: unknown) {
   if (!(photo instanceof File)) {
     return json({ error: "Photo file is required" }, { status: 400 });
   }
 
-  // Decided on the BYTES, never on photo.name or photo.type — both are set by whoever is
-  // uploading, so `logo.png` with `Content-Type: image/png` says nothing about the content.
-  // The browser runs the same check for a quick error, but this is the one that counts.
+  // On the BYTES, never on photo.name or photo.type — both come from the request.
   const bytes = new Uint8Array(await photo.arrayBuffer());
   const check = checkImageBytes(bytes, bytes.byteLength);
   if (!check.ok) {
@@ -3076,34 +3011,94 @@ async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Req
     );
   }
 
-  // Rebuilt from the bytes we validated, with a name and type WE chose. Forwarding the
-  // original File would hand Telegram — and anything downstream reading the filename — a
-  // string from the request, which is how a path or a second extension gets in.
-  const safePhoto = new File([bytes], `logo.${IMAGE_EXTENSION[check.kind]}`, { type: check.kind });
-
-  const uploaded = await uploadPhotoToBusinessBot(env, business, safePhoto);
+  // Tighter than the 4 MB the shared validator allows, because this row goes in D1 and gets
+  // read back whole. The browser downscales to 512px before uploading, which lands far under
+  // this — so hitting it means something bypassed that step.
+  if (bytes.byteLength > MAX_STORED_IMAGE_BYTES) {
+    return json(
+      { error: IMAGE_REJECTION_MESSAGE.too_large, code: "image_too_large" },
+      { status: 413 }
+    );
+  }
 
   await env.DB
-    .prepare("UPDATE businesses SET photo_file_id = ?, photo_file_unique_id = ? WHERE id = ?")
-    .bind(uploaded.fileId, uploaded.fileUniqueId, business.id)
+    .prepare(
+      `INSERT OR REPLACE INTO crm_images (business_id, staff_id, content_type, bytes, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'))`
+    )
+    .bind(businessId, staffId, check.kind, bytes)
     .run();
 
   return json({ ok: true }, { status: 201 });
 }
 
+/** 512 KB stored. A 512px logo is a small fraction of this; D1's own blob ceiling is 2 MB. */
+const MAX_STORED_IMAGE_BYTES = 512 * 1024;
+
+async function deleteImage(env: Env, businessId: number, staffId: number) {
+  await env.DB
+    .prepare("DELETE FROM crm_images WHERE business_id = ? AND staff_id = ?")
+    .bind(businessId, staffId)
+    .run();
+  return json({ ok: true });
+}
+
 /**
- * A photo for one specialist.
+ * Serve a stored image.
  *
- * Everything about the file is decided by the same code that guards the business logo — byte
- * sniffing, the 4 MB cap, the rebuilt File — so there is no second, weaker path into storage.
- * The only thing added here is the ownership check: the staff row has to belong to the caller's
+ * Content-Type comes from the row, which was written from server-side sniffing, and is passed
+ * through safeImageContentType anyway so the header can only ever be one of three values.
+ * `nosniff` is what keeps a bad row inert rather than executable in a visitor's browser.
+ */
+async function serveStoredImage(env: Env, businessId: number, staffId: number) {
+  const row = await env.DB
+    .prepare("SELECT content_type, bytes FROM crm_images WHERE business_id = ? AND staff_id = ? LIMIT 1")
+    .bind(businessId, staffId)
+    .first<{ content_type: string; bytes: ArrayBuffer | null }>();
+
+  if (!row?.bytes) return null;
+
+  const contentType = safeImageContentType(row.content_type);
+  const headers = new Headers();
+  headers.set("content-type", contentType);
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-disposition", `inline; filename="image.${IMAGE_EXTENSION[contentType]}"`);
+  headers.set("cache-control", "public, max-age=300");
+  return new Response(row.bytes, { status: 200, headers });
+}
+
+/** Which staff ids have a stored photo, plus whether the business has a logo. One cheap query. */
+async function storedImageIds(env: Env, businessId: number) {
+  try {
+    const rows = await env.DB
+      .prepare("SELECT staff_id FROM crm_images WHERE business_id = ?")
+      .bind(businessId)
+      .all<{ staff_id: number }>();
+    return new Set((rows.results ?? []).map((r) => Number(r.staff_id)));
+  } catch {
+    // Swallowed ON PURPOSE, and only here. This runs inside getCrmPayload, so a throw takes
+    // the whole CRM down with a 500 — which is exactly the outage a missing migration caused
+    // once already. An absent crm_images table degrades to "nobody has a logo", which shows
+    // initials instead of images and breaks nothing else.
+    //
+    // The upload and serve paths deliberately do NOT do this: they are user-initiated, and a
+    // silent failure there would look like the upload worked.
+    return new Set<number>();
+  }
+}
+
+async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Request) {
+  const formData = await request.formData();
+  return await storeImage(env, business.id, LOGO_STAFF_ID, formData.get("photo"));
+}
+
+/**
+ * A photo for one specialist. Same validation and storage as the logo, so there is one way in.
+ *
+ * The ownership check is the only addition: the staff row has to belong to the caller's
  * business, or an owner could set photos on another shop's team by id.
  */
 async function uploadStaffPhoto(env: Env, business: BusinessRow, staffId: number, request: Request) {
-  if (!env.BUSINESS_BOT_TOKEN) {
-    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
-  }
-
   const staff = await env.DB
     .prepare("SELECT id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(staffId, business.id)
@@ -3111,69 +3106,36 @@ async function uploadStaffPhoto(env: Env, business: BusinessRow, staffId: number
   if (!staff) return json({ error: "Employee not found", code: "invalid_staff" }, { status: 404 });
 
   const formData = await request.formData();
-  const photo = formData.get("photo");
-  if (!(photo instanceof File)) {
-    return json({ error: "Photo file is required" }, { status: 400 });
-  }
-
-  const bytes = new Uint8Array(await photo.arrayBuffer());
-  const check = checkImageBytes(bytes, bytes.byteLength);
-  if (!check.ok) {
-    return json(
-      { error: IMAGE_REJECTION_MESSAGE[check.reason], code: `image_${check.reason}` },
-      { status: check.reason === "too_large" ? 413 : 415 }
-    );
-  }
-
-  const safePhoto = new File([bytes], `staff-${staffId}.${IMAGE_EXTENSION[check.kind]}`, { type: check.kind });
-  const uploaded = await uploadPhotoToBusinessBot(env, business, safePhoto);
-
-  await env.DB
-    .prepare("UPDATE staff SET photo_file_id = ?, photo_file_unique_id = ? WHERE id = ? AND business_id = ?")
-    .bind(uploaded.fileId, uploaded.fileUniqueId, staffId, business.id)
-    .run();
-
-  return json({ ok: true }, { status: 201 });
+  return await storeImage(env, business.id, staffId, formData.get("photo"));
 }
 
 async function deleteStaffPhoto(env: Env, business: BusinessRow, staffId: number) {
-  // Scoped by business_id in the WHERE rather than checked first: one statement that cannot
-  // match another shop's row is stronger than a check and an update that could drift apart.
-  await env.DB
-    .prepare("UPDATE staff SET photo_file_id = NULL, photo_file_unique_id = NULL WHERE id = ? AND business_id = ?")
-    .bind(staffId, business.id)
-    .run();
-  return json({ ok: true });
+  return await deleteImage(env, business.id, staffId);
 }
 
 /**
- * Stream one specialist's photo.
+ * One specialist's photo.
  *
- * 404 for a staff id belonging to another business, deliberately indistinguishable from a staff
- * member with no photo — this is reachable unauthenticated via the public route, and a
- * different answer for the two cases would let anyone enumerate which ids exist.
+ * 404 for a staff id belonging to another business, deliberately indistinguishable from a
+ * specialist with no photo — this is reachable unauthenticated via the public route, and a
+ * different answer for the two cases would let anyone enumerate which ids exist. Keying the
+ * row on business_id gives that for free.
  */
 async function proxyStaffPhoto(env: Env, businessId: number, staffId: number) {
-  if (!env.BUSINESS_BOT_TOKEN) {
-    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
-  }
-  const staff = await env.DB
-    .prepare("SELECT photo_file_id FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
-    .bind(staffId, businessId)
-    .first<{ photo_file_id: string | null }>();
-  if (!staff?.photo_file_id) return new Response("Not found", { status: 404 });
-
-  const telegramFile = await getTelegramFileResponse(env.BUSINESS_BOT_TOKEN, staff.photo_file_id);
-  return new Response(telegramFile.body, { status: 200, headers: imageResponseHeaders(telegramFile) });
+  // 0 is the logo's slot, so a request for /api/staff/0/photo must not return it.
+  if (staffId === LOGO_STAFF_ID) return new Response("Not found", { status: 404 });
+  const stored = await serveStoredImage(env, businessId, staffId);
+  return stored ?? new Response("Not found", { status: 404 });
 }
 
 async function deleteBusinessPhoto(env: Env, business: BusinessRow) {
+  // Clears BOTH stores. A business that uploaded through the Telegram bot has a file_id on
+  // `businesses`, and removing only the D1 row would let that old photo reappear.
   await env.DB
     .prepare("UPDATE businesses SET photo_file_id = NULL, photo_file_unique_id = NULL WHERE id = ?")
     .bind(business.id)
     .run();
-
-  return json({ ok: true });
+  return await deleteImage(env, business.id, LOGO_STAFF_ID);
 }
 
 /**
@@ -3218,13 +3180,19 @@ function imageResponseHeaders(upstream: Response) {
   return headers;
 }
 
+/**
+ * The business logo.
+ *
+ * D1 first. Telegram is a fallback only for a business whose photo was uploaded through the bot
+ * before this table existed — that path still needs BUSINESS_BOT_TOKEN, so it 404s instead of
+ * 503ing when the token is absent: a missing logo is not worth breaking a page over.
+ */
 async function proxyBusinessPhoto(env: Env, business: BusinessRow) {
-  if (!business.photo_file_id) {
-    return new Response("Not found", { status: 404 });
-  }
+  const stored = await serveStoredImage(env, business.id, LOGO_STAFF_ID);
+  if (stored) return stored;
 
-  if (!env.BUSINESS_BOT_TOKEN) {
-    return json({ error: "BUSINESS_BOT_TOKEN is not configured for CRM." }, { status: 503 });
+  if (!business.photo_file_id || !env.BUSINESS_BOT_TOKEN) {
+    return new Response("Not found", { status: 404 });
   }
 
   const telegramFile = await getTelegramFileResponse(env.BUSINESS_BOT_TOKEN, business.photo_file_id);

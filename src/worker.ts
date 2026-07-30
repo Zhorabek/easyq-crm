@@ -1112,6 +1112,16 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
   return new Response(null, { status: 303, headers: { location: "/", "set-cookie": clearSessionCookie(request) } });
 }
 
+/**
+ * Signup captcha, currently OFF at the client's request.
+ *
+ * A constant rather than an env var on purpose: turning this back on is a code change that
+ * goes through review and CI, not a dashboard toggle somebody forgets they flipped. The
+ * captcha module, its table and the landing's field all stay in place, so flipping this to
+ * `true` restores it with no other edit.
+ */
+const SIGNUP_CAPTCHA_ENABLED = false;
+
 // Public sign-up endpoint — called cross-origin by the static landing's /signup wizard.
 // Fetch sends no credentials, so a permissive CORS allow-list is sufficient.
 const SIGNUP_CORS: Record<string, string> = {
@@ -1487,22 +1497,31 @@ async function signupBusiness(env: Env, request: Request) {
   const language = input.lang === "ru" || input.lang === "uz" ? input.lang : null;
   const slug = String(input.slug ?? "").trim().toLowerCase();
 
-  // Captcha first: it is the cheapest way to turn a bot away before any row is written.
-  const captcha = await verifyCaptcha(
-    env.DB,
-    request,
-    String(input.captchaToken ?? ""),
-    String(input.captchaAnswer ?? ""),
-    env.CRM_SESSION_SECRET
-  );
-  if (!captcha.ok) {
-    const message =
-      captcha.code === "captcha_expired"
-        ? "The captcha expired. Please try the new one."
-        : captcha.code === "captcha_replay"
-          ? "That captcha was already used. Please try the new one."
-          : "The captcha answer is incorrect.";
-    return json({ error: message, code: captcha.code }, { status: 400, headers: SIGNUP_CORS });
+  // Captcha is the cheapest way to turn a bot away before any row is written, but it is
+  // OFF at the client's request. Turned off behind a flag rather than deleted, because
+  // this is temporary — flip SIGNUP_CAPTCHA_ENABLED to true to bring it back, and the
+  // landing still sends captchaToken/captchaAnswer so nothing else has to change.
+  //
+  // While it is off, POST /api/signup is completely unauthenticated and creates a `users`
+  // row and a `businesses` row per call. Nothing else stands between a script and the
+  // table. See TODO.md.
+  if (SIGNUP_CAPTCHA_ENABLED) {
+    const captcha = await verifyCaptcha(
+      env.DB,
+      request,
+      String(input.captchaToken ?? ""),
+      String(input.captchaAnswer ?? ""),
+      env.CRM_SESSION_SECRET
+    );
+    if (!captcha.ok) {
+      const message =
+        captcha.code === "captcha_expired"
+          ? "The captcha expired. Please try the new one."
+          : captcha.code === "captcha_replay"
+            ? "That captcha was already used. Please try the new one."
+            : "The captcha answer is incorrect.";
+      return json({ error: message, code: captcha.code }, { status: 400, headers: SIGNUP_CORS });
+    }
   }
 
   if (input.acceptedTerms !== true) {

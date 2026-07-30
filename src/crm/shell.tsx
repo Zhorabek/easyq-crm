@@ -55,7 +55,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
       {/* business header — a static header for real businesses; the branch switcher is demo-only */}
       {!demo ? (
         <div data-tour="biz-header" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: 'rgba(255,255,255,.05)', marginBottom: 16 }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent)', display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--accent-ink)' }}>
+          <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-nav)', display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--accent-nav-ink)' }}>
             <Ic name="grid" size={17} stroke={2} />
           </span>
           <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
@@ -66,7 +66,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
       ) : (
       <div ref={bRef} style={{ position: 'relative', marginBottom: 16 }}>
         <button onClick={() => setBranchOpen((o) => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 12, background: branchOpen ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.05)', textAlign: 'left' }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: curBranch ? 'linear-gradient(135deg,#CBA988,#9c7a58)' : 'var(--accent)', display: 'grid', placeItems: 'center', flex: 'none', color: curBranch ? '#2a1d10' : 'var(--accent-ink)' }}>
+          <span style={{ width: 34, height: 34, borderRadius: 9, background: curBranch ? 'linear-gradient(135deg,#CBA988,#9c7a58)' : 'var(--accent-nav)', display: 'grid', placeItems: 'center', flex: 'none', color: curBranch ? '#2a1d10' : 'var(--accent-nav-ink)' }}>
             <Ic name={curBranch ? 'scissors' : 'grid'} size={17} stroke={2} />
           </span>
           <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
@@ -83,14 +83,14 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
               const on = branch === idx;
               return (
                 <button key={i} onClick={() => { setBranch(idx); setBranchOpen(false); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 9, textAlign: 'left', background: on ? 'rgba(180,217,78,.16)' : 'transparent' }}>
-                  <span style={{ width: 26, height: 26, borderRadius: 7, background: b.all ? 'var(--accent)' : 'linear-gradient(135deg,#CBA988,#9c7a58)', color: b.all ? 'var(--accent-ink)' : '#2a1d10', display: 'grid', placeItems: 'center', flex: 'none' }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 7, background: b.all ? 'var(--accent-nav)' : 'linear-gradient(135deg,#CBA988,#9c7a58)', color: b.all ? 'var(--accent-nav-ink)' : '#2a1d10', display: 'grid', placeItems: 'center', flex: 'none' }}>
                     <Ic name={b.all ? 'grid' : 'pin'} size={14} stroke={2} />
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--accent)' : '#fff', whiteSpace: 'nowrap' }}>{b.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--accent-nav)' : '#fff', whiteSpace: 'nowrap' }}>{b.name}</div>
                     {!b.all && <div className="tnum" style={{ fontSize: 10.5, color: 'var(--on-sidebar-2)' }}>{b.today} · {b.staff} {t.nav.staff.toLowerCase()}</div>}
                   </div>
-                  {on && <Ic name="check" size={15} stroke={2.6} style={{ color: 'var(--accent)', flex: 'none' }} />}
+                  {on && <Ic name="check" size={15} stroke={2.6} style={{ color: 'var(--accent-nav)', flex: 'none' }} />}
                 </button>
               );
             })}
@@ -108,7 +108,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
               data-tour={`nav-${key}`}
               onClick={() => setActive(key)}
               className={`crm-navbtn${on ? ' crm-navbtn--on' : ''}`}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, textAlign: 'left', fontSize: 14.5, fontWeight: on ? 800 : 600, color: on ? 'var(--accent-ink)' : 'var(--on-sidebar-2)', background: on ? 'var(--accent)' : 'transparent', transition: 'color .15s', flex: 'none' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, textAlign: 'left', fontSize: 14.5, fontWeight: on ? 800 : 600, color: on ? 'var(--accent-nav-ink)' : 'var(--on-sidebar-2)', background: on ? 'var(--accent-nav)' : 'transparent', transition: 'color .15s', flex: 'none' }}
             >
               <Ic name={key} size={19} stroke={on ? 2.2 : 1.9} />
               {t.nav[key]}
@@ -122,7 +122,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
           {CRM_LANGS.map((L) => {
             const on = L.code === lang;
             return (
-              <button key={L.code} onClick={() => setLang(L.code)} style={{ flex: 1, fontSize: 13, fontWeight: 700, padding: '9px 0', borderRadius: 9, color: on ? 'var(--accent-ink)' : 'var(--on-sidebar-2)', background: on ? 'var(--accent)' : 'rgba(255,255,255,.06)' }}>
+              <button key={L.code} onClick={() => setLang(L.code)} style={{ flex: 1, fontSize: 13, fontWeight: 700, padding: '9px 0', borderRadius: 9, color: on ? 'var(--accent-nav-ink)' : 'var(--on-sidebar-2)', background: on ? 'var(--accent-nav)' : 'rgba(255,255,255,.06)' }}>
                 {L.label}
               </button>
             );
@@ -141,7 +141,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
             <Avatar name="Sardor Karimov" color="#B4D94E" size={34} />
             <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>Sardor K.</div>
-              <div style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.roles.viewAs} {roleNames[role]}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--accent-nav)', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.roles.viewAs} {roleNames[role]}</div>
             </div>
             <Ic name="chevD" size={14} style={{ color: 'var(--on-sidebar-2)', flex: 'none', transform: roleOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
           </button>
@@ -152,14 +152,14 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
                 const on = role === r;
                 return (
                   <button key={r} onClick={() => { setRole?.(r); setRoleOpen(false); setActive('dashboard'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 9, textAlign: 'left', background: on ? 'rgba(180,217,78,.16)' : 'transparent' }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(255,255,255,.08)', color: on ? 'var(--accent)' : '#fff', display: 'grid', placeItems: 'center', flex: 'none' }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(255,255,255,.08)', color: on ? 'var(--accent-nav)' : '#fff', display: 'grid', placeItems: 'center', flex: 'none' }}>
                       <Ic name={r === 'owner' ? 'loyalty' : r === 'manager' ? 'customers' : 'staff'} size={14} stroke={2} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--accent)' : '#fff', whiteSpace: 'nowrap' }}>{roleNames[r]}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--accent-nav)' : '#fff', whiteSpace: 'nowrap' }}>{roleNames[r]}</div>
                       <div style={{ fontSize: 10.5, color: 'var(--on-sidebar-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.roles.roleDesc[r]}</div>
                     </div>
-                    {on && <Ic name="check" size={15} stroke={2.6} style={{ color: 'var(--accent)', flex: 'none' }} />}
+                    {on && <Ic name="check" size={15} stroke={2.6} style={{ color: 'var(--accent-nav)', flex: 'none' }} />}
                   </button>
                 );
               })}
@@ -177,7 +177,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
               <Avatar name={staffName || bizName || 'EasyQ'} color="#B4D94E" size={34} />
               <div style={{ minWidth: 0, flex: 1, lineHeight: 1.2 }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffName || bizName}</div>
-                <div style={{ fontSize: 10.5, color: role === 'owner' ? 'var(--on-sidebar-2)' : 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}>{roleNames[role]}</div>
+                <div style={{ fontSize: 10.5, color: role === 'owner' ? 'var(--on-sidebar-2)' : 'var(--accent-nav)', fontWeight: 700, whiteSpace: 'nowrap' }}>{roleNames[role]}</div>
               </div>
               <button onClick={logout} title={t.set.logout} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.06)', color: 'var(--on-sidebar-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
                 <Ic name="logout" size={16} />
@@ -295,7 +295,7 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
         </button>
         <NotifBell />
         {action && (
-          <button onClick={action.onClick} className="crm-addbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, padding: '10px 16px', borderRadius: 11, whiteSpace: 'nowrap', boxShadow: '0 6px 16px -8px rgba(132,169,46,.6)', flex: 'none' }}>
+          <button onClick={action.onClick} className="crm-addbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, padding: '10px 16px', borderRadius: 11, whiteSpace: 'nowrap', boxShadow: '0 6px 16px -8px color-mix(in srgb, var(--accent) 60%, transparent)', flex: 'none' }}>
             <Ic name="plus" size={17} stroke={2.4} />
             <span className="crm-addlabel">{action.label}</span>
           </button>

@@ -40,6 +40,7 @@ import { DataCtx, type DataValue } from './crm/data';
 import { Toast } from './crm/ui';
 import { Tour } from './crm/Tour';
 import { Sidebar, Topbar } from './crm/shell';
+import { useBrandAccent } from './crm/brand-shell';
 import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
 import {
   BookingDetailModal,
@@ -178,6 +179,9 @@ export default function App() {
   const t = CRM_T[lang] || CRM_T.uz;
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+  // The business's accent, on the CRM itself and not only the booking page. Accent only —
+  // see brand-shell.ts for why the surfaces stay with the Appearance toggle.
+  useBrandAccent(payload?.business.brandTheme?.accent ?? payload?.business.brandColor, theme);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => {
@@ -466,7 +470,7 @@ export default function App() {
             <input className="crm-auth-input" value={loginForm.username} onChange={(e) => setLoginForm((c) => ({ ...c, username: e.target.value }))} placeholder={lt.set.username} autoComplete="username" />
             <input className="crm-auth-input" type="password" value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
             {loginError && <div style={{ fontSize: 13, color: 'var(--rose)', fontWeight: 700 }}>{loginError}</div>}
-            <button type="submit" disabled={authSubmitting} style={{ marginTop: 4, padding: '13px', borderRadius: 11, fontSize: 15, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', boxShadow: '0 8px 18px -8px rgba(132,169,46,.6)' }}>
+            <button type="submit" disabled={authSubmitting} style={{ marginTop: 4, padding: '13px', borderRadius: 11, fontSize: 15, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', boxShadow: '0 8px 18px -8px color-mix(in srgb, var(--accent) 60%, transparent)' }}>
               {authSubmitting ? '…' : LOGIN_LABEL[lang]}
             </button>
           </form>

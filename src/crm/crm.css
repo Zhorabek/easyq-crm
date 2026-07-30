@@ -18,6 +18,13 @@
   --accent-ink: #1a2406;
   --accent-tint: #f1f7de;
 
+  /* The sidebar's accent. Separate from --accent because the sidebar is dark navy in both
+     light and dark themes, so a business whose brand is a dark colour would paint an
+     invisible active nav item. Derived against --sidebar in brand-shell.ts; these defaults
+     match --accent, which already reads well on the navy. */
+  --accent-nav: #b4d94e;
+  --accent-nav-ink: #1a2406;
+
   --blue: #3b82f6;
   --blue-t: #e8f1fe;
   --violet: #8b5cf6;
@@ -182,8 +189,8 @@ a {
   transition: color 0.15s !important;
 }
 .crm-navbtn--on {
-  background: var(--accent) !important;
-  color: var(--accent-ink) !important;
+  background: var(--accent-nav) !important;
+  color: var(--accent-nav-ink) !important;
 }
 .crm-navbtn:hover:not(.crm-navbtn--on):not(.crm-navbtn--on2) {
   background-color: rgba(255, 255, 255, 0.06) !important;

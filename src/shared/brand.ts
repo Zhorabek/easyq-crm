@@ -219,6 +219,36 @@ function isDarkBackground(bg: Rgb) {
   return relativeLuminance(bg) < 0.22;
 }
 
+/**
+ * A filled chip of the brand on a permanently dark surface — the CRM sidebar's active nav
+ * item and its logo tile — plus the text colour to put on it.
+ *
+ * `brandTokens` cannot answer this on its own. Its `accentDeep` clears the *background*
+ * floor and stops, which for a dark brand on navy lands around mid-grey: visible against the
+ * sidebar, but the one zone where neither near-black nor white text clears AA. So the fill
+ * has two constraints at once — apart from the sidebar, and readable under its own label —
+ * and it is walked toward white to satisfy both.
+ *
+ * Toward white specifically, not toward "whichever pole contrasts better": the surface here
+ * is always dark, so a light fill is the only direction that can separate from it, and it is
+ * what the default lime already does.
+ */
+export function accentOnDark(color: string | null | undefined, surface: string): { fill: string; ink: string } {
+  const bg = parseHexColor(surface) ?? NEAR_BLACK;
+  const base = parseHexColor(color ?? "") ?? parseHexColor(DEFAULT_BRAND_COLOR)!;
+  const STEPS = 20;
+  for (let step = 0; step <= STEPS; step++) {
+    const fill = step === 0 ? base : lighten(base, step / STEPS);
+    const label = contrastRatio(fill, NEAR_BLACK) >= contrastRatio(fill, NEAR_WHITE) ? NEAR_BLACK : NEAR_WHITE;
+    if (contrastRatio(fill, bg) >= MIN_MUTED_CONTRAST && contrastRatio(label, fill) >= MIN_TEXT_CONTRAST) {
+      return { fill: toHex(fill), ink: toHex(label) };
+    }
+  }
+  // White satisfies both against any dark surface, so this is a real fallback rather than a
+  // shrug: 19:1 apart from the navy, and near-black text on it is 18:1.
+  return { fill: toHex(NEAR_WHITE), ink: toHex(NEAR_BLACK) };
+}
+
 export function brandTokens(input: Partial<BrandTheme> | null | undefined): BrandTokens {
   const bg = parseHexColor(input?.bg ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.bg)!;
   const ink = parseHexColor(input?.ink ?? "") ?? parseHexColor(DEFAULT_BRAND_THEME.ink)!;

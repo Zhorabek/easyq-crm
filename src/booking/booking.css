@@ -326,7 +326,9 @@
   font-weight: 800;
   color: var(--accent-ink);
   background: var(--accent);
-  box-shadow: 0 10px 24px -12px rgba(132, 169, 46, 0.7);
+  /* Tinted from the accent, not the old hardcoded lime: this page takes the business's
+     brand, so a fixed green glow sat under whatever colour they actually picked. */
+  box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 65%, transparent);
   cursor: pointer;
   margin-top: 4px;
 }

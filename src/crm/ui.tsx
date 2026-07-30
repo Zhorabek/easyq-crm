@@ -325,7 +325,7 @@ export function FooterBtns({ onClose, submitLabel, onSubmit, disabled }: { onClo
       <button
         onClick={onSubmit}
         disabled={disabled}
-        style={{ flex: 1, padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: disabled ? 'var(--ink-3)' : 'var(--accent-ink)', background: disabled ? 'var(--panel-2)' : 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: disabled ? 'none' : '0 6px 16px -8px rgba(132,169,46,.6)', cursor: disabled ? 'not-allowed' : 'pointer' }}
+        style={{ flex: 1, padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: disabled ? 'var(--ink-3)' : 'var(--accent-ink)', background: disabled ? 'var(--panel-2)' : 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: disabled ? 'none' : '0 6px 16px -8px color-mix(in srgb, var(--accent) 60%, transparent)', cursor: disabled ? 'not-allowed' : 'pointer' }}
       >
         <Ic name="check" size={17} stroke={2.4} />
         {submitLabel}

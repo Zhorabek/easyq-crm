@@ -179,7 +179,7 @@ export function Tour({ open, onClose, setActive }: { open: boolean; onClose: () 
             )}
             <button
               onClick={next}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', padding: '9px 16px', borderRadius: 10, boxShadow: '0 6px 16px -8px rgba(132,169,46,.6)' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', padding: '9px 16px', borderRadius: 10, boxShadow: '0 6px 16px -8px color-mix(in srgb, var(--accent) 60%, transparent)' }}
             >
               {isLast ? tour.done : tour.next}
               {!isLast && <Ic name="chevR" size={15} stroke={2.4} />}

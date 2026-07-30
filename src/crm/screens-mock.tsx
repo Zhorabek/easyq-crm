@@ -168,7 +168,7 @@ export function Payroll() {
             <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 700 }}>{p.total} · {p.month}</div>
             <div className="tnum" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.03em', marginTop: 2 }}>{fmtK(total)} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 700 }}>UZS</span></div>
           </div>
-          <button onClick={() => notify(p.paidToast)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14.5, padding: '12px 22px', borderRadius: 12, boxShadow: '0 8px 18px -8px rgba(132,169,46,.6)' }}>
+          <button onClick={() => notify(p.paidToast)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14.5, padding: '12px 22px', borderRadius: 12, boxShadow: '0 8px 18px -8px color-mix(in srgb, var(--accent) 60%, transparent)' }}>
             <Ic name="finance" size={17} stroke={2.2} />{p.payAll}
           </button>
         </div>
@@ -333,7 +333,7 @@ export function Marketing() {
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 8 }}>{m.msg}</div>
           <textarea value={msg} onChange={(e) => setMsg(e.target.value)} placeholder={m.msgPh} rows={4} style={{ width: '100%', border: '1.5px solid var(--line-2)', background: 'var(--panel-2)', color: 'var(--ink)', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontWeight: 500, outline: 'none', fontFamily: 'var(--font)', resize: 'vertical', lineHeight: 1.5 }} />
-          <button onClick={send} disabled={!msg.trim()} style={{ marginTop: 16, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 800, fontSize: 15, padding: '13px', borderRadius: 12, background: msg.trim() ? 'var(--accent)' : 'var(--panel-2)', color: msg.trim() ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: msg.trim() ? 'pointer' : 'not-allowed', boxShadow: msg.trim() ? '0 8px 18px -8px rgba(132,169,46,.6)' : 'none' }}>
+          <button onClick={send} disabled={!msg.trim()} style={{ marginTop: 16, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 800, fontSize: 15, padding: '13px', borderRadius: 12, background: msg.trim() ? 'var(--accent)' : 'var(--panel-2)', color: msg.trim() ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: msg.trim() ? 'pointer' : 'not-allowed', boxShadow: msg.trim() ? '0 8px 18px -8px color-mix(in srgb, var(--accent) 60%, transparent)' : 'none' }}>
             <Ic name="send" size={17} stroke={2.2} />{m.send} · {fmt(reach)}
           </button>
         </Panel>

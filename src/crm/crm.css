@@ -381,9 +381,6 @@ a {
   color: var(--accent-ink);
   background: var(--accent);
 }
-.crm-auth-mark {
-  margin-bottom: 18px;
-}
 .crm-auth-title {
   margin: 0 0 4px;
   font-size: 23px;
@@ -418,25 +415,36 @@ a {
   display: flex;
 }
 /* Sits inside the field, so it cannot be mistaken for the submit button. The input keeps
-   room for it via padding-right rather than the button overlapping typed text — sized for
-   the longest of the three labels ("Ko‘rsatish"), not the English one. */
+   room for it via padding-right rather than the button overlapping typed text. A fixed
+   square now the label is an icon — the text version had to reserve room for the longest
+   translation and still guess at the rendered width. */
 .crm-auth-pw .crm-auth-input {
-  padding-right: 108px;
+  padding-right: 48px;
 }
 .crm-auth-reveal {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: 5px;
   transform: translateY(-50%);
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 10px;
-  border-radius: 8px;
-  color: var(--ink-2);
-  background: var(--panel);
-  border: 1px solid var(--line-2);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--ink-3);
+  background: transparent;
   cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+.crm-auth-reveal:hover {
+  color: var(--ink);
+  background: var(--panel);
+}
+/* On while the password is visible, so the state is readable without leaning on which of
+   the two eye glyphs is showing. */
+.crm-auth-reveal[aria-pressed='true'] {
+  color: var(--accent-deep);
+  background: var(--accent-tint);
 }
 .crm-auth-error {
   display: flex;

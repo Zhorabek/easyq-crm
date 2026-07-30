@@ -494,7 +494,6 @@ export default function App() {
               ))}
             </div>
 
-            <div className="crm-auth-mark"><CRMLogo on="light" /></div>
             <h2 className="crm-auth-title">{a.title}</h2>
             <p className="crm-auth-sub">{lt.set.credentialsSub}</p>
 
@@ -504,9 +503,17 @@ export default function App() {
                 <input className="crm-auth-input" type={showPassword ? 'text' : 'password'} value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
                 {/* Owner-issued temporary passwords are random strings typed on a phone, so
                     being able to see what you typed is the difference between one attempt
-                    and four. */}
-                <button type="button" className="crm-auth-reveal" onClick={() => setShowPassword((v) => !v)}>
-                  {showPassword ? a.hide : a.show}
+                    and four. The label survives as the accessible name and the tooltip —
+                    an icon-only control with no name is invisible to a screen reader. */}
+                <button
+                  type="button"
+                  className="crm-auth-reveal"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? a.hide : a.show}
+                  aria-pressed={showPassword}
+                  title={showPassword ? a.hide : a.show}
+                >
+                  <Ic name={showPassword ? 'eyeOff' : 'eye'} size={18} stroke={2} />
                 </button>
               </div>
               {loginError && <div className="crm-auth-error"><Ic name="bell" size={15} stroke={2.2} style={{ flex: 'none' }} />{loginError}</div>}

@@ -35,9 +35,10 @@ import type {
   ServiceCatalogItem,
 } from './types';
 import './crm/crm.css';
-import { CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role, type Theme } from './crm/i18n';
+import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role, type Theme } from './crm/i18n';
 import { DataCtx, type DataValue } from './crm/data';
-import { Toast } from './crm/ui';
+import { Ic } from './crm/icons';
+import { CRMLogo, Toast } from './crm/ui';
 import { Tour } from './crm/Tour';
 import { Sidebar, Topbar } from './crm/shell';
 import { useBrandAccent } from './crm/brand-shell';
@@ -139,6 +140,7 @@ export default function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // ---- ui prefs ----
   const [lang, setLangState] = useState<Lang>(() => lsGet('easyq_crm_lang', 'uz') as Lang);
@@ -453,27 +455,70 @@ export default function App() {
 
   if (!session) {
     const lt = CRM_T[lang];
+    const a = lt.auth;
+    const POINT_ICONS = ['calendar', 'customers', 'wallet'];
     return (
       <div className="crm-auth">
-        <div className="crm-auth-card">
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--accent)', display: 'grid', placeItems: 'center' }}>
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#1A2406" strokeWidth="2.4" /><path d="M15.5 15.5 L20 20" stroke="#1A2406" strokeWidth="2.6" strokeLinecap="round" /></svg>
-              </span>
-              <span style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-.03em', color: 'var(--ink)' }}>easy<span style={{ color: 'var(--accent-deep)' }}>Q</span></span>
-            </span>
+        <div className="crm-auth-shell">
+          {/* Product side. Deliberately the same navy as the signed-in sidebar, so the login
+              looks like the front door of the CRM rather than an unrelated form. Hidden on
+              narrow screens, where the space belongs to the keyboard and the two fields. */}
+          <aside className="crm-auth-hero">
+            <CRMLogo on="dark" />
+            <h1 className="crm-auth-tagline">{a.tagline}</h1>
+            <ul className="crm-auth-points">
+              {(a.points as string[]).map((point, i) => (
+                <li key={point}>
+                  <span className="crm-auth-point-ic"><Ic name={POINT_ICONS[i]} size={16} stroke={2.2} /></span>
+                  {point}
+                </li>
+              ))}
+            </ul>
+            <span className="crm-auth-domain">easyq.uz</span>
+          </aside>
+
+          <div className="crm-auth-form">
+            {/* Language first, and before sign-in on purpose: the CRM's own switcher lives
+                inside the sidebar, so until now someone whose Uzbek is shaky had to log in
+                through a language they could not read to reach the control that changes it. */}
+            <div className="crm-auth-langs">
+              {CRM_LANGS.map((L) => (
+                <button
+                  key={L.code}
+                  type="button"
+                  onClick={() => setLang(L.code)}
+                  className={`crm-auth-lang${lang === L.code ? ' crm-auth-lang--on' : ''}`}
+                >
+                  {L.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="crm-auth-mark"><CRMLogo on="light" /></div>
+            <h2 className="crm-auth-title">{a.title}</h2>
+            <p className="crm-auth-sub">{lt.set.credentialsSub}</p>
+
+            <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input className="crm-auth-input" value={loginForm.username} onChange={(e) => setLoginForm((c) => ({ ...c, username: e.target.value }))} placeholder={lt.set.username} autoComplete="username" autoCapitalize="none" spellCheck={false} />
+              <div className="crm-auth-pw">
+                <input className="crm-auth-input" type={showPassword ? 'text' : 'password'} value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
+                {/* Owner-issued temporary passwords are random strings typed on a phone, so
+                    being able to see what you typed is the difference between one attempt
+                    and four. */}
+                <button type="button" className="crm-auth-reveal" onClick={() => setShowPassword((v) => !v)}>
+                  {showPassword ? a.hide : a.show}
+                </button>
+              </div>
+              {loginError && <div className="crm-auth-error"><Ic name="bell" size={15} stroke={2.2} style={{ flex: 'none' }} />{loginError}</div>}
+              <button type="submit" disabled={authSubmitting} className="crm-auth-submit">
+                {authSubmitting ? '…' : LOGIN_LABEL[lang]}
+              </button>
+            </form>
+
+            {/* Staff cannot reset their own password — only an owner can issue a new one. Said
+                here because the alternative is the person retrying until they call someone. */}
+            <p className="crm-auth-help">{a.help}</p>
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, textAlign: 'center', margin: '0 0 4px', letterSpacing: '-.02em' }}>EasyQ CRM</h1>
-          <p style={{ textAlign: 'center', fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 600, margin: '0 0 22px' }}>{lt.set.credentialsSub}</p>
-          <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <input className="crm-auth-input" value={loginForm.username} onChange={(e) => setLoginForm((c) => ({ ...c, username: e.target.value }))} placeholder={lt.set.username} autoComplete="username" />
-            <input className="crm-auth-input" type="password" value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
-            {loginError && <div style={{ fontSize: 13, color: 'var(--rose)', fontWeight: 700 }}>{loginError}</div>}
-            <button type="submit" disabled={authSubmitting} style={{ marginTop: 4, padding: '13px', borderRadius: 11, fontSize: 15, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', boxShadow: '0 8px 18px -8px color-mix(in srgb, var(--accent) 60%, transparent)' }}>
-              {authSubmitting ? '…' : LOGIN_LABEL[lang]}
-            </button>
-          </form>
         </div>
       </div>
     );

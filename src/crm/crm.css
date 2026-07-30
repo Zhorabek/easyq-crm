@@ -268,16 +268,134 @@ a {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: radial-gradient(circle at 18% 12%, var(--accent-tint), transparent 42%), var(--bg);
+  /* Two soft washes rather than the single corner blob the bare card had: the page reads as
+     designed at a glance instead of as a form dropped on an empty background. */
+  background:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 46%),
+    radial-gradient(circle at 88% 92%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 44%),
+    var(--bg);
 }
-.crm-auth-card {
+.crm-auth-shell {
   width: 100%;
-  max-width: 420px;
+  max-width: 880px;
+  display: grid;
+  grid-template-columns: 1.02fr 1fr;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 24px;
   box-shadow: var(--shadow-lg);
-  padding: 32px;
+  overflow: hidden;
+}
+
+/* --- product side --- */
+.crm-auth-hero {
+  position: relative;
+  background: var(--sidebar);
+  padding: 38px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.crm-auth-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 82% 6%, color-mix(in srgb, var(--accent-nav) 20%, transparent), transparent 52%);
+  pointer-events: none;
+}
+.crm-auth-tagline {
+  position: relative;
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #fff;
+  max-width: 15em;
+}
+.crm-auth-points {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  /* Pushes the domain line to the bottom of the panel whatever the copy length, so the
+     three languages do not each need their own vertical tuning. */
+  margin-bottom: auto;
+}
+.crm-auth-points li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-sidebar);
+}
+.crm-auth-point-ic {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-nav);
+}
+.crm-auth-domain {
+  position: relative;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-sidebar-2);
+  letter-spacing: 0.02em;
+}
+
+/* --- form side --- */
+.crm-auth-form {
+  padding: 34px;
+  display: flex;
+  flex-direction: column;
+}
+.crm-auth-langs {
+  display: flex;
+  gap: 4px;
+  align-self: flex-end;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+.crm-auth-lang {
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 5px 11px;
+  border-radius: 999px;
+  color: var(--ink-3);
+  background: transparent;
+  cursor: pointer;
+}
+.crm-auth-lang--on {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.crm-auth-mark {
+  margin-bottom: 18px;
+}
+.crm-auth-title {
+  margin: 0 0 4px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+.crm-auth-sub {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-3);
 }
 .crm-auth-input {
   width: 100%;
@@ -294,6 +412,85 @@ a {
 .crm-auth-input:focus {
   border-color: var(--accent-deep);
   background: var(--panel);
+}
+.crm-auth-pw {
+  position: relative;
+  display: flex;
+}
+/* Sits inside the field, so it cannot be mistaken for the submit button. The input keeps
+   room for it via padding-right rather than the button overlapping typed text — sized for
+   the longest of the three labels ("Ko‘rsatish"), not the English one. */
+.crm-auth-pw .crm-auth-input {
+  padding-right: 108px;
+}
+.crm-auth-reveal {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+}
+.crm-auth-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rose);
+  background: var(--rose-t);
+  border: 1px solid var(--rose);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.crm-auth-submit {
+  margin-top: 4px;
+  padding: 13px;
+  border-radius: 11px;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--accent) 60%, transparent);
+  cursor: pointer;
+}
+.crm-auth-submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.crm-auth-help {
+  margin: 20px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+/* One column below the breakpoint, and the product panel goes away entirely. On a phone the
+   screen belongs to the two fields and the keyboard, and a marketing panel above them just
+   pushes the button under the fold. */
+@media (max-width: 760px) {
+  .crm-auth {
+    padding: 16px;
+  }
+  .crm-auth-shell {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+  }
+  .crm-auth-hero {
+    display: none;
+  }
+  .crm-auth-form {
+    padding: 26px 22px;
+  }
 }
 
 /* responsive */

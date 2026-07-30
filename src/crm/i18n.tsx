@@ -36,6 +36,13 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Sartaroshxona · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulug‘bek', type: 'Sartaroshxona · M. Ulug‘bek', staff: 5, today: 21 },
     ],
+    auth: {
+      title: 'Tizimga kirish',
+      tagline: 'Navbat, mijozlar va kassa — bitta joyda.',
+      points: ['Kunlik jadval va navbatlar', 'Mijozlar bazasi va tashriflar tarixi', 'Kassa, xizmatlar va xodimlar'],
+      show: 'Ko‘rsatish', hide: 'Yashirish',
+      help: 'Parolni yo‘qotdingizmi? Biznes egasidan yangi parol so‘rashingiz kerak.',
+    },
     roles: { owner: 'Egasi', manager: 'Menejer', specialist: 'Usta', viewAs: 'Ko‘rinish:', roleDesc: { owner: 'To‘liq kirish', manager: 'Navbat, to‘lov va jadval', specialist: 'Faqat o‘z jadvali' } },
     auto: {
       sub: 'Avtomatik eslatma va kampaniyalar', add: 'Qoida qo‘shish', active: 'Faol', sent: 'yuborilgan', trigger: 'Shart', channel: 'Kanal', enabled: 'Yoqilgan', toastOn: 'Qoida yoqildi', toastOff: 'Qoida o‘chirildi',
@@ -152,6 +159,13 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Чиланзар', type: 'Барбершоп · Чиланзар', staff: 3, today: 12 },
       { name: 'Мирзо Улугбек', type: 'Барбершоп · М. Улугбек', staff: 5, today: 21 },
     ],
+    auth: {
+      title: 'Вход в систему',
+      tagline: 'Расписание, клиенты и касса — в одном месте.',
+      points: ['Расписание дня и записи', 'База клиентов и история визитов', 'Касса, услуги и сотрудники'],
+      show: 'Показать', hide: 'Скрыть',
+      help: 'Забыли пароль? Его должен выдать заново владелец бизнеса.',
+    },
     roles: { owner: 'Владелец', manager: 'Менеджер', specialist: 'Мастер', viewAs: 'Просмотр:', roleDesc: { owner: 'Полный доступ', manager: 'Записи, платежи и график', specialist: 'Только своё расписание' } },
     auto: {
       sub: 'Автонапоминания и кампании', add: 'Добавить правило', active: 'Активно', sent: 'отправлено', trigger: 'Условие', channel: 'Канал', enabled: 'Включено', toastOn: 'Правило включено', toastOff: 'Правило выключено',
@@ -268,6 +282,13 @@ export const CRM_T: Record<Lang, any> = {
       { name: 'Chilonzor', type: 'Barbershop · Chilonzor', staff: 3, today: 12 },
       { name: 'Mirzo Ulugbek', type: 'Barbershop · M. Ulugbek', staff: 5, today: 21 },
     ],
+    auth: {
+      title: 'Sign in',
+      tagline: 'Bookings, clients and the cash desk — in one place.',
+      points: ['The day’s schedule and bookings', 'Client book and visit history', 'Cash desk, services and staff'],
+      show: 'Show', hide: 'Hide',
+      help: 'Lost your password? The business owner has to issue a new one.',
+    },
     roles: { owner: 'Owner', manager: 'Manager', specialist: 'Specialist', viewAs: 'View as:', roleDesc: { owner: 'Full access', manager: 'Bookings, payments & schedules', specialist: 'Own schedule only' } },
     auto: {
       sub: 'Automated reminders & campaigns', add: 'Add rule', active: 'Active', sent: 'sent', trigger: 'Trigger', channel: 'Channel', enabled: 'Enabled', toastOn: 'Rule enabled', toastOff: 'Rule disabled',

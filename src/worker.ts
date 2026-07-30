@@ -3015,8 +3015,17 @@ async function storeImage(env: Env, businessId: number, staffId: number, photo: 
   // read back whole. The browser downscales to 512px before uploading, which lands far under
   // this — so hitting it means something bypassed that step.
   if (bytes.byteLength > MAX_STORED_IMAGE_BYTES) {
+    // Its own message, not IMAGE_REJECTION_MESSAGE.too_large — that one names 4 MB, which is
+    // the SEND cap, and would have told somebody uploading a 1 MB file that it was over 4 MB.
+    //
+    // Reaching this at all means the browser's downscale did not run: the UI shrinks to 512px
+    // first, which lands far under this. The likeliest cause is a stale page, so the message
+    // says so rather than blaming the file.
     return json(
-      { error: IMAGE_REJECTION_MESSAGE.too_large, code: "image_too_large" },
+      {
+        error: "That image is too large to store (over 512 KB after processing). Reload the page and try again.",
+        code: "image_over_storage_cap",
+      },
       { status: 413 }
     );
   }

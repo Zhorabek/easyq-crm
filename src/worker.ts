@@ -1092,15 +1092,21 @@ const SIGNUP_CAPTCHA_ENABLED = false;
 /**
  * Telegram phone verification, currently OFF at the client's request.
  *
+ * ON since 2026-07-30, verified end to end before flipping: a nonce issued here, opened in
+ * @easyqueue_business_bot, confirmed by a shared contact, and read back as `verified` with the
+ * real number — 49 seconds, no HTTP between the two Workers.
+ *
  * While false, signup falls back to the demo code `1111`, shown on the form, and takes the
  * phone number from the request body. That is not verification of anything — it is a
- * placeholder so registration works with no bot, no secrets and no webhook.
+ * placeholder so registration works with no bot at all.
  *
- * A constant rather than an env var for the same reason as the captcha: bringing a control
- * back should go through review and CI. Setting VERIFY_BOT_TOKEN alone will NOT re-enable
- * it — flip this too, and the matching flag in easyq-landing's Signup.tsx.
+ * Turning it back off is safe at any time and needs nothing else changed: the landing still
+ * sends the demo code alongside the nonce, so the fallback path stays intact.
+ *
+ * A constant rather than an env var for the same reason as the captcha: changing a control
+ * like this should go through review and CI.
  */
-const PHONE_VERIFICATION_ENABLED = false;
+const PHONE_VERIFICATION_ENABLED = true;
 
 /** Accepted while PHONE_VERIFICATION_ENABLED is false. Displayed on the form. */
 const DEMO_SIGNUP_CODE = "1111";

@@ -125,37 +125,28 @@ Documented so nobody re-discovers them as defects.
 
 ---
 
-## Parked: Telegram signup verification
+## Telegram signup verification — SHIPPED 2026-07-30
 
-Branch **`telegram-otp`**, pushed in *both* `easyq-crm` and `easyq-landing`, not merged.
-Replaces the hard-coded `"1111"` signup code with Telegram contact sharing — the visitor
-taps a deep link and shares their number, so there is no code to intercept.
+The `1111` code is gone. A visitor opens a deep link into **@easyqueue_business_bot**, presses
+Start and taps "share my number"; Telegram vouches for the number and the bot writes it to
+`signup_verification`. There is no code to send, intercept or mistype.
 
-`main` still has the `1111` bypass (`PHONE_VERIFICATION_ENABLED = false`), so production is
-unaffected until this merges.
+The long-standing blocker — a bot has one webhook and this one's already points at
+`easyqueue-business-bot` — turned out to be the wrong problem to solve. All three Workers bind
+the same D1, so the bot writes the row directly and the CRM reads it: no second bot, no webhook
+to repoint, no HTTP between services, no shared secret.
 
-To resume, in this order:
+Handler: `easyqueue-business-bot/src/handlers/signup.handler.ts`. That repo now deploys from CI
+like this one.
 
-1. Create a bot with [@BotFather](https://t.me/BotFather), e.g. `easyq_verify_bot`.
-   It must be a **new** bot — a bot has one webhook, and reusing the business bot's would
-   take its updates away from the bot service that owns it.
-2. `npx wrangler secret put VERIFY_BOT_TOKEN`
-3. `npx wrangler secret put VERIFY_WEBHOOK_SECRET` (any random string you invent)
-4. `npm run db:migrate:remote:verification`
-5. Register the webhook:
-   ```
-   curl "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-     -d "url=https://crm.easyq.uz/api/telegram/verify-webhook" \
-     -d "secret_token=<SECRET>"
-   ```
-6. Merge both branches.
+**Signup records the real `telegram_id`.** Web signups used to get a synthetic negative id, so
+the business existed for the CRM and not for the bots — the same root cause as the logo upload
+that silently failed for months. An existing `users` row for that account is reused, since the
+column is UNIQUE.
 
-**Merging before steps 2–5 makes web signup return 503.** See the header comment in
-`src/server/verification.ts` for why a bot cannot simply message a phone number.
-
-The alternative the user preferred — a deep link into the existing `@easyqueue_business_bot`
-with no code at all — is blocked on that bot's webhook already being in use by
-`easyqueue-business-bot`, whose repo is not accessible from here.
+`VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET` are no longer read by the
+verification flow, and `/api/telegram/verify-webhook` is dead code kept only until someone
+confirms nothing else calls it.
 
 ---
 
@@ -250,4 +241,4 @@ All in `migrations/`.
 | `2026-07-28-brand-theme.sql` | `businesses.brand_theme` | yes |
 | `2026-07-30-booking-flow-and-staff-photo.sql` | `businesses.booking_flow`, `staff.photo_file_id`, `staff.photo_file_unique_id` | yes |
 | `2026-07-30-crm-images.sql` | `crm_images` table + index | yes |
-| `2026-07-28-signup-verification.sql` | `signup_verification` | **no** — belongs to the `telegram-otp` branch |
+| `2026-07-28-signup-verification.sql` | `signup_verification` | yes — 2026-07-30 |

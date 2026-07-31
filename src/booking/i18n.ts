@@ -74,6 +74,22 @@ type Copy = {
   errGeneric: string;
   weekdays: string[];
   months: string[];
+  /** Entry menu — the customer chooses which step to start from. */
+  chooseStaff: string;
+  chooseDate: string;
+  chooseService: string;
+  /** Step screens */
+  detailsTitle: string;
+  nearest: string;
+  partDay: string;
+  partEvening: string;
+  partMorning: string;
+  total: string;
+  done: string;
+  change: string;
+  email: string;
+  emailPh: string;
+  notChosen: string;
 };
 
 export const T: Record<BookingLang, Copy> = {
@@ -110,6 +126,20 @@ export const T: Record<BookingLang, Copy> = {
     errGeneric: "Navbatni saqlab bo‘lmadi. Qaytadan urinib ko‘ring.",
     weekdays: ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"],
     months: ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"],
+    chooseStaff: "Ustani tanlash",
+    chooseDate: "Sana va vaqtni tanlash",
+    chooseService: "Xizmatlarni tanlash",
+    detailsTitle: "Navbat tafsilotlari",
+    nearest: "Eng yaqin bo‘sh vaqt",
+    partMorning: "Ertalab",
+    partDay: "Kunduzi",
+    partEvening: "Kechqurun",
+    total: "Jami",
+    done: "Tayyor",
+    change: "O‘zgartirish",
+    email: "Email",
+    emailPh: "Majburiy emas",
+    notChosen: "Tanlanmagan",
   },
   ru: {
     book: "Записаться",
@@ -144,6 +174,20 @@ export const T: Record<BookingLang, Copy> = {
     errGeneric: "Не удалось сохранить запись. Попробуйте снова.",
     weekdays: ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"],
     months: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"],
+    chooseStaff: "Выбрать специалиста",
+    chooseDate: "Выбрать дату и время",
+    chooseService: "Выбрать услуги",
+    detailsTitle: "Детали записи",
+    nearest: "Ближайшее время для записи",
+    partMorning: "Утро",
+    partDay: "День",
+    partEvening: "Вечер",
+    total: "Итого",
+    done: "Готово",
+    change: "Изменить",
+    email: "Email",
+    emailPh: "Необязательно",
+    notChosen: "Не выбрано",
   },
   en: {
     book: "Book an appointment",
@@ -178,6 +222,20 @@ export const T: Record<BookingLang, Copy> = {
     errGeneric: "Could not save the booking. Please try again.",
     weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    chooseStaff: "Choose a specialist",
+    chooseDate: "Choose date and time",
+    chooseService: "Choose services",
+    detailsTitle: "Booking details",
+    nearest: "Next available",
+    partMorning: "Morning",
+    partDay: "Afternoon",
+    partEvening: "Evening",
+    total: "Total",
+    done: "Done",
+    change: "Change",
+    email: "Email",
+    emailPh: "Optional",
+    notChosen: "Not chosen",
   },
 };
 

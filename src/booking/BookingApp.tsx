@@ -115,8 +115,11 @@ export default function BookingApp() {
   useEffect(() => {
     let alive = true;
     fetch('/api/public/business')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load'))))
-      .then((body: PublicBusinessPayload) => {
+      // Asserted at the boundary rather than on the callback parameter. `json()` is
+      // Promise<unknown> under @cloudflare/workers-types, so annotating the parameter is not a
+      // narrowing — it is a claim TypeScript rejects, which is what has been failing CI.
+      .then((r) => (r.ok ? (r.json() as Promise<PublicBusinessPayload>) : Promise.reject(new Error('load'))))
+      .then((body) => {
         if (!alive) return;
         setBiz(body);
         setDate(body.today);
@@ -244,8 +247,8 @@ export default function BookingApp() {
     // serviceId is sent so the server can exclude slots the service would overrun; it
     // resolves the duration itself rather than trusting a number from here.
     fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('slots'))))
-      .then((body: { slots: string[] }) => {
+      .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : Promise.reject(new Error('slots'))))
+      .then((body) => {
         if (!alive) return;
         setSlots(body.slots);
         setTime((current) => (current && body.slots.includes(current) ? current : ''));

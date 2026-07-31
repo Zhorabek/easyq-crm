@@ -279,7 +279,8 @@ export interface PublicSlotsPayload {
 
 /** Manual booking taken by staff — over the phone, or a walk-in being recorded. */
 export interface CreateCrmBookingInput {
-  serviceId: number;
+  serviceId?: number;
+  serviceIds?: number[];
   staffId: number;
   date: string;
   time: string;
@@ -289,7 +290,13 @@ export interface CreateCrmBookingInput {
 }
 
 export interface CreatePublicBookingInput {
-  serviceId: number;
+  /**
+   * Kept for callers that book one service — the CRM modal, and any client on an older
+   * bundle. `serviceIds` wins when both are sent.
+   */
+  serviceId?: number;
+  /** Several services in one visit, in the order the customer ticked them. */
+  serviceIds?: number[];
   staffId: number;
   date: string;
   time: string;

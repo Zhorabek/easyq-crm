@@ -46,6 +46,8 @@ import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
 import { openShiftSlots } from "./shared/availability";
+import { buildBasket, legacyServiceName, requestedServiceIds } from "./shared/basket";
+import { writeBasketLines } from "./server/publicBooking";
 import { BOOKING_FLOWS, normalizeBookingFlow, type BookingFlow } from "./shared/bookingFlow";
 import {
   checkImageBytes,
@@ -2758,18 +2760,29 @@ async function createCrmBooking(env: Env, actor: Actor, input: CreateCrmBookingI
     targetStaffId = actor.staffId;
   }
 
-  const [service, staff] = await Promise.all([
+  const wanted = requestedServiceIds(input);
+  if (wanted.length === 0) {
+    return json({ error: "Service not found", code: "invalid_service" }, { status: 400 });
+  }
+
+  // Built from the COUNT of ids, never from their values, so they stay bound parameters.
+  const placeholders = wanted.map(() => "?").join(", ");
+  const [serviceRows, staff] = await Promise.all([
     env.DB
-      .prepare("SELECT id, name, price, duration FROM services WHERE id = ? AND business_id = ? LIMIT 1")
-      .bind(Number(input.serviceId), business.id)
-      .first<{ id: number; name: string; price: number; duration: number }>(),
+      .prepare(`SELECT id, name, price, duration FROM services WHERE business_id = ? AND id IN (${placeholders})`)
+      .bind(business.id, ...wanted)
+      .all<{ id: number; name: string; price: number; duration: number }>(),
     env.DB
       .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
       .bind(targetStaffId, business.id)
       .first<{ id: number; name: string }>(),
   ]);
 
-  if (!service) return json({ error: "Service not found", code: "invalid_service" }, { status: 400 });
+  // Same resolver the public page uses, so a basket cannot be priced one way by the booking
+  // page and another by the desk. Unlike the public path this does NOT require is_active: an
+  // owner recording a walk-in may well be booking something they have since archived.
+  const basket = buildBasket(wanted, serviceRows.results ?? []);
+  if (!basket) return json({ error: "Service not found", code: "invalid_service" }, { status: 400 });
   if (!staff) return json({ error: "Employee not found", code: "invalid_staff" }, { status: 400 });
 
   // 'confirmed', not 'pending': somebody at the shop just took this booking, so there is
@@ -2783,20 +2796,25 @@ async function createCrmBooking(env: Env, actor: Actor, input: CreateCrmBookingI
     )
     .bind(
       business.id,
-      service.id,
+      // Legacy single-service columns: first service, total money and time. Both Telegram
+      // bots read these by name — see migrations/2026-07-31-booking-services.sql.
+      basket.primary.serviceId,
       staff.id,
       clientName,
       clientPhone,
-      service.name,
+      legacyServiceName(basket),
       staff.name,
       `${date} ${time}:00`,
-      Number(service.price || 0),
-      Number(service.duration || 0) || null,
+      basket.totalPrice,
+      basket.totalDuration || null,
       String(input.notes ?? "").trim().slice(0, 500) || null
     )
     .run();
 
-  return json({ ok: true, bookingId: Number(insert.meta.last_row_id ?? 0) }, { status: 201 });
+  const bookingId = Number(insert.meta.last_row_id ?? 0);
+  await writeBasketLines(env.DB, bookingId, basket);
+
+  return json({ ok: true, bookingId }, { status: 201 });
 }
 
 async function updateBookingStatus(env: Env, actor: Actor, bookingId: number, input: UpdateBookingStatusInput) {

@@ -13,6 +13,7 @@
 import { bookableSlots, type ExistingBooking } from "../shared/availability";
 import { isValidPhone, toStoragePhone } from "../shared/phone";
 import { normalizeBookingFlow } from "../shared/bookingFlow";
+import { buildBasket, legacyServiceName, requestedServiceIds, type Basket } from "../shared/basket";
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor, resolveBrandTheme } from "../shared/brand";
 import type {
   CreatePublicBookingInput,
@@ -296,6 +297,27 @@ export type CreateBookingResult =
   | { ok: true; bookingId: number; serviceName: string; staffName: string; price: number }
   | { ok: false; error: PublicBookingError };
 
+/**
+ * Write one row per chosen service.
+ *
+ * Batched rather than looped: D1 round trips dominate here, and a four-service booking should
+ * not cost four sequential writes. Failure leaves the booking with no lines rather than
+ * half — callers read the legacy columns as a fallback, so the booking is still coherent.
+ */
+export async function writeBasketLines(db: D1Database, bookingId: number, basket: Basket) {
+  if (!bookingId) return;
+  await db.batch(
+    basket.lines.map((line, index) =>
+      db
+        .prepare(
+          `INSERT INTO booking_services (booking_id, service_id, service_name, price, duration, position)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .bind(bookingId, line.serviceId, line.name, line.price, line.duration, index)
+    )
+  );
+}
+
 export async function createPublicBooking(
   db: D1Database,
   businessId: number,
@@ -321,18 +343,27 @@ export async function createPublicBooking(
   if (!/^\d{2}:\d{2}$/.test(time)) return { ok: false, error: "invalid_time" };
   if (date === todayIso && time <= nowIsoMinute) return { ok: false, error: "invalid_time" };
 
-  // Both scoped to businessId, so ids from another shop simply do not resolve.
-  const [service, staff] = await Promise.all([
+  const wanted = requestedServiceIds(input);
+  if (wanted.length === 0) return { ok: false, error: "invalid_service" };
+
+  // Both scoped to businessId, so ids from another shop simply do not resolve. The IN list is
+  // built from the count, never from the values, so the ids stay bound parameters.
+  const placeholders = wanted.map(() => "?").join(", ");
+  const [serviceRows, staff] = await Promise.all([
     db
-      .prepare("SELECT id, name, price, duration FROM services WHERE id = ? AND business_id = ? AND is_active = 1 LIMIT 1")
-      .bind(Number(input.serviceId), businessId)
-      .first<ServiceRow>(),
+      .prepare(`SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 AND id IN (${placeholders})`)
+      .bind(businessId, ...wanted)
+      .all<ServiceRow>(),
     db
       .prepare("SELECT id, name FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
       .bind(Number(input.staffId), businessId)
       .first<StaffRow>(),
   ]);
-  if (!service) return { ok: false, error: "invalid_service" };
+
+  // All-or-nothing: silently dropping one service would confirm a booking the customer did not
+  // ask for, at a price they were never shown.
+  const basket = buildBasket(wanted, serviceRows.results ?? []);
+  if (!basket) return { ok: false, error: "invalid_service" };
   if (!staff) return { ok: false, error: "invalid_staff" };
 
   const recent = await db
@@ -360,7 +391,9 @@ export async function createPublicBooking(
     staff.id,
     date,
     date === todayIso ? nowIsoMinute : null,
-    Number(service.duration || 0)
+    // The TOTAL, not the first line. Two 30-minute services back to back need a one-hour
+    // block, and reserving half of it is how a shop gets double-booked at half past.
+    basket.totalDuration
   );
   if (!free.includes(time)) return { ok: false, error: "slot_taken" };
 
@@ -373,24 +406,33 @@ export async function createPublicBooking(
     )
     .bind(
       businessId,
-      service.id,
+      // The legacy single-service columns still carry the FIRST service and the TOTAL price
+      // and duration, because both Telegram bots read them by name and deploy separately.
+      // Wrong in detail for a multi-service visit, never broken — and booking_services below
+      // holds the full picture for anything that can read it.
+      basket.primary.serviceId,
       staff.id,
       clientName,
       clientPhone,
-      service.name,
+      legacyServiceName(basket),
       staff.name,
       `${date} ${time}:00`,
-      Number(service.price || 0),
-      Number(service.duration || 0) || null,
+      basket.totalPrice,
+      basket.totalDuration || null,
       String(input.notes ?? "").trim().slice(0, 500) || null
     )
     .run();
 
+  const bookingId = Number(insert.meta.last_row_id ?? 0);
+  await writeBasketLines(db, bookingId, basket);
+
   return {
     ok: true,
-    bookingId: Number(insert.meta.last_row_id ?? 0),
-    serviceName: service.name,
+    bookingId,
+    // What the confirmation screen shows. The joined names rather than the legacy "+1" form,
+    // because here there is room to read them and the customer should see what they booked.
+    serviceName: basket.lines.map((line) => line.name).join(" · "),
     staffName: staff.name,
-    price: Number(service.price || 0),
+    price: basket.totalPrice,
   };
 }

@@ -8,7 +8,7 @@ import type {
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
-import { encodeSlot, nextMissingStep, parseSelection, stringifySelection } from '../shared/bookingUrl';
+import { nextMissingStep, parseSelection, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -35,6 +35,16 @@ import './booking.css';
 
 /** How far ahead a client may browse. The API independently caps this at 60 days. */
 const DAYS_SHOWN = 21;
+
+/**
+ * Longest visit a customer may assemble, in minutes.
+ *
+ * Two hours. Past that it stops being one appointment and starts being a block of somebody's
+ * afternoon booked by a stranger who may not turn up — a decision for the shop to take by
+ * phone, not something a web form should hand out. The server has its own eight-line cap on
+ * the same reasoning.
+ */
+const MAX_BASKET_MINUTES = 120;
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -195,6 +205,11 @@ export default function BookingApp() {
   const [time, setTime] = useState(initial.time ?? '');
   /** Free-text filter on the services screen. */
   const [search, setSearch] = useState('');
+  /**
+   * Which menu row started this booking. It decides the order of everything after, so the
+   * flow runs FORWARD through a path instead of returning to the menu between each answer.
+   */
+  const [entry, setEntry] = useState<BookingEntry>('service');
   /** First day of the month the calendar is showing, as an ISO date. */
   const [monthAnchor, setMonthAnchor] = useState('');
   /** Category filter on the services screen. "" is "all". */
@@ -515,7 +530,7 @@ export default function BookingApp() {
   /** Everything answered, so the details screen can be reached. */
   const missing = nextMissingStep(
     { staffId, serviceIds, date: date || null, time: time || null },
-    { needsStaff: showStaff }
+    { needsStaff: showStaff, entry }
   );
   const ready = missing === null;
   /** The CTA's destination AND its label come from one place, so they cannot disagree. */
@@ -598,7 +613,17 @@ export default function BookingApp() {
           ) : (
             <div className="bk-menu">
               {rows.map((row) => (
-                <button key={row.key} type="button" className="bk-menu-row" onClick={() => setScreen(row.key)}>
+                <button
+                  key={row.key}
+                  type="button"
+                  className="bk-menu-row"
+                  onClick={() => {
+                    // The row tapped IS the path. Recorded before navigating so the CTA on the
+                    // next screen already knows where it is going after this one.
+                    setEntry(row.key === 'datetime' ? 'datetime' : row.key === 'staff' ? 'staff' : 'service');
+                    setScreen(row.key);
+                  }}
+                >
                   <RowIcon name={row.icon} />
                   <span className="bk-menu-text">
                     <span className="bk-menu-label">{row.label}</span>
@@ -675,6 +700,7 @@ export default function BookingApp() {
                 type="button"
                 role="checkbox"
                 aria-checked={serviceIds.includes(item.id)}
+                disabled={!serviceIds.includes(item.id) && totalDuration + item.duration > MAX_BASKET_MINUTES}
                 onClick={() => {
                   // Toggle, and clear any held time: the slot was sized to the old basket, and
                   // keeping it would let a longer visit sit in a block that no longer fits.
@@ -707,8 +733,8 @@ export default function BookingApp() {
         {services.length > 0 && (
           <div className="bk-bar">
             <BasketBar services={services} totalPrice={totalPrice} totalDuration={totalDuration} onEdit={null} t={t} />
-            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep === 'service' ? 'menu' : ctaStep)}>
-              {ctaStep === 'service' ? t.done : ctaLabel}
+            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep)}>
+              {ctaLabel}
             </button>
           </div>
         )}
@@ -778,10 +804,12 @@ export default function BookingApp() {
                           type="button"
                           className="bk-next-chip"
                           onClick={() => {
+                            // The pill answers two questions at once — who, and when — which
+                            // is the whole point of showing it on the card.
                             setAnyStaff(false);
                             setStaffId(person.id);
                             setTime(slot);
-                            setScreen('menu');
+                            setScreen(services.length === 0 ? 'service' : 'details');
                           }}
                         >
                           {slot}
@@ -796,8 +824,9 @@ export default function BookingApp() {
         </div>
         {(staff || anyStaff) && (
           <div className="bk-bar">
-            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
-              {t.done}
+            {services.length > 0 && <BasketBar services={services} totalPrice={totalPrice} totalDuration={totalDuration} onEdit={() => setScreen('service')} t={t} />}
+            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep)}>
+              {ctaLabel}
             </button>
           </div>
         )}
@@ -898,8 +927,9 @@ export default function BookingApp() {
 
         {time && (
           <div className="bk-bar">
-            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
-              {t.done}
+            {services.length > 0 && <BasketBar services={services} totalPrice={totalPrice} totalDuration={totalDuration} onEdit={() => setScreen('service')} t={t} />}
+            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep)}>
+              {ctaLabel}
             </button>
           </div>
         )}

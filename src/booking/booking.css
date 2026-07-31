@@ -135,8 +135,14 @@
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.bk-row:hover {
+.bk-row:hover:not(:disabled) {
   border-color: var(--ink-3);
+}
+/* Over the two-hour cap. Dimmed rather than hidden: the customer should see the service
+   exists and understand why it will not go in, not wonder where it went. */
+.bk-row:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .bk-row.is-on {
   border-color: var(--accent-deep);

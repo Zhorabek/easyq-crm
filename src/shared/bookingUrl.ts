@@ -137,19 +137,53 @@ export function stringifySelection(selection: BookingSelection): string {
 /** Which selections are still missing, in the order the flow should ask for them. */
 export type MissingStep = "staff" | "service" | "datetime" | null;
 
+/** Which menu row the customer started from. The rest of the flow follows from it. */
+export type BookingEntry = "staff" | "datetime" | "service";
+
+/**
+ * The order the remaining steps are asked in, given where the customer came in.
+ *
+ * This is the part that makes the flow feel like a flow rather than a form with a menu bolted
+ * on. Someone who opened "choose specialist" has already answered the specialist question and
+ * usually the time too, by tapping one of that person's next-free pills — so the only thing
+ * left to ask is what they want doing. Someone who started from a date wants the opposite: the
+ * time is fixed, and the question is which service, then who is free to do it.
+ *
+ * A single fixed order cannot serve all three. Asking for a specialist first when the customer
+ * began by picking Thursday at six is how a booking flow starts feeling like paperwork.
+ *
+ *   from "specialist"  ->  specialist, services, time
+ *   from "date & time" ->  time, services, specialist
+ *   from "services"    ->  services, specialist, time
+ *
+ * In every order services come before the time is CONFIRMED, because the slot list is not
+ * correct until the total duration is known. In the date-first path the customer has picked a
+ * time before choosing services, so the specialist step re-checks who can actually fit it.
+ */
+export function stepOrder(entry: BookingEntry): Array<"staff" | "service" | "datetime"> {
+  if (entry === "staff") return ["staff", "service", "datetime"];
+  if (entry === "datetime") return ["datetime", "service", "staff"];
+  return ["service", "staff", "datetime"];
+}
+
 /**
  * The next thing the customer has to choose, or null when the booking is complete.
  *
  * Drives the sticky CTA, which is why it returns the STEP rather than a boolean: the button
- * has to name where it is going ("Choose services"), and deriving that from one function means
+ * has to name where it is going ("Choose services"), and deriving both from one function means
  * the label and the destination can never disagree.
- *
- * Services before date and time on purpose — the slot list cannot be correct until the total
- * duration is known, so asking for a time first would offer slots that may not fit.
  */
-export function nextMissingStep(selection: BookingSelection, opts: { needsStaff: boolean }): MissingStep {
-  if (opts.needsStaff && !selection.staffId) return "staff";
-  if (selection.serviceIds.length === 0) return "service";
-  if (!selection.date || !selection.time) return "datetime";
+export function nextMissingStep(
+  selection: BookingSelection,
+  opts: { needsStaff: boolean; entry?: BookingEntry }
+): MissingStep {
+  const filled = {
+    staff: !opts.needsStaff || Boolean(selection.staffId),
+    service: selection.serviceIds.length > 0,
+    datetime: Boolean(selection.date && selection.time),
+  };
+  for (const step of stepOrder(opts.entry ?? "service")) {
+    if (!filled[step]) return step;
+  }
   return null;
 }

@@ -1140,31 +1140,52 @@ type SignupInput = {
 
 // ─────────────────────────────────────────────────────── Telegram phone verification
 
-/** Public origin of the landing, used to build the deep link's bot username. */
+/**
+ * The bot that answers the verification deep link.
+ *
+ * This is the BUSINESS bot, not a bot of our own. The original plan was a dedicated
+ * verification bot, because a bot has exactly one webhook and this one's already points at
+ * `easyqueue-business-bot` — a second service could not also receive its updates.
+ *
+ * That turned out to be the wrong thing to route around. All three Workers bind the same D1,
+ * so the bot writes the verification row itself and the CRM simply reads it. No second bot for
+ * an owner to be confused by, no webhook to repoint, and no HTTP between services.
+ *
+ * The handler lives in `easyqueue-business-bot/src/handlers/signup.handler.ts`.
+ */
 function verifyBotUsername(env: Env) {
-  return env.VERIFY_BOT_USERNAME || "easyq_verify_bot";
+  return env.BUSINESS_BOT_USERNAME || "easyqueue_business_bot";
+}
+
+/**
+ * Payload for `t.me/<bot>?start=<payload>`.
+ *
+ * `easyq_` marks it as ours, so the bot can tell a sign-up link from a bare /start or any
+ * future payload. The language rides along so the bot answers in the language the visitor was
+ * already reading, instead of asking again at the one step that has to feel effortless.
+ *
+ * Telegram allows 64 characters of [A-Za-z0-9_-]; a 22-character base64url nonce plus the
+ * eight-character prefix is well inside that.
+ */
+function verifyStartPayload(nonce: string, lang: string) {
+  const safe = lang === "uz" || lang === "ru" || lang === "en" ? lang : "uz";
+  return `easyq_${safe}_${nonce}`;
 }
 
 async function startVerification(env: Env, request: Request) {
-  if (!env.VERIFY_BOT_TOKEN) {
-    return json(
-      {
-        error: "Phone verification is not configured.",
-        code: "verify_unconfigured",
-        hint: "Create a bot with @BotFather, then set VERIFY_BOT_TOKEN, VERIFY_BOT_USERNAME and VERIFY_WEBHOOK_SECRET on the easyq-crm Worker.",
-      },
-      { status: 503, headers: SIGNUP_CORS }
-    );
-  }
+  // No token check any more. Issuing a nonce is a database write and a string; nothing here
+  // talks to Telegram, so there is no secret this endpoint could be missing.
+  const input = (await request.json().catch(() => ({}))) as { lang?: string };
 
   const nonce = generateNonce();
   const created = await createVerification(env.DB, nonce);
+  const payload = verifyStartPayload(created.nonce, String(input.lang ?? ""));
 
   return json(
     {
       nonce: created.nonce,
       // `startapp` is for mini-apps; plain `start` is what delivers "/start <payload>".
-      deepLink: `https://t.me/${verifyBotUsername(env)}?start=${created.nonce}`,
+      deepLink: `https://t.me/${verifyBotUsername(env)}?start=${payload}`,
       botUsername: verifyBotUsername(env),
       expiresIn: created.expiresIn,
     },
@@ -1537,14 +1558,10 @@ async function signupBusiness(env: Env, request: Request) {
   // requests holding the same nonce from creating two businesses. Everything cheap and
   // rejectable therefore runs first, so a slug collision does not burn a good nonce.
   let storedPhone: string;
+  /** Set only on the verified path; null keeps the synthetic-id fallback below. */
+  let verifiedTelegramId: number | null = null;
 
   if (PHONE_VERIFICATION_ENABLED) {
-    if (!env.VERIFY_BOT_TOKEN) {
-      return json(
-        { error: "Phone verification is not configured.", code: "verify_unconfigured" },
-        { status: 503, headers: SIGNUP_CORS }
-      );
-    }
     const verification = await consumeVerification(env.DB, String(input.verificationNonce ?? ""));
     if (!verification.ok) {
       return json(
@@ -1560,6 +1577,7 @@ async function signupBusiness(env: Env, request: Request) {
     }
     // Telegram vouched for this number, so it never came from the request body.
     storedPhone = verification.phone;
+    verifiedTelegramId = verification.telegramId;
   } else {
     // Demo path. The code is a constant the form prints, so this proves nothing about
     // whoever is registering — it only keeps the shape of the flow while verification is
@@ -1577,9 +1595,40 @@ async function signupBusiness(env: Env, request: Request) {
     storedPhone = typedPhone;
   }
 
-  // Web sign-ups have no Telegram account, but users.telegram_id is NOT NULL UNIQUE.
-  // Use a synthetic negative id (real Telegram ids are positive) and retry on the rare collision.
+  // The Telegram account that verified the phone, when there was one.
+  //
+  // This is the point of routing verification through the business bot rather than a bot of
+  // our own: the same person now has ONE account. Before this, a web sign-up got a synthetic
+  // negative id, so the business existed for the CRM and did not exist for the bots — the
+  // owner could not manage it in Telegram, and anything that resolved an owner's chat failed
+  // silently. Logo upload was broken that way for months.
   let userId = 0;
+  if (verifiedTelegramId) {
+    // telegram_id is UNIQUE, and this person may well have used the bot before — that is the
+    // normal case, not an error. Reuse their row instead of failing the sign-up.
+    const existing = await env.DB
+      .prepare("SELECT id FROM users WHERE telegram_id = ? LIMIT 1")
+      .bind(verifiedTelegramId)
+      .first<{ id: number }>();
+
+    if (existing?.id) {
+      userId = Number(existing.id);
+      // They picked a language on the website just now; that is more current than whatever
+      // the bot recorded whenever they last used it.
+      await env.DB.prepare("UPDATE users SET language = ? WHERE id = ?").bind(language, userId).run().catch(() => undefined);
+    } else {
+      const res = await env.DB
+        .prepare("INSERT INTO users (telegram_id, language) VALUES (?, ?)")
+        .bind(verifiedTelegramId, language)
+        .run()
+        .catch(() => null);
+      userId = Number(res?.meta.last_row_id ?? 0);
+    }
+  }
+
+  // No verified Telegram account — the demo path with verification switched off. Falls back
+  // to a synthetic NEGATIVE id, since real Telegram ids are positive and the column is
+  // NOT NULL UNIQUE. Such a business cannot be managed from the bots.
   for (let attempt = 0; attempt < 4 && !userId; attempt += 1) {
     const syntheticTelegramId = -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
     try {

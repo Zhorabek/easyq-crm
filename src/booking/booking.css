@@ -724,3 +724,45 @@
   color: var(--ink-3);
   margin-top: 6px;
 }
+
+/* ---- service categories ----
+ *
+ * A horizontal strip of filters above the list, and headings inside it. A shop with thirty
+ * services otherwise renders as thirty rows somebody has to read in full to find one.
+ */
+.bk-cats {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0 0 12px;
+  margin-bottom: 2px;
+  scrollbar-width: none;
+}
+.bk-cats::-webkit-scrollbar {
+  display: none;
+}
+.bk-cat {
+  flex: none;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 15px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bk-cat.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.bk-group + .bk-group {
+  margin-top: 20px;
+}
+.bk-group-title {
+  font-size: 15px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}

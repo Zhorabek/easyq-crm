@@ -285,18 +285,39 @@ export function StaffEditModal({
 }
 
 /* ===================== real: service create / edit ===================== */
-export function ServiceEditModal({ initial, staffOptions, onClose, onSave }: { initial: ServiceCatalogItem | null; staffOptions: EmployeeRow[]; onClose: () => void; onSave: (v: { name: string; price: number; duration: number; staffIds: number[]; isActive?: boolean }) => void }) {
+export function ServiceEditModal({ initial, staffOptions, categories, onClose, onSave }: { initial: ServiceCatalogItem | null; staffOptions: EmployeeRow[]; categories: string[]; onClose: () => void; onSave: (v: { name: string; category: string; price: number; duration: number; staffIds: number[]; isActive?: boolean }) => void }) {
   const { m } = useCRM();
   const s = m.service;
   const [name, setName] = useState(initial?.name ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
   const [price, setPrice] = useState(initial ? String(Math.round(initial.price)) : '');
   const [duration, setDuration] = useState(initial ? String(initial.duration) : '60');
   const [staffIds, setStaffIds] = useState<number[]>(initial ? [...initial.linkedStaffIds] : []);
   const toggle = (id: number) => setStaffIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const valid = name.trim() && Number(price) >= 0 && Number(duration) > 0;
   return (
-    <Modal title={initial ? name || s.title : s.title} sub={s.sub} icon="services" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={s.submit} disabled={!valid} onSubmit={() => onSave({ name: name.trim(), price: Number(price), duration: Number(duration), staffIds, isActive: initial?.isActive })} />}>
+    <Modal title={initial ? name || s.title : s.title} sub={s.sub} icon="services" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={s.submit} disabled={!valid} onSubmit={() => onSave({ name: name.trim(), category: category.trim(), price: Number(price), duration: Number(duration), staffIds, isActive: initial?.isActive })} />}>
       <Field label={s.name}><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={s.namePh} autoFocus /></Field>
+      {/* Free text with the shop's existing categories offered as shortcuts. A fixed list
+          would be wrong the moment somebody who is not a barber signs up; suggesting what
+          they have already typed lets the vocabulary converge without being prescribed. */}
+      <Field label={s.category}>
+        <TextInput value={category} onChange={(e) => setCategory(e.target.value)} placeholder={s.categoryPh} />
+        {categories.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 8 }}>
+            {categories.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(category === c ? '' : c)}
+                style={{ fontSize: 12.5, fontWeight: 700, padding: '6px 11px', borderRadius: 999, color: category === c ? 'var(--accent-ink)' : 'var(--ink-2)', background: category === c ? 'var(--accent)' : 'var(--panel-2)', border: `1px solid ${category === c ? 'var(--accent)' : 'var(--line-2)'}` }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+      </Field>
       <div style={{ display: 'flex', gap: 12 }}>
         <Field label={s.dur} half><TextInput type="number" value={duration} onChange={(e) => setDuration(e.target.value)} /></Field>
         <Field label={s.price} half><TextInput type="text" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="80 000" /></Field>

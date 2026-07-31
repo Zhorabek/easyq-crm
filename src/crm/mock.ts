@@ -199,6 +199,9 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
     return {
       id: sv.id,
       name: SERV_NAME[lang][sv.key],
+      // The demo already had a category per service for its own grouping; surface it now that
+      // the real catalogue has the same field.
+      category: CAT_NAME[lang][sv.catKey] ?? '',
       price: money(sv.price),
       duration: sv.dur,
       isActive: true,

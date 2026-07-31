@@ -1,0 +1,23 @@
+-- A category per service, so the booking page can group a long price list.
+--
+-- A barbershop with thirty services renders as thirty rows a customer has to read in full to
+-- find "beard trim". Grouping them under headings — Haircuts, Shaving, Care, Combo — with a
+-- filter chip per group turns that into one glance.
+--
+-- Free text, not an enum or a lookup table. The categories a shop uses are its own vocabulary,
+-- and the set differs between a barbershop, a nail salon and a dentist; an enum here would
+-- mean editing the Worker every time somebody opens a business we did not anticipate. The CRM
+-- offers whatever categories that business has already used, so the list converges without
+-- being prescribed.
+--
+-- NULL means uncategorised, which is what every existing service becomes. The booking page
+-- groups those under a single heading rather than hiding them, and a business that never
+-- touches this feature keeps exactly the flat list it has today.
+--
+-- Nullable and additive. `services` is shared with easyqueue-business-bot and
+-- easyqueue-client-bot, which SELECT named columns, so neither notices.
+--
+-- NOT idempotent: SQLite has no ADD COLUMN IF NOT EXISTS. An error naming a duplicate column
+-- means it is already applied and is safe to ignore.
+
+ALTER TABLE services ADD COLUMN category TEXT;

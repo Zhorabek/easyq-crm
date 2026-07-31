@@ -128,6 +128,7 @@ type ServiceRow = {
   id: number;
   business_id: number;
   name: string;
+  category: string | null;
   price: number;
   duration: number;
   is_active: number;
@@ -2008,7 +2009,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     await Promise.all([
     env.DB
       .prepare(
-        "SELECT id, business_id, name, price, duration, is_active FROM services WHERE business_id = ? ORDER BY is_active DESC, name ASC"
+        "SELECT id, business_id, name, category, price, duration, is_active FROM services WHERE business_id = ? ORDER BY is_active DESC, name ASC"
       )
       .bind(business.id)
       .all<ServiceRow>(),
@@ -2312,6 +2313,8 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     return {
       id: service.id,
       name: service.name,
+      // "" rather than null, so the UI never has to decide what a missing category means.
+      category: service.category?.trim() || "",
       price: Number(service.price || 0),
       duration: Number(service.duration || 0),
       isActive: Number(service.is_active) === 1,
@@ -3346,8 +3349,8 @@ async function createService(env: Env, business: BusinessRow, input: UpsertServi
     return json({ error: "One or more selected employees do not belong to this business." }, { status: 400 });
   }
   const insert = await env.DB
-    .prepare("INSERT INTO services (business_id, name, price, duration, is_active) VALUES (?, ?, ?, ?, 1)")
-    .bind(business.id, name, price, duration)
+    .prepare("INSERT INTO services (business_id, name, category, price, duration, is_active) VALUES (?, ?, ?, ?, ?, 1)")
+    .bind(business.id, name, String(input.category ?? "").trim().slice(0, 40) || null, price, duration)
     .run();
 
   const serviceId =
@@ -3373,7 +3376,7 @@ async function createService(env: Env, business: BusinessRow, input: UpsertServi
 
 async function updateService(env: Env, business: BusinessRow, serviceId: number, input: UpdateServiceInput) {
   const current = await env.DB
-    .prepare("SELECT id, name, price, duration, is_active FROM services WHERE id = ? AND business_id = ? LIMIT 1")
+    .prepare("SELECT id, name, category, price, duration, is_active FROM services WHERE id = ? AND business_id = ? LIMIT 1")
     .bind(serviceId, business.id)
     .first<ServiceRow>();
 
@@ -3382,6 +3385,10 @@ async function updateService(env: Env, business: BusinessRow, serviceId: number,
   }
 
   const nextName = input.name === undefined ? current.name : input.name.trim();
+  // Capped and trimmed to null: an empty string and NULL would otherwise be two ways to say
+  // uncategorised, and the booking page would render one of them as a heading with no name.
+  const nextCategory =
+    input.category === undefined ? current.category : String(input.category).trim().slice(0, 40) || null;
   const nextPrice = input.price === undefined ? Number(current.price) : Number(input.price);
   const nextDuration = input.duration === undefined ? Number(current.duration) : Number(input.duration);
   const nextIsActive = input.isActive === undefined ? Number(current.is_active) : input.isActive ? 1 : 0;
@@ -3399,8 +3406,8 @@ async function updateService(env: Env, business: BusinessRow, serviceId: number,
   }
 
   await env.DB
-    .prepare("UPDATE services SET name = ?, price = ?, duration = ?, is_active = ? WHERE id = ? AND business_id = ?")
-    .bind(nextName, nextPrice, nextDuration, nextIsActive, serviceId, business.id)
+    .prepare("UPDATE services SET name = ?, category = ?, price = ?, duration = ?, is_active = ? WHERE id = ? AND business_id = ?")
+    .bind(nextName, nextCategory, nextPrice, nextDuration, nextIsActive, serviceId, business.id)
     .run();
 
   if (input.staffIds !== undefined) {

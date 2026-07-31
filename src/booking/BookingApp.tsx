@@ -145,6 +145,8 @@ export default function BookingApp() {
   const [time, setTime] = useState('');
   /** First day of the month the calendar is showing, as an ISO date. */
   const [monthAnchor, setMonthAnchor] = useState('');
+  /** Category filter on the services screen. "" is "all". */
+  const [category, setCategory] = useState('');
 
   const [slots, setSlots] = useState<string[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -508,13 +510,43 @@ export default function BookingApp() {
   /* ---------------------------------------------------------------- services */
 
   if (screen === 'service') {
+    // Distinct categories, in the order the services come back, with uncategorised last so a
+    // shop that has only labelled half its list still reads top to bottom.
+    const cats = Array.from(new Set(offeredServices.map((x) => x.category).filter(Boolean)));
+    const hasLoose = offeredServices.some((x) => !x.category);
+    const shown = category ? offeredServices.filter((x) => x.category === category) : offeredServices;
+    // Grouped only when there is more than one heading to show; a single group is just a list
+    // with a redundant title over it.
+    const groupsToRender = category || (cats.length < 2 && !(cats.length === 1 && hasLoose))
+      ? [['', shown] as const]
+      : [...cats.map((c) => [c, shown.filter((x) => x.category === c)] as const),
+         ...(hasLoose ? [['', shown.filter((x) => !x.category)] as const] : [])];
+
     return (
       <div className="bk-shell">
         {head}
         <h2 className="bk-title">{t.service}</h2>
+
+        {cats.length > 0 && (
+          <div className="bk-cats">
+            <button type="button" className={`bk-cat${category === '' ? ' is-on' : ''}`} onClick={() => setCategory('')}>
+              {t.allCategories}
+            </button>
+            {cats.map((c) => (
+              <button key={c} type="button" className={`bk-cat${category === c ? ' is-on' : ''}`} onClick={() => setCategory(c)}>
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="bk-card">
-          <div className="bk-list">
-            {offeredServices.map((item) => (
+          {groupsToRender.map(([heading, items]) =>
+            items.length === 0 ? null : (
+              <div key={heading || '_'} className="bk-group">
+                {heading && <div className="bk-group-title">{heading}</div>}
+                <div className="bk-list">
+                  {items.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -537,8 +569,11 @@ export default function BookingApp() {
                 </span>
                 <span className={`bk-check${service?.id === item.id ? ' is-on' : ''}`} />
               </button>
-            ))}
-          </div>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
         </div>
         {service && (
           <div className="bk-bar">

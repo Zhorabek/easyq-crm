@@ -39,7 +39,7 @@ export type PublicBookingError =
   | "invalid_phone"
   | "rate_limited";
 
-type ServiceRow = { id: number; name: string; price: number; duration: number };
+type ServiceRow = { id: number; name: string; category: string | null; price: number; duration: number };
 type StaffRow = { id: number; name: string; role: string | null; photo_file_id: string | null };
 
 function isIsoDate(value: string) {
@@ -102,7 +102,7 @@ export async function getPublicBusiness(
     // Only is_active services. An archived service must not be bookable, even though the
     // owner still sees it in the CRM catalogue.
     db
-      .prepare("SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 ORDER BY name ASC")
+      .prepare("SELECT id, name, category, price, duration FROM services WHERE business_id = ? AND is_active = 1 ORDER BY name ASC")
       .bind(businessId)
       .all<ServiceRow>(),
     db.prepare("SELECT id, name, role, photo_file_id FROM staff WHERE business_id = ? ORDER BY name ASC").bind(businessId).all<StaffRow>(),
@@ -164,6 +164,7 @@ export async function getPublicBusiness(
     .map((service) => ({
       id: service.id,
       name: service.name,
+      category: service.category?.trim() || "",
       price: Number(service.price || 0),
       duration: Number(service.duration || 0),
       staffIds: staffIdsByService.get(service.id) ?? [],

@@ -27,6 +27,8 @@
     "db:migrate:remote:verification": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-28-signup-verification.sql",
     "db:migrate:local:booking-flow": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-30-booking-flow-and-staff-photo.sql",
     "db:migrate:remote:booking-flow": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-30-booking-flow-and-staff-photo.sql",
+    "db:migrate:local:service-category": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-31-service-category.sql",
+    "db:migrate:remote:service-category": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-31-service-category.sql",
     "db:migrate:local:images": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-30-crm-images.sql",
     "db:migrate:remote:images": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-30-crm-images.sql",
     "build": "vite build",

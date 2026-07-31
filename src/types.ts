@@ -171,6 +171,8 @@ export interface EmployeeRow {
 export interface ServiceCatalogItem {
   id: number;
   name: string;
+  /** Owner-chosen grouping, or "" when uncategorised. Free text — see the migration. */
+  category: string;
   price: number;
   duration: number;
   isActive: boolean;
@@ -231,6 +233,8 @@ export interface BookingLinkItem {
 export interface PublicService {
   id: number;
   name: string;
+  /** Grouping heading on the booking page. "" means uncategorised. */
+  category: string;
   price: number;
   duration: number;
   staffIds: number[];
@@ -356,6 +360,7 @@ export interface UpdateEmployeeInput {
 
 export interface UpsertServiceInput {
   name: string;
+  category?: string;
   price: number;
   duration: number;
   staffIds: number[];
@@ -363,6 +368,7 @@ export interface UpsertServiceInput {
 
 export interface UpdateServiceInput {
   name?: string;
+  category?: string;
   price?: number;
   duration?: number;
   staffIds?: number[];

@@ -791,7 +791,10 @@ export function Services() {
           <div key={x.id} className="crm-serv-row" style={{ display: 'grid', gridTemplateColumns: '2.4fr 1.2fr 1fr 1.1fr 1.2fr', gap: 12, alignItems: 'center', padding: '15px 22px', borderTop: i ? '1px solid var(--line)' : 'none', opacity: x.isActive ? 1 : 0.6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               <span style={{ width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="scissors" size={18} stroke={2} /></span>
-              <span style={{ fontSize: 14.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>
+                {x.category && <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--ink-3)' }}>{x.category}</span>}
+              </span>
             </div>
             {/* A service with nobody assigned is not on the booking page at all — there is no
                 one to give it to. That used to be hidden behind a dash while the public page

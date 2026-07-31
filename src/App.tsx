@@ -686,7 +686,15 @@ export default function App() {
             onAccess={role === 'owner' ? (level) => void doStaffAccess(staffEditor.id, level) : undefined}
           />
         )}
-        {serviceEditor && <ServiceEditModal initial={serviceEditor.initial} staffOptions={payload?.employees ?? []} onClose={() => setServiceEditor(null)} onSave={(v) => void doSaveService(v)} />}
+        {serviceEditor && <ServiceEditModal
+          initial={serviceEditor.initial}
+          staffOptions={payload?.employees ?? []}
+          /* Categories this business has already used, so the modal suggests its own
+             vocabulary rather than one we invented. */
+          categories={Array.from(new Set((payload?.services ?? []).map((sv) => sv.category).filter(Boolean))).sort()}
+          onClose={() => setServiceEditor(null)}
+          onSave={(v) => void doSaveService(v)}
+        />}
         {slotEditor && <SlotEditorModal employee={slotEditor} schedule={payload?.business.schedule ?? ''} onClose={() => setSlotEditor(null)} onSave={(v) => void doSaveSlots(v)} />}
         {businessEditor && payload && <BusinessModal initial={{ name: payload.business.name, type: payload.business.type, address: payload.business.address, phone: payload.business.phone, schedule: payload.business.schedule, description: payload.business.description ?? '' }} onClose={() => setBusinessEditor(false)} onSave={(v) => void doSaveBusiness(v)} />}
         {bookingCreator && payload && (

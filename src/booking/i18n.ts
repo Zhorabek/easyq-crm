@@ -90,6 +90,7 @@ type Copy = {
   email: string;
   emailPh: string;
   notChosen: string;
+  allCategories: string;
 };
 
 export const T: Record<BookingLang, Copy> = {
@@ -140,6 +141,7 @@ export const T: Record<BookingLang, Copy> = {
     email: "Email",
     emailPh: "Majburiy emas",
     notChosen: "Tanlanmagan",
+    allCategories: "Barchasi",
   },
   ru: {
     book: "Записаться",
@@ -188,6 +190,7 @@ export const T: Record<BookingLang, Copy> = {
     email: "Email",
     emailPh: "Необязательно",
     notChosen: "Не выбрано",
+    allCategories: "Все",
   },
   en: {
     book: "Book an appointment",
@@ -236,6 +239,7 @@ export const T: Record<BookingLang, Copy> = {
     email: "Email",
     emailPh: "Optional",
     notChosen: "Not chosen",
+    allCategories: "All",
   },
 };
 

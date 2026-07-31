@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-07-30. Everything below is either not started or waiting on someone.
+Last updated 2026-07-31. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -119,6 +119,19 @@ Documented so nobody re-discovers them as defects.
   encoder output, and `nosniff` on every response. Real scanning needs an external service.
 - **Stored images are capped at 512 KB and 512px.** The browser downscales, so this is
   invisible in normal use. A caller that skips the downscale gets a 413.
+- **One visit is one specialist.** A basket is only offered to staff who can perform EVERY
+  service in it, so a shop that splits a visit between two people cannot express that here.
+- **Two hours is the ceiling on one basket.** Past that it stops being an appointment and
+  becomes a block of somebody's afternoon booked by a stranger who may not turn up. Services
+  that would breach it are dimmed rather than hidden. The server caps at eight lines for the
+  same reason.
+- **A basket that will not resolve gets no slots at all**, rather than slots sized to the
+  services that did resolve — offering times the booking then refuses reads as the shop losing
+  the slot between two screens.
+- **Tier pricing is separate services, not a price matrix.** "Haircut - Barber" and
+  "Haircut - Chief Barber" are two rows linked to different staff, which is what Altegio does
+  and what the data already supported. The cost is upkeep for the owner: two rows to edit
+  instead of one service with two prices.
 - **A specialist's client rows carry no money.** `spentTotal` is 0 and `favoriteStaff` is
   "—" by design, so the Customers screen swaps those two columns for last visit and
   upcoming when a specialist is signed in.
@@ -147,6 +160,53 @@ column is UNIQUE.
 `VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET` are no longer read by the
 verification flow, and `/api/telegram/verify-webhook` is dead code kept only until someone
 confirms nothing else calls it.
+
+---
+
+## Booking widget — partly built
+
+Rebuilt against the Altegio reference. A hub of full screens rather than one scrolling form,
+and the step ORDER follows whichever row the customer tapped:
+
+  from "choose specialist"   ->  specialist, services, time
+  from "choose date & time"  ->  time, services, specialist
+  from "choose services"     ->  services, specialist, time
+
+Working: multi-service baskets with a running total, availability sized to the whole basket,
+the selection mirrored in the URL (`?m12&s3&s7&d202607311430`) and rebuilt on load, category
+chips and search, the two-tab specialist step, month calendar, times grouped by part of day.
+
+**Not built yet** — none of it blocked, all of it visible to a customer:
+
+- [ ] **Auto-select the nearest available day** on the date step, and disable months with no
+      availability. Today it opens on the current month with nothing chosen.
+- [ ] **Today / Tomorrow labels** on the quick-pick pills. They currently show only a time, so
+      a pill on a specialist card does not say which day it belongs to.
+- [ ] **Ratings and review counts on specialist cards.** The schema is applied; nothing
+      collects, moderates or reads reviews yet. See the section below.
+- [ ] **The CRM read side for multi-service.** The calendar and the booking detail modal still
+      render `service_name`, which for a two-service booking now reads "Haircut +1". The lines
+      are in `booking_services` and nothing reads them back yet.
+
+---
+
+## Reviews — schema applied, nothing built
+
+`reviews` was already in the shared database, created by easyqueue-business-bot. It has been
+EXTENDED rather than replaced, because both bots query it by column name and deploy from their
+own repos.
+
+- [ ] **Collect them.** `bookings.review_token` exists and is unused. A post-visit link
+      carrying that token is what makes a review provable — one visit, one review, and the
+      review knows which specialist it is about because the booking does.
+- [ ] **Moderate them.** `approved` defaults to 0 and the CRM's Reviews screen is still mock
+      data. Nothing should render publicly until an owner approves it.
+- [ ] **Per-staff averages** on the public payload, for the stars the booking page wants.
+- [ ] **Fix both bots first.** Neither filters `AND approved = 1`, because until now there was
+      nothing to filter. The moment a real review lands, Telegram will show unmoderated text
+      while the web page correctly hides it. Two-line change in each repo:
+      `easyqueue-business-bot/src/db/repositories.ts` and
+      `easyqueue-client-bot/src/services/booking.service.ts`.
 
 ---
 
@@ -242,3 +302,6 @@ All in `migrations/`.
 | `2026-07-30-booking-flow-and-staff-photo.sql` | `businesses.booking_flow`, `staff.photo_file_id`, `staff.photo_file_unique_id` | yes |
 | `2026-07-30-crm-images.sql` | `crm_images` table + index | yes |
 | `2026-07-28-signup-verification.sql` | `signup_verification` | yes — 2026-07-30 |
+| `2026-07-31-service-category.sql` | `services.category` | yes |
+| `2026-07-31-booking-services.sql` | `booking_services` table + backfill | yes |
+| `2026-07-31-reviews.sql` | extends the EXISTING `reviews` table; `bookings.review_token` | yes |

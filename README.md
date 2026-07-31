@@ -84,6 +84,20 @@ active nav item. See `src/crm/brand-shell.ts`.
 A service with **no specialist assigned is not offered at all** — there is nobody to give it
 to. The services table flags those in amber so the owner can see why one vanished.
 
+## The booking page
+
+A hub of full screens rather than one scrolling form. The customer starts from whichever of
+specialist / date / services they already know, and the order of what follows depends on that
+entry — one fixed order cannot serve all three, and asking for a specialist first when
+somebody began by picking Thursday at six is how a booking flow starts feeling like paperwork.
+
+A booking may hold several services, capped at two hours in total, and availability reserves
+the SUM of their durations. The whole selection lives in the URL —
+`?m12&s3&s7&d202607311430` — so a refresh, the back button, or a link forwarded to whoever is
+paying all resume the same booking. See `src/shared/bookingUrl.ts` and `src/shared/basket.ts`.
+
+The step order, and what is still missing, is in [TODO.md](TODO.md).
+
 ## Image uploads
 
 Logos and specialist photos share one path, in `src/shared/imageFile.ts` and `crm_images`.
@@ -153,14 +167,16 @@ Against the real shared D1:
 npm run dev:worker:remote
 ```
 
-Deploy — push to `main`; GitHub Actions builds and deploys. To deploy by hand:
+Deploy — push to `main`. **Cloudflare's own Git integration builds and deploys**, not GitHub
+Actions; the Actions workflow is a typecheck gate that deploys nothing. Worth knowing, because
+it went red for days without stopping a single deploy. To deploy by hand:
 
 ```bash
 npm run deploy
 ```
 
-Both paths run `tsc --noEmit` first. `vite build` alone strips types without resolving them,
-which is how a file calling twelve names it never imported once deployed green.
+Both run `tsc --noEmit` first. `vite build` alone strips types without resolving them, which
+is how a file calling twelve names it never imported once deployed green.
 
 ## Local D1 setup
 
@@ -213,6 +229,18 @@ npm run db:migrate:local:booking-flow
 
 ```bash
 npm run db:migrate:local:images
+```
+
+```bash
+npm run db:migrate:local:service-category
+```
+
+```bash
+npm run db:migrate:local:booking-services
+```
+
+```bash
+npm run db:migrate:local:reviews
 ```
 
 Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migration rule in

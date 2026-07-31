@@ -885,3 +885,47 @@
   font-weight: 800;
   margin-bottom: 10px;
 }
+
+/* ---- specialist screen tabs ----
+ *
+ * Shown only once a time is held, which is the date-first path: one tab asks "who is free at
+ * the time I picked", the other "who is free at all, and when".
+ */
+.bk-tabs {
+  display: flex;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.bk-tab {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 13px 8px;
+  cursor: pointer;
+  /* The underline sits ON the container's border so the active tab reads as connected to the
+     panel below rather than as a floating pill. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.bk-tab.is-on {
+  color: var(--ink);
+  font-weight: 700;
+  border-bottom-color: var(--ink);
+}
+/* Dimmed, not hidden: somebody looking for a particular barber should see that they exist and
+   are busy, not conclude the shop stopped employing them. */
+.bk-person-block.is-busy {
+  opacity: 0.45;
+}
+.bk-person-block.is-busy .bk-person {
+  cursor: not-allowed;
+}
+.bk-person-busy {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}

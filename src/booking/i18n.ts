@@ -94,6 +94,8 @@ type Copy = {
   searchPh: string;
   servicesCount: string;
   hours: string;
+  otherTime: string;
+  busyAt: string;
 };
 
 export const T: Record<BookingLang, Copy> = {
@@ -148,6 +150,8 @@ export const T: Record<BookingLang, Copy> = {
     searchPh: "Qidirish",
     servicesCount: "xizmat",
     hours: "soat",
+    otherTime: "Boshqa vaqtga",
+    busyAt: "Bu vaqtda band",
   },
   ru: {
     book: "Записаться",
@@ -200,6 +204,8 @@ export const T: Record<BookingLang, Copy> = {
     searchPh: "Найти",
     servicesCount: "услуги",
     hours: "ч",
+    otherTime: "На другое время",
+    busyAt: "Занят в это время",
   },
   en: {
     book: "Book an appointment",
@@ -252,6 +258,8 @@ export const T: Record<BookingLang, Copy> = {
     searchPh: "Search",
     servicesCount: "services",
     hours: "h",
+    otherTime: "Another time",
+    busyAt: "Busy at this time",
   },
 };
 

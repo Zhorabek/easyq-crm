@@ -220,8 +220,16 @@ export default function BookingApp() {
 
   const [slots, setSlots] = useState<string[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
-  /** Next free times per staff id, for the chips under each specialist card. */
+  /**
+   * Every free slot on the chosen day, per staff id.
+   *
+   * The whole list rather than a preview: the cards show the first few as quick-pick pills,
+   * but the "at this time" tab has to answer "is this person free at 12:00", and a five-item
+   * preview cannot. Fetched once per screen visit and sliced at render.
+   */
   const [nextBy, setNextBy] = useState<Record<number, string[]>>({});
+  /** Which tab of the specialist screen is showing, when a time is already chosen. */
+  const [staffTab, setStaffTab] = useState<'exact' | 'other'>('exact');
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -416,7 +424,7 @@ export default function BookingApp() {
       people.map((person) =>
         fetch(`/api/public/slots?staffId=${person.id}&serviceIds=${serviceIds.join(',')}&date=${encodeURIComponent(date)}`)
           .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : { slots: [] }))
-          .then((body) => [person.id, body.slots.slice(0, 5)] as const)
+          .then((body) => [person.id, body.slots] as const)
           .catch(() => [person.id, [] as string[]] as const)
       )
     ).then((pairs) => {
@@ -745,15 +753,51 @@ export default function BookingApp() {
   /* ------------------------------------------------------------- specialists */
 
   if (screen === 'staff') {
+    // Free at the exact time the customer already picked. Only meaningful once a time is held,
+    // which is the date-first path; the other two reach this screen with nothing to compare to.
+    const freeNow = (id: number) => (nextBy[id] ?? []).includes(time);
+    const showTabs = Boolean(time && date);
+    // Both tabs list the same people. They differ in what a row MEANS: in the exact-time tab
+    // anyone who cannot fit is dimmed and unpickable, in the other tab everyone is pickable and
+    // brings their own times. Dimming rather than filtering, so a customer looking for a
+    // particular barber sees they exist and are busy rather than concluding they have left.
+
     return (
       <div className="bk-shell">
         {head}
         <h2 className="bk-title">{t.specialist}</h2>
+
+        {showTabs && (
+          <div className="bk-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={staffTab === 'exact'}
+              className={`bk-tab${staffTab === 'exact' ? ' is-on' : ''}`}
+              onClick={() => setStaffTab('exact')}
+            >
+              {dayLabel(date)}, {time}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={staffTab === 'other'}
+              className={`bk-tab${staffTab === 'other' ? ' is-on' : ''}`}
+              onClick={() => setStaffTab('other')}
+            >
+              {t.otherTime}
+            </button>
+          </div>
+        )}
+
         <div className="bk-card">
+          {(!showTabs || staffTab === 'other') && (
           <button
             type="button"
             className={`bk-person${anyStaff ? ' is-on' : ''}`}
             onClick={() => {
+              // Resolved to a real person here, because a booking row needs a staff_id. The
+              // customer simply never had to choose one.
               setAnyStaff(true);
               setStaffId(eligibleStaff[0]?.id ?? null);
             }}
@@ -764,15 +808,21 @@ export default function BookingApp() {
             </span>
             <span className={`bk-radio${anyStaff ? ' is-on' : ''}`} />
           </button>
+          )}
 
           {eligibleStaff.map((person) => {
-            const next = nextBy[person.id] ?? [];
+            const slots = nextBy[person.id] ?? [];
+            const next = slots.slice(0, 5);
             const on = !anyStaff && staff?.id === person.id;
+            // Only the exact-time tab can rule somebody out; elsewhere every eligible
+            // specialist is a valid choice and brings their own times with them.
+            const busy = showTabs && staffTab === 'exact' && !freeNow(person.id);
             return (
-              <div key={person.id} className={`bk-person-block${on ? ' is-on' : ''}`}>
+              <div key={person.id} className={`bk-person-block${on ? ' is-on' : ''}${busy ? ' is-busy' : ''}`}>
                 <button
                   type="button"
                   className="bk-person"
+                  disabled={busy}
                   onClick={() => {
                     setAnyStaff(false);
                     setStaffId(person.id);
@@ -786,13 +836,14 @@ export default function BookingApp() {
                   <span className="bk-person-main">
                     <span className="bk-person-name">{person.name}</span>
                     {person.role && <span className="bk-person-role">{person.role}</span>}
+                    {busy && <span className="bk-person-busy">{t.busyAt}</span>}
                   </span>
                   <span className={`bk-radio${on ? ' is-on' : ''}`} />
                 </button>
 
                 {/* Next free times, so somebody who mainly cares "when can I be seen" does not
                     have to open each specialist to find out. */}
-                {next.length > 0 && (
+                {next.length > 0 && (!showTabs || staffTab === 'other') && (
                   <div className="bk-next">
                     <span className="bk-next-label">
                       {t.nearest} {dayLabel(date)}:

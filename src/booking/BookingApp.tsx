@@ -8,6 +8,7 @@ import type {
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
+import { encodeSlot, nextMissingStep, parseSelection, stringifySelection } from '../shared/bookingUrl';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -126,6 +127,50 @@ function Pencil() {
   );
 }
 
+/**
+ * The running basket: how many, how long, how much, and a way back to change it.
+ *
+ * Visible from the moment one service is ticked, on every screen — the spec's "keep the
+ * running summary visible", and the thing that stops somebody assembling a four-service visit
+ * without ever seeing what it costs.
+ */
+function BasketBar({
+  services,
+  totalPrice,
+  totalDuration,
+  onEdit,
+  t,
+}: {
+  services: PublicService[];
+  totalPrice: number;
+  totalDuration: number;
+  onEdit: (() => void) | null;
+  t: (typeof T)[BookingLang];
+}) {
+  return (
+    <div className="bk-bar-sum">
+      <span className="bk-bar-count">
+        {services.length} {t.servicesCount}
+        {totalDuration > 0 && <span className="bk-bar-dur"> · {formatDuration(totalDuration, t)}</span>}
+      </span>
+      <span className="bk-bar-total">{money(totalPrice) ?? ''}</span>
+      {onEdit && (
+        <button type="button" className="bk-bar-edit" onClick={onEdit} aria-label={t.change}>
+          <Pencil />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "45 min", "1 h", "1 h 15 min" — minutes alone stop reading past about ninety. */
+function formatDuration(total: number, t: (typeof T)[BookingLang]) {
+  if (total < 60) return `${total} ${t.minutes}`;
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  return mins === 0 ? `${hours} ${t.hours}` : `${hours} ${t.hours} ${mins} ${t.minutes}`;
+}
+
 /* --------------------------------------------------------------------- app */
 
 type Screen = 'menu' | 'staff' | 'datetime' | 'service' | 'details';
@@ -137,12 +182,19 @@ export default function BookingApp() {
   const [biz, setBiz] = useState<PublicBusinessPayload | null>(null);
   const [loadError, setLoadError] = useState(false);
 
+  // Seeded from the URL so a refresh, the back button, or a link forwarded to whoever is
+  // actually paying all resume the same booking. See shared/bookingUrl.ts.
+  const initial = useMemo(() => parseSelection(typeof window === 'undefined' ? '' : window.location.search), []);
+
   const [screen, setScreen] = useState<Screen>('menu');
-  const [service, setService] = useState<PublicService | null>(null);
-  const [staff, setStaff] = useState<PublicStaff | null>(null);
+  /** Chosen services, in the order they were ticked. Ids, because the catalogue arrives later. */
+  const [serviceIds, setServiceIds] = useState<number[]>(initial.serviceIds);
+  const [staffId, setStaffId] = useState<number | null>(initial.staffId);
   const [anyStaff, setAnyStaff] = useState(false);
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [date, setDate] = useState(initial.date ?? '');
+  const [time, setTime] = useState(initial.time ?? '');
+  /** Free-text filter on the services screen. */
+  const [search, setSearch] = useState('');
   /** First day of the month the calendar is showing, as an ISO date. */
   const [monthAnchor, setMonthAnchor] = useState('');
   /** Category filter on the services screen. "" is "all". */
@@ -185,7 +237,8 @@ export default function BookingApp() {
         setBiz(body);
         setDate(body.today);
         setMonthAnchor(`${body.today.slice(0, 7)}-01`);
-        if (body.services.length === 1) setService(body.services[0]!);
+        // A one-service shop has nothing to choose, so choose it for them.
+        if (body.services.length === 1 && initial.serviceIds.length === 0) setServiceIds([body.services[0]!.id]);
       })
       .catch(() => alive && setLoadError(true));
     return () => {
@@ -219,6 +272,34 @@ export default function BookingApp() {
     if (biz) document.title = `${t.book} · ${biz.name}`;
   }, [biz, t.book]);
 
+  /**
+   * The chosen services, resolved against the catalogue and kept in the order they were
+   * ticked. Derived rather than stored, so a service the shop archives simply falls out of the
+   * basket instead of lingering as a stale object nobody can price.
+   */
+  const services = useMemo(() => {
+    if (!biz) return [];
+    const byId = new Map(biz.services.map((item) => [item.id, item]));
+    return serviceIds.map((id) => byId.get(id)).filter((x): x is PublicService => Boolean(x));
+  }, [biz, serviceIds]);
+
+  const totalPrice = services.reduce((sum, item) => sum + item.price, 0);
+  const totalDuration = services.reduce((sum, item) => sum + item.duration, 0);
+
+  const staff = useMemo(
+    () => (staffId && biz ? biz.staff.find((p) => p.id === staffId) ?? null : null),
+    [staffId, biz]
+  );
+
+  // Mirror the selection into the address bar. replaceState, not pushState: every tick of a
+  // checkbox would otherwise become a history entry, and the back button would walk the
+  // customer through their own basket one service at a time instead of leaving the page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const query = stringifySelection({ staffId, serviceIds, date: date || null, time: time || null });
+    window.history.replaceState(null, '', `${window.location.pathname}${query}`);
+  }, [staffId, serviceIds, date, time]);
+
   const flow = biz?.bookingFlow ?? DEFAULT_BOOKING_FLOW;
   const showStaff = flowShowsStaff(flow);
   const staffFirst = flowStaffFirst(flow);
@@ -231,16 +312,35 @@ export default function BookingApp() {
    */
   const eligibleStaff = useMemo(() => {
     if (!biz) return [];
-    if (!service) return biz.staff;
-    return biz.staff.filter((person) => service.staffIds.includes(person.id));
-  }, [biz, service]);
+    if (services.length === 0) return biz.staff;
+    // EVERY chosen service, not any: one visit is one person, so a specialist who cannot do
+    // the beard trim cannot take a haircut-plus-beard booking.
+    return biz.staff.filter((person) => services.every((item) => item.staffIds.includes(person.id)));
+  }, [biz, services]);
 
   /** With a specialist chosen first, the service list narrows to what that person performs. */
   const offeredServices = useMemo(() => {
     if (!biz) return [];
-    if (!staff) return biz.services;
-    const theirs = biz.services.filter((item) => item.staffIds.includes(staff.id));
-    return theirs.length > 0 ? theirs : biz.services;
+    const forStaff = staff ? biz.services.filter((item) => item.staffIds.includes(staff.id)) : biz.services;
+    const base = forStaff.length > 0 ? forStaff : biz.services;
+    const q = search.trim().toLowerCase();
+    return q ? base.filter((item) => item.name.toLowerCase().includes(q)) : base;
+  }, [biz, staff, search]);
+
+  /**
+   * Changing the specialist can invalidate what is already chosen.
+   *
+   * A service that person does not perform is dropped, and a held time goes with it, because
+   * the slot was sized to a basket that no longer exists. Silent rather than a warning: the
+   * basket bar and the summary both show what remains, so the correction is visible where the
+   * customer is already looking.
+   */
+  useEffect(() => {
+    if (!biz || !staff) return;
+    setServiceIds((current) => {
+      const kept = current.filter((id) => biz.services.find((x) => x.id === id)?.staffIds.includes(staff.id));
+      return kept.length === current.length ? current : kept;
+    });
   }, [biz, staff]);
 
   /**
@@ -249,20 +349,22 @@ export default function BookingApp() {
    * turned the step off has said it does not care who by.
    */
   useEffect(() => {
-    if (showStaff || !service) return;
-    setStaff((current) => (current && eligibleStaff.some((p) => p.id === current.id) ? current : eligibleStaff[0] ?? null));
-  }, [showStaff, service, eligibleStaff]);
+    if (showStaff || services.length === 0) return;
+    setStaffId((current) => (current && eligibleStaff.some((p) => p.id === current) ? current : eligibleStaff[0]?.id ?? null));
+  }, [showStaff, services.length, eligibleStaff]);
 
   /** "Any specialist" resolves to a real person the moment a time is known. */
   useEffect(() => {
-    if (!anyStaff || staff) return;
-    if (eligibleStaff.length > 0) setStaff(eligibleStaff[0]!);
-  }, [anyStaff, staff, eligibleStaff]);
+    if (!anyStaff || staffId) return;
+    // "Any specialist" is resolved to a real person as soon as one is available, because a
+    // booking row needs a staff_id — the customer simply never had to pick.
+    if (eligibleStaff.length > 0) setStaffId(eligibleStaff[0]!.id);
+  }, [anyStaff, staffId, eligibleStaff]);
 
   // Slots depend on staff+date+service; refetch whenever any moves, and drop a held time that
   // is no longer offered so the confirm button cannot submit a stale slot.
   useEffect(() => {
-    if (!staff || !date || !service) {
+    if (!staff || !date || services.length === 0) {
       setSlots(null);
       return;
     }
@@ -270,7 +372,7 @@ export default function BookingApp() {
     setSlotsLoading(true);
     // serviceId is sent so the server can exclude slots the service would overrun; it resolves
     // the duration itself rather than trusting a number from here.
-    fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
+    fetch(`/api/public/slots?staffId=${staff.id}&serviceIds=${serviceIds.join(',')}&date=${encodeURIComponent(date)}`)
       .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : Promise.reject(new Error('slots'))))
       .then((body) => {
         if (!alive) return;
@@ -282,7 +384,7 @@ export default function BookingApp() {
     return () => {
       alive = false;
     };
-  }, [staff, date, service]);
+  }, [staff, date, services.length, serviceIds]);
 
   /**
    * Next free times for every eligible specialist, for the chips on their cards.
@@ -292,12 +394,12 @@ export default function BookingApp() {
    * a handful; it would not be for a hundred, and this is a barbershop.
    */
   useEffect(() => {
-    if (screen !== 'staff' || !service || !date) return;
+    if (screen !== 'staff' || services.length === 0 || !date) return;
     let alive = true;
     const people = eligibleStaff.slice(0, 12);
     Promise.all(
       people.map((person) =>
-        fetch(`/api/public/slots?staffId=${person.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
+        fetch(`/api/public/slots?staffId=${person.id}&serviceIds=${serviceIds.join(',')}&date=${encodeURIComponent(date)}`)
           .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : { slots: [] }))
           .then((body) => [person.id, body.slots.slice(0, 5)] as const)
           .catch(() => [person.id, [] as string[]] as const)
@@ -309,7 +411,7 @@ export default function BookingApp() {
     return () => {
       alive = false;
     };
-  }, [screen, service, date, eligibleStaff]);
+  }, [screen, services.length, serviceIds, date, eligibleStaff]);
 
   function dayLabel(iso: string) {
     if (!biz) return iso;
@@ -331,14 +433,16 @@ export default function BookingApp() {
     return Array.from({ length: 42 }, (_, i) => addDaysIso(start, i));
   }, [monthAnchor]);
 
-  const canSubmit = Boolean(service && staff && date && time && name.trim().length >= 2 && isValidPhone(phone) && !submitting);
+  const canSubmit = Boolean(services.length > 0 && staff && date && time && name.trim().length >= 2 && isValidPhone(phone) && !submitting);
 
   async function submit() {
-    if (!service || !staff || !canSubmit) return;
+    if (services.length === 0 || !staff || !canSubmit) return;
     setSubmitting(true);
     setError(null);
     const payload: CreatePublicBookingInput = {
-      serviceId: service.id,
+      // The whole basket. The server prices and times it from these ids, never from anything
+      // this page calculated — the totals on screen are for the customer, not for the record.
+      serviceIds,
       staffId: staff.id,
       date,
       time,
@@ -358,13 +462,13 @@ export default function BookingApp() {
         // A lost race means the slot list is wrong; refetch so they see the truth.
         if (body.code === 'slot_taken') {
           setTime('');
-          const refresh = await fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`);
+          const refresh = await fetch(`/api/public/slots?staffId=${staff.id}&serviceIds=${serviceIds.join(',')}&date=${encodeURIComponent(date)}`);
           if (refresh.ok) setSlots(((await refresh.json()) as { slots: string[] }).slots);
           setScreen('datetime');
         }
         return;
       }
-      setDone({ serviceName: service.name, staffName: staff.name });
+      setDone({ serviceName: services.map((x) => x.name).join(' · '), staffName: staff.name });
     } catch {
       setError(t.errGeneric);
     } finally {
@@ -375,8 +479,8 @@ export default function BookingApp() {
   function reset() {
     setDone(null);
     setScreen('menu');
-    setService(biz && biz.services.length === 1 ? biz.services[0]! : null);
-    setStaff(null);
+    setServiceIds(biz && biz.services.length === 1 ? [biz.services[0]!.id] : []);
+    setStaffId(null);
     setAnyStaff(false);
     setTime('');
     setName('');
@@ -409,7 +513,14 @@ export default function BookingApp() {
   );
 
   /** Everything answered, so the details screen can be reached. */
-  const ready = Boolean(service && staff && date && time);
+  const missing = nextMissingStep(
+    { staffId, serviceIds, date: date || null, time: time || null },
+    { needsStaff: showStaff }
+  );
+  const ready = missing === null;
+  /** The CTA's destination AND its label come from one place, so they cannot disagree. */
+  const ctaStep: Screen = missing === 'staff' ? 'staff' : missing === 'service' ? 'service' : missing === 'datetime' ? 'datetime' : 'details';
+  const ctaLabel = missing === 'staff' ? t.chooseStaff : missing === 'service' ? t.chooseService : missing === 'datetime' ? t.chooseDate : t.confirm;
   const staffLabel = anyStaff ? t.anySpecialist : staff?.name ?? t.notChosen;
   const whenLabel = time ? `${dayLabel(date)}, ${time}` : t.notChosen;
 
@@ -471,7 +582,7 @@ export default function BookingApp() {
     // Order follows the owner's setting; the specialist entry disappears for service_only.
     const rows: Array<{ key: Screen; icon: 'staff' | 'date' | 'service'; label: string; value: string }> = [];
     const staffRow = { key: 'staff' as Screen, icon: 'staff' as const, label: t.chooseStaff, value: staffLabel };
-    const serviceRow = { key: 'service' as Screen, icon: 'service' as const, label: t.chooseService, value: service?.name ?? t.notChosen };
+    const serviceRow = { key: 'service' as Screen, icon: 'service' as const, label: t.chooseService, value: services.length === 0 ? t.notChosen : services.length === 1 ? services[0]!.name : `${services.length} · ${money(totalPrice) ?? ''}` };
     if (showStaff && staffFirst) rows.push(staffRow);
     if (!staffFirst) rows.push(serviceRow);
     rows.push({ key: 'datetime', icon: 'date', label: t.chooseDate, value: whenLabel });
@@ -499,10 +610,14 @@ export default function BookingApp() {
             </div>
           )}
         </div>
-        {ready && (
+        {/* Always points at the next missing piece, and becomes the confirm once all three
+            are set. Hidden only while nothing at all is chosen, when it would have nothing
+            useful to say. */}
+        {(staffId || services.length > 0 || time) && (
           <div className="bk-bar">
-            <button type="button" className="bk-primary" onClick={() => setScreen('details')}>
-              {t.confirm}
+            {services.length > 0 && <BasketBar services={services} totalPrice={totalPrice} totalDuration={totalDuration} onEdit={() => setScreen('service')} t={t} />}
+            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep)}>
+              {ctaLabel}
             </button>
           </div>
         )}
@@ -530,6 +645,11 @@ export default function BookingApp() {
         {head}
         <h2 className="bk-title">{t.service}</h2>
 
+        <label className="bk-search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 21l-4.3-4.3" /><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" /></svg>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t.searchPh} aria-label={t.searchPh} />
+        </label>
+
         {cats.length > 0 && (
           <div className="bk-cats">
             <button type="button" className={`bk-cat${category === '' ? ' is-on' : ''}`} onClick={() => setCategory('')}>
@@ -553,11 +673,17 @@ export default function BookingApp() {
               <button
                 key={item.id}
                 type="button"
+                role="checkbox"
+                aria-checked={serviceIds.includes(item.id)}
                 onClick={() => {
-                  setService(item);
+                  // Toggle, and clear any held time: the slot was sized to the old basket, and
+                  // keeping it would let a longer visit sit in a block that no longer fits.
+                  setServiceIds((current) =>
+                    current.includes(item.id) ? current.filter((x) => x !== item.id) : [...current, item.id]
+                  );
                   setTime('');
                 }}
-                className={`bk-row${service?.id === item.id ? ' is-on' : ''}`}
+                className={`bk-row${serviceIds.includes(item.id) ? ' is-on' : ''}`}
               >
                 <span className="bk-row-main">
                   <span className="bk-row-name">{item.name}</span>
@@ -570,7 +696,7 @@ export default function BookingApp() {
                       quieter than a placeholder standing in for a price. */}
                   {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
                 </span>
-                <span className={`bk-check${service?.id === item.id ? ' is-on' : ''}`} />
+                <span className={`bk-check${serviceIds.includes(item.id) ? ' is-on' : ''}`} />
               </button>
                   ))}
                 </div>
@@ -578,14 +704,11 @@ export default function BookingApp() {
             )
           )}
         </div>
-        {service && (
+        {services.length > 0 && (
           <div className="bk-bar">
-            <div className="bk-bar-sum">
-              <span>{service.name}</span>
-              <span className="bk-bar-total">{money(service.price) ?? ''}</span>
-            </div>
-            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
-              {t.done}
+            <BasketBar services={services} totalPrice={totalPrice} totalDuration={totalDuration} onEdit={null} t={t} />
+            <button type="button" className="bk-primary" onClick={() => setScreen(ctaStep === 'service' ? 'menu' : ctaStep)}>
+              {ctaStep === 'service' ? t.done : ctaLabel}
             </button>
           </div>
         )}
@@ -606,7 +729,7 @@ export default function BookingApp() {
             className={`bk-person${anyStaff ? ' is-on' : ''}`}
             onClick={() => {
               setAnyStaff(true);
-              setStaff(eligibleStaff[0] ?? null);
+              setStaffId(eligibleStaff[0]?.id ?? null);
             }}
           >
             <RowIcon name="staff" />
@@ -626,7 +749,7 @@ export default function BookingApp() {
                   className="bk-person"
                   onClick={() => {
                     setAnyStaff(false);
-                    setStaff(person);
+                    setStaffId(person.id);
                   }}
                 >
                   {person.hasPhoto ? (
@@ -656,7 +779,7 @@ export default function BookingApp() {
                           className="bk-next-chip"
                           onClick={() => {
                             setAnyStaff(false);
-                            setStaff(person);
+                            setStaffId(person.id);
                             setTime(slot);
                             setScreen('menu');
                           }}
@@ -732,7 +855,7 @@ export default function BookingApp() {
         </div>
 
         <div className="bk-times-wrap">
-          {!service ? (
+          {services.length === 0 ? (
             <div className="bk-empty">{t.noSlotsHint}</div>
           ) : slotsLoading ? (
             <div className="bk-empty">{t.loading}</div>
@@ -809,14 +932,17 @@ export default function BookingApp() {
         <button type="button" className="bk-sum-row" onClick={() => setScreen('service')}>
           <span className="bk-sum-main">
             <span className="bk-sum-label">{t.service}</span>
-            <span className="bk-sum-value">{service?.name ?? t.notChosen}</span>
+            <span className="bk-sum-value">{services.length > 0 ? services.map((x) => x.name).join(' · ') : t.notChosen}</span>
           </span>
           <Pencil />
         </button>
-        {service && money(service.price) && (
+        {services.length > 0 && (
           <div className="bk-sum-total">
-            <span>{t.total}</span>
-            <span>{money(service.price)}</span>
+            <span>
+              {t.total}
+              {totalDuration > 0 && <span className="bk-sum-dur"> · {formatDuration(totalDuration, t)}</span>}
+            </span>
+            <span>{money(totalPrice) ?? ''}</span>
           </div>
         )}
       </div>

@@ -766,13 +766,63 @@
 }
 .bk-bar-sum {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-2);
   margin-bottom: 10px;
+}
+.bk-bar-count {
+  flex: 1;
+  min-width: 0;
+}
+.bk-bar-dur {
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.bk-bar-edit {
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  cursor: pointer;
+  flex: none;
+}
+.bk-bar-edit:hover {
+  color: var(--ink);
+}
+.bk-sum-dur {
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+/* Search sits above the category chips, so a long price list can be reached by name as well
+   as by group. */
+.bk-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 0 13px;
+  margin-bottom: 12px;
+  color: var(--ink-3);
+}
+.bk-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  /* 16px so iOS Safari does not zoom the viewport when it takes focus. */
+  font-size: 16px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 12px 0;
+  outline: none;
 }
 .bk-bar-total {
   font-size: 15px;

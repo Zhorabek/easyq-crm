@@ -1435,7 +1435,16 @@ async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
   const today = getTodayIso(timeZone);
   const date = url.searchParams.get("date") ?? "";
   const staffId = Number(url.searchParams.get("staffId") ?? 0);
-  const serviceId = Number(url.searchParams.get("serviceId") ?? 0);
+  // `serviceIds` is what the booking page sends now; `serviceId` is kept for an older cached
+  // bundle. Both go through the same resolver the write path uses, so a slot list and the
+  // booking that follows it can never be sized by different rules.
+  const wanted = requestedServiceIds({
+    serviceId: Number(url.searchParams.get("serviceId") ?? 0) || undefined,
+    serviceIds: (url.searchParams.get("serviceIds") ?? "")
+      .split(",")
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0),
+  });
 
   if (!isIsoDate(date) || !Number.isInteger(staffId) || staffId <= 0) {
     return json({ error: "A date and staffId are required." }, { status: 400 });
@@ -1444,16 +1453,21 @@ async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
     return json({ date, staffId, slots: [] });
   }
 
-  // The duration is looked up rather than taken from the query string: a client could
-  // otherwise claim a 15-minute service and be offered slots a 90-minute one would overrun.
+  // Durations are looked up, never taken from the query string: a client could otherwise
+  // claim fifteen minutes and be offered slots that a ninety-minute basket would overrun.
   // Scoped to this business and to active services, like every other public lookup.
   let serviceDuration: number | null = null;
-  if (Number.isInteger(serviceId) && serviceId > 0) {
-    const service = await env.DB
-      .prepare("SELECT duration FROM services WHERE id = ? AND business_id = ? AND is_active = 1 LIMIT 1")
-      .bind(serviceId, tenant.businessId)
-      .first<{ duration: number }>();
-    serviceDuration = service ? Number(service.duration || 0) : null;
+  if (wanted.length > 0) {
+    const placeholders = wanted.map(() => "?").join(", ");
+    const rows = await env.DB
+      .prepare(`SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 AND id IN (${placeholders})`)
+      .bind(tenant.businessId, ...wanted)
+      .all<{ id: number; name: string; price: number; duration: number }>();
+    const basket = buildBasket(wanted, rows.results ?? []);
+    // A basket that will not resolve gets no duration rather than a partial one — offering
+    // slots sized to the services that DID resolve would advertise times the booking then
+    // refuses, which reads as the shop losing the slot between one screen and the next.
+    serviceDuration = basket ? basket.totalDuration : null;
   }
 
   const slots = await getPublicSlots(

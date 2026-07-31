@@ -147,6 +147,9 @@ export default function BookingApp() {
   const [monthAnchor, setMonthAnchor] = useState('');
   /** Category filter on the services screen. "" is "all". */
   const [category, setCategory] = useState('');
+  /** Collapsed time groups, by key. Open by default — collapsing is for getting a long
+      evening list out of the way, not for hiding the times behind an extra tap. */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const [slots, setSlots] = useState<string[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -694,12 +697,15 @@ export default function BookingApp() {
         {head}
         <div className="bk-card">
           <div className="bk-cal-head">
-            <span className="bk-cal-month">
-              {t.months[monthIndex]} {monthAnchor.slice(0, 4)}
-            </span>
+            {/* The month reads as a control, not a caption — it is the thing you change. */}
+            <span className="bk-cal-month">{t.months[monthIndex]}</span>
             <span className="bk-cal-nav">
-              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, -1).slice(0, 7)}-01`)} aria-label="←">‹</button>
-              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, 32).slice(0, 7)}-01`)} aria-label="→">›</button>
+              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, -1).slice(0, 7)}-01`)} aria-label="←">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              </button>
+              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, 32).slice(0, 7)}-01`)} aria-label="→">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+              </button>
             </span>
           </div>
           <div className="bk-cal-grid">
@@ -725,7 +731,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-        <div className="bk-card">
+        <div className="bk-times-wrap">
           {!service ? (
             <div className="bk-empty">{t.noSlotsHint}</div>
           ) : slotsLoading ? (
@@ -739,16 +745,28 @@ export default function BookingApp() {
             groups.map(([key, label]) => {
               const inGroup = slots.filter((slot) => partOfDay(slot) === key);
               if (inGroup.length === 0) return null;
+              const shut = collapsed[key] === true;
               return (
                 <div key={key} className="bk-part">
-                  <div className="bk-part-label">{label}</div>
-                  <div className="bk-times">
-                    {inGroup.map((slot) => (
-                      <Chip key={slot} on={time === slot} onClick={() => setTime(slot)}>
-                        {slot}
-                      </Chip>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    className="bk-part-head"
+                    onClick={() => setCollapsed((c) => ({ ...c, [key]: !shut }))}
+                  >
+                    <span className="bk-part-label">{label}</span>
+                    <svg className={`bk-part-chev${shut ? ' is-shut' : ''}`} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 15l6-6 6 6" />
+                    </svg>
+                  </button>
+                  {!shut && (
+                    <div className="bk-times">
+                      {inGroup.map((slot) => (
+                        <Chip key={slot} on={time === slot} onClick={() => setTime(slot)}>
+                          {slot}
+                        </Chip>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })

@@ -9,11 +9,26 @@
  * and no stored preference to honour. */
 
 .bk-shell {
-  max-width: 560px;
+  /* Narrower than before. The reference is a phone-width column even on a desktop, which is
+     right: this is one task, and a 560px form on a 1400px screen is mostly empty space. */
+  max-width: 460px;
   margin: 0 auto;
-  padding: 20px 16px 48px;
+  padding: 18px 16px 40px;
   font-family: var(--font);
   color: var(--ink);
+  min-height: 100vh;
+  background: var(--panel);
+  box-shadow: 0 0 60px -30px rgba(0, 0, 0, 0.25);
+}
+@media (min-width: 520px) {
+  .bk-shell {
+    /* On anything wider than a phone the column becomes a sheet floating on the page
+       background, which is what gives the reference its calm. */
+    margin: 22px auto;
+    min-height: 0;
+    border-radius: 22px;
+    padding-bottom: 28px;
+  }
 }
 
 /* ------------------------------------------------------------------- header */
@@ -27,9 +42,9 @@
   gap: 13px;
 }
 .bk-avatar {
-  width: 54px;
-  height: 54px;
-  border-radius: 15px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
   flex: none;
   object-fit: cover;
   background: var(--panel-2);
@@ -38,7 +53,7 @@
 .bk-avatar-fallback {
   display: grid;
   place-items: center;
-  font-size: 22px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--ink-3);
 }
@@ -48,7 +63,7 @@
 }
 .bk-head-text h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: -0.025em;
   line-height: 1.2;
@@ -91,10 +106,11 @@
 
 .bk-card {
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: 6px 18px 20px;
+  padding: 2px 0 14px;
+}
+.bk-card + .bk-card {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }
 
 /* ------------------------------------------------------- service list rows */
@@ -251,17 +267,13 @@
   width: 100%;
   border: 0;
   border-radius: 13px;
-  padding: 15px;
+  padding: 16px;
   font-family: inherit;
   font-size: 15.5px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--accent-ink);
   background: var(--accent);
-  /* Tinted from the accent, not the old hardcoded lime: this page takes the business's
-     brand, so a fixed green glow sat under whatever colour they actually picked. */
-  box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 65%, transparent);
   cursor: pointer;
-  margin-top: 4px;
 }
 .bk-primary:disabled {
   background: var(--panel-2);
@@ -547,44 +559,56 @@
   color: var(--accent-deep);
 }
 
-/* ---- month calendar ---- */
+/* ---- month calendar ----
+ *
+ * Sized off the reference: a month at a time, the chosen day as a filled circle, and the
+ * surrounding month's days present but recessive so the grid keeps its shape.
+ */
 
 .bk-cal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
+/* Reads as a control rather than a caption — it is the thing you change. */
 .bk-cal-month {
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 14.5px;
+  font-weight: 700;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--ink);
 }
 .bk-cal-nav {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 .bk-cal-nav button {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   border: 0;
-  background: var(--panel-2);
+  background: transparent;
   color: var(--ink-2);
-  font-size: 19px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
   cursor: pointer;
+}
+.bk-cal-nav button:hover {
+  background: var(--panel-2);
 }
 .bk-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 2px 0;
 }
 .bk-cal-wd {
   text-align: center;
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--ink-3);
-  padding-bottom: 6px;
+  padding-bottom: 10px;
 }
 .bk-cal-day {
   aspect-ratio: 1;
@@ -592,18 +616,20 @@
   background: transparent;
   border-radius: 50%;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
+  /* Keeps the circle a circle on wide screens instead of a stretched oval. */
+  max-width: 44px;
+  justify-self: center;
+  width: 100%;
 }
 .bk-cal-day:disabled {
   color: var(--ink-3);
-  opacity: 0.35;
+  opacity: 0.4;
   cursor: default;
 }
-/* Days spilling in from the neighbouring months stay visible but recede, so the grid keeps
-   its shape without them competing with the month being chosen. */
 .bk-cal-day.is-outside:not(:disabled) {
   color: var(--ink-3);
 }
@@ -613,28 +639,65 @@
 .bk-cal-day.is-on {
   background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 800;
+  font-weight: 700;
 }
 
-/* ---- time groups ---- */
+/* ---- time groups ----
+ *
+ * On the page rather than inside a second card: the split between "pick a day" and "pick a
+ * time" is what makes the screen readable, and a second card just draws another box.
+ */
 
+.bk-times-wrap {
+  padding: 4px 2px 0;
+}
 .bk-part + .bk-part {
-  margin-top: 16px;
+  margin-top: 8px;
+}
+.bk-part-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 2px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
 }
 .bk-part-label {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14.5px;
+  font-weight: 600;
   color: var(--ink-3);
-  margin-bottom: 9px;
 }
+.bk-part-chev {
+  color: var(--ink-3);
+  transition: transform 0.15s;
+}
+.bk-part-chev.is-shut {
+  transform: rotate(180deg);
+}
+/* Three per row, like the reference: wide enough that a time is easy to hit with a thumb,
+   and a fixed column count so the rows line up instead of reflowing per group. */
 .bk-times {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  padding-bottom: 6px;
 }
 .bk-times .bk-chip {
   justify-content: center;
-  padding: 12px 0;
+  padding: 14px 0;
+  border-radius: 999px;
+  border: 0;
+  background: var(--panel-2);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.bk-times .bk-chip.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
 }
 
 /* ---- summary rows ---- */
@@ -695,7 +758,7 @@
 .bk-bar {
   position: sticky;
   bottom: 0;
-  margin: 14px -16px 0;
+  margin: 16px -16px -40px;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--panel);
   border-top: 1px solid var(--line);

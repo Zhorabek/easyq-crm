@@ -86,16 +86,6 @@
   background: var(--accent);
   color: var(--accent-ink);
 }
-.bk-schedule {
-  margin-top: 11px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--accent-deep);
-  background: var(--accent-tint);
-  display: inline-block;
-  padding: 5px 11px;
-  border-radius: 999px;
-}
 
 /* --------------------------------------------------------------------- card */
 
@@ -105,34 +95,6 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   padding: 6px 18px 20px;
-}
-
-.bk-section + .bk-section {
-  border-top: 1px solid var(--line);
-}
-.bk-section {
-  padding: 18px 0 4px;
-}
-.bk-section-title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0 0 13px;
-  font-size: 14.5px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-.bk-step {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: var(--accent-tint);
-  color: var(--accent-deep);
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 800;
-  flex: none;
 }
 
 /* ------------------------------------------------------- service list rows */
@@ -187,22 +149,6 @@
   flex: none;
 }
 
-/* ---------------------------------------------------------------- chips */
-
-.bk-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-/* Horizontal scroll rather than wrap: three weeks of days would otherwise become a
-   six-row block that pushes the time picker off screen on a phone. */
-.bk-days {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-}
 .bk-chip {
   display: inline-flex;
   flex-direction: column;
@@ -232,36 +178,6 @@
 .bk-chip:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-.bk-chip-sub {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.7;
-}
-/* A specialist's photo inside their chip.
-   The chip is a vertical stack (name over role), so the photo goes above both rather than
-   beside them — a horizontal layout would need the whole chip restructured, and centred over
-   the name reads as "this is that person" without it. */
-.bk-chip-photo {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  object-fit: cover;
-  margin: 1px auto 5px;
-  display: block;
-  /* Same treatment when selected: the ring is the accent, so it stays visible on the filled
-     chip as well as the unfilled one. */
-  box-shadow: 0 0 0 2px var(--panel);
-}
-.bk-day-dow {
-  font-size: 11.5px;
-  font-weight: 700;
-  opacity: 0.75;
-}
-.bk-day-num {
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1.1;
 }
 
 /* ---------------------------------------------------------------- fields */
@@ -425,4 +341,386 @@
    not follow --accent-deep like everything else on the page. */
 .bk-foot span {
   color: #84a92e;
+}
+
+/* ================================================================= stepped flow
+ *
+ * The page is a hub of full screens rather than one long form. These classes carry the
+ * screens the menu opens; the older .bk-row / .bk-chip / .bk-field rules above are reused
+ * inside them unchanged.
+ */
+
+.bk-head.is-menu {
+  margin-bottom: 14px;
+}
+.bk-back {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  flex: none;
+  cursor: pointer;
+  margin-left: -8px;
+}
+.bk-back:hover {
+  background: var(--panel-2);
+}
+.bk-title {
+  margin: 0 0 13px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+/* ---- entry menu ---- */
+
+.bk-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bk-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 13px 4px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.bk-menu-row:hover {
+  background: var(--panel-2);
+}
+.bk-menu-row + .bk-menu-row {
+  border-top: 1px solid var(--line);
+}
+.bk-rowicon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  color: var(--ink-2);
+}
+.bk-menu-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bk-menu-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+.bk-menu-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Unanswered entries stay quiet — the point of the menu is what is still missing. */
+.bk-menu-value.is-empty {
+  color: var(--ink-3);
+}
+.bk-chev {
+  flex: none;
+  color: var(--ink-3);
+}
+
+/* ---- specialist cards ---- */
+
+.bk-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 4px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.bk-person-block + .bk-person-block,
+.bk-person + .bk-person-block {
+  border-top: 1px solid var(--line);
+}
+.bk-person-photo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  background: var(--panel-2);
+}
+.bk-person-initial {
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink-3);
+}
+.bk-person-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.bk-person-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.bk-person-role {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.bk-radio {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  border: 2px solid var(--line-2);
+}
+.bk-radio.is-on {
+  border-color: var(--accent-deep);
+  /* The dot is a thick inset ring, so it needs no extra element. */
+  box-shadow: inset 0 0 0 4px var(--accent-deep);
+}
+.bk-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex: none;
+  border: 2px solid var(--line-2);
+}
+.bk-check.is-on {
+  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+}
+
+/* Next free times under a specialist. */
+.bk-next {
+  padding: 0 4px 13px 56px;
+}
+.bk-next-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-bottom: 7px;
+}
+.bk-next-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.bk-next-chip {
+  border: 0;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.bk-next-chip:hover {
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+}
+
+/* ---- month calendar ---- */
+
+.bk-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.bk-cal-month {
+  font-size: 15px;
+  font-weight: 800;
+}
+.bk-cal-nav {
+  display: flex;
+  gap: 4px;
+}
+.bk-cal-nav button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bk-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.bk-cal-wd {
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+  padding-bottom: 6px;
+}
+.bk-cal-day {
+  aspect-ratio: 1;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.bk-cal-day:disabled {
+  color: var(--ink-3);
+  opacity: 0.35;
+  cursor: default;
+}
+/* Days spilling in from the neighbouring months stay visible but recede, so the grid keeps
+   its shape without them competing with the month being chosen. */
+.bk-cal-day.is-outside:not(:disabled) {
+  color: var(--ink-3);
+}
+.bk-cal-day:not(:disabled):hover {
+  background: var(--panel-2);
+}
+.bk-cal-day.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+
+/* ---- time groups ---- */
+
+.bk-part + .bk-part {
+  margin-top: 16px;
+}
+.bk-part-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-3);
+  margin-bottom: 9px;
+}
+.bk-times {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.bk-times .bk-chip {
+  justify-content: center;
+  padding: 12px 0;
+}
+
+/* ---- summary rows ---- */
+
+.bk-sum-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 2px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  color: var(--ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.bk-sum-row + .bk-sum-row {
+  border-top: 1px solid var(--line);
+}
+.bk-sum-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bk-sum-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.bk-sum-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.bk-sum-total {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 800;
+}
+.bk-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+
+/* ---- sticky action bar ----
+ *
+ * Fixed rather than in flow: the primary action has to stay reachable while a long list of
+ * services or times scrolls behind it, which is the whole reason the old single-page layout
+ * was awkward on a phone. */
+.bk-bar {
+  position: sticky;
+  bottom: 0;
+  margin: 14px -16px 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px -18px rgba(0, 0, 0, 0.45);
+}
+.bk-bar-sum {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+}
+.bk-bar-total {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.bk-empty-hint {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-top: 6px;
 }

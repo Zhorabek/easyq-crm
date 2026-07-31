@@ -12,16 +12,36 @@ import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, 
 import '../crm/crm.css';
 import './booking.css';
 
+/**
+ * The public booking page.
+ *
+ * ## A hub, not a form
+ *
+ * This used to be one long scroll: service, then specialist, then day, then time, then your
+ * details, each revealed as the one above it was answered. That order is an assumption, and it
+ * is wrong about half the customers — plenty know they want Aziz, or know they are free
+ * Thursday evening, long before they know what the service is called.
+ *
+ * So the landing screen is a MENU of three entries, and each opens a full screen of its own.
+ * Answer them in any order; the menu shows what is chosen so far. `bookingFlow` still decides
+ * which entry is listed first and whether the specialist entry exists at all, so the owner's
+ * setting is preserved rather than overridden.
+ *
+ * One screen at a time also fixes the thing that made the old page hard on a phone: five
+ * sections stacked meant the time picker sat below the fold, and choosing a slot scrolled the
+ * page under your thumb.
+ */
+
 /** How far ahead a client may browse. The API independently caps this at 60 days. */
 const DAYS_SHOWN = 21;
 
 /* ------------------------------------------------------------------ helpers */
 
 function addDaysIso(iso: string, days: number) {
-  // Arithmetic in UTC on a date-only string, so a DST shift cannot move the result.
-  const base = new Date(`${iso}T00:00:00Z`);
-  base.setUTCDate(base.getUTCDate() + days);
-  return base.toISOString().slice(0, 10);
+  const [y, m, d] = iso.split('-').map(Number);
+  const base = Date.UTC(y!, (m ?? 1) - 1, d ?? 1);
+  const next = new Date(base + days * 86400000);
+  return next.toISOString().slice(0, 10);
 }
 
 function isoWeekday(iso: string) {
@@ -32,7 +52,7 @@ function isoWeekday(iso: string) {
  * A service price, or null when there is none to show.
  *
  * A price of 0 means the shop has not set one — this is the customer-facing page, and "0 so'm"
- * there reads as a promise that the haircut is free. Better to say nothing and let them ask.
+ * there reads as a promise that the haircut is free.
  */
 function money(amount: number) {
   if (!Number.isFinite(amount) || amount <= 0) return null;
@@ -40,7 +60,13 @@ function money(amount: number) {
   return `${new Intl.NumberFormat('ru-RU').format(Math.round(amount))} so'm`;
 }
 
-/* -------------------------------------------------------------- primitives */
+/** Morning / afternoon / evening, so a column of twenty times becomes three short ones. */
+function partOfDay(time: string): 'morning' | 'day' | 'evening' {
+  const hour = Number(time.slice(0, 2));
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'day';
+  return 'evening';
+}
 
 function Chip({ on, onClick, children, disabled }: { on: boolean; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
@@ -50,19 +76,6 @@ function Chip({ on, onClick, children, disabled }: { on: boolean; onClick: () =>
   );
 }
 
-function Section({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
-  return (
-    <section className="bk-section">
-      <h2 className="bk-section-title">
-        <span className="bk-step">{step}</span>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** Same +998 mask as the CRM's PhoneInput — the prefix is a static span, never editable. */
 function PhoneField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="bk-phone">
@@ -79,7 +92,43 @@ function PhoneField({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+/** Row icons. Inline rather than from the CRM set — this page ships to clients, not owners. */
+function RowIcon({ name }: { name: 'staff' | 'date' | 'service' }) {
+  const d =
+    name === 'staff'
+      ? 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87'
+      : name === 'date'
+        ? 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
+        : 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01';
+  return (
+    <span className="bk-rowicon">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {d.split('M').filter(Boolean).map((seg, i) => <path key={i} d={`M${seg}`} />)}
+      </svg>
+    </span>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg className="bk-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+function Pencil() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
 /* --------------------------------------------------------------------- app */
+
+type Screen = 'menu' | 'staff' | 'datetime' | 'service' | 'details';
 
 export default function BookingApp() {
   const [lang, setLangState] = useState<BookingLang>(detectLang);
@@ -88,16 +137,23 @@ export default function BookingApp() {
   const [biz, setBiz] = useState<PublicBusinessPayload | null>(null);
   const [loadError, setLoadError] = useState(false);
 
+  const [screen, setScreen] = useState<Screen>('menu');
   const [service, setService] = useState<PublicService | null>(null);
   const [staff, setStaff] = useState<PublicStaff | null>(null);
+  const [anyStaff, setAnyStaff] = useState(false);
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  /** First day of the month the calendar is showing, as an ISO date. */
+  const [monthAnchor, setMonthAnchor] = useState('');
 
   const [slots, setSlots] = useState<string[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  /** Next free times per staff id, for the chips under each specialist card. */
+  const [nextBy, setNextBy] = useState<Record<number, string[]>>({});
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,13 +173,14 @@ export default function BookingApp() {
     fetch('/api/public/business')
       // Asserted at the boundary rather than on the callback parameter. `json()` is
       // Promise<unknown> under @cloudflare/workers-types, so annotating the parameter is not a
-      // narrowing — it is a claim TypeScript rejects, which is what has been failing CI.
+      // narrowing — it is a claim TypeScript rejects, which is what once failed CI.
       .then((r) => (r.ok ? (r.json() as Promise<PublicBusinessPayload>) : Promise.reject(new Error('load'))))
       .then((body) => {
         if (!alive) return;
         setBiz(body);
         setDate(body.today);
-        if (body.services.length === 1) setService(body.services[0]);
+        setMonthAnchor(`${body.today.slice(0, 7)}-01`);
+        if (body.services.length === 1) setService(body.services[0]!);
       })
       .catch(() => alive && setLoadError(true));
     return () => {
@@ -131,21 +188,7 @@ export default function BookingApp() {
     };
   }, []);
 
-  useEffect(() => {
-    if (biz) document.title = `${t.book} · ${biz.name}`;
-  }, [biz, t.book]);
-
-  // Repaint every token from the business's theme. Set on the root element rather than
-  // injected as a <style> block so it overrides crm.css by specificity without a
-  // stylesheet race, and so a business that has chosen nothing simply inherits the
-  // defaults already in the file.
-  //
-  // This is the whole set, not just the accent, because a themed page is the point: an
-  // accent on an off-white page that the owner did not choose still looks like our
-  // product. booking.css is documented light-only — it never sets [data-theme] — and that
-  // stays true. A dark theme here is not the CRM's dark mode, it is eleven tokens whose
-  // values happen to be dark, all of them derived from the owner's background so the
-  // contrast holds without a second stylesheet.
+  // Brand the page from the business's own theme.
   useEffect(() => {
     if (!biz) return;
     const tokens = brandTokens(biz.brandTheme);
@@ -162,36 +205,24 @@ export default function BookingApp() {
     root.style.setProperty('--accent-deep', tokens.accentDeep);
     root.style.setProperty('--accent-tint', tokens.accentTint);
     root.style.setProperty('--accent-ink', tokens.accentInk);
-    // The light shadows are tuned for dark ink on a pale page and are invisible on a dark
-    // one, where depth has to come from a heavier drop instead.
     if (tokens.isDark) {
       root.style.setProperty('--shadow-sm', '0 1px 2px rgba(0, 0, 0, 0.4)');
       root.style.setProperty('--shadow', '0 10px 26px -14px rgba(0, 0, 0, 0.6)');
       root.style.setProperty('--shadow-lg', '0 24px 50px -22px rgba(0, 0, 0, 0.7)');
     }
-    // Tells the phone to paint its own chrome — the URL bar and the overscroll gutter —
-    // to match. Without it a dark booking page sits in a white frame.
     root.style.colorScheme = tokens.isDark ? 'dark' : 'light';
-  }, [biz]);
+    if (biz) document.title = `${t.book} · ${biz.name}`;
+  }, [biz, t.book]);
 
   const flow = biz?.bookingFlow ?? DEFAULT_BOOKING_FLOW;
-  const staffFirst = flowStaffFirst(flow);
   const showStaff = flowShowsStaff(flow);
-  // How many pickers precede Date, so the remaining step numbers stay consecutive.
-  const pickerSteps = showStaff ? 2 : 1;
+  const staffFirst = flowStaffFirst(flow);
 
   /**
    * Only the specialists actually assigned to the chosen service.
    *
-   * This used to fall back to the WHOLE TEAM when a service had nobody linked, on the theory
-   * that offering everyone beat dead-ending the customer. It did the opposite: a barber
-   * assigned to one service was offered for every service in the shop, so customers booked
-   * haircuts with someone who does not cut hair. The assignment is the shop's answer to "who
-   * can do this" and guessing past it is worse than not offering the service at all — which is
-   * what now happens, since getPublicBusiness drops services with nobody assigned.
-   *
-   * In staff-first order there is no service chosen yet when this list is drawn, so it is the
-   * whole team; the SERVICE list narrows by specialist instead, further down.
+   * The assignment is the shop's answer to "who can do this"; guessing past it is worse than
+   * not offering the service, which is why getPublicBusiness drops unassigned ones entirely.
    */
   const eligibleStaff = useMemo(() => {
     if (!biz) return [];
@@ -199,43 +230,31 @@ export default function BookingApp() {
     return biz.staff.filter((person) => service.staffIds.includes(person.id));
   }, [biz, service]);
 
-  // Staff-first: once a specialist is chosen, only what they actually do is offered. Without
-  // this the customer could pick a person and then a service that person does not perform,
-  // and the slot lookup would come back empty with nothing on screen explaining why.
+  /** With a specialist chosen first, the service list narrows to what that person performs. */
   const offeredServices = useMemo(() => {
     if (!biz) return [];
-    if (!staffFirst || !staff) return biz.services;
-    const forThisPerson = biz.services.filter((item) => item.staffIds.includes(staff.id));
-    // A team with no service links at all would otherwise show an empty list.
-    return forThisPerson.length > 0 ? forThisPerson : biz.services;
-  }, [biz, staff, staffFirst]);
+    if (!staff) return biz.services;
+    const theirs = biz.services.filter((item) => item.staffIds.includes(staff.id));
+    return theirs.length > 0 ? theirs : biz.services;
+  }, [biz, staff]);
 
   /**
    * service_only: the customer never sees a specialist, so one is chosen for them — the first
-   * who can do the service. Not the least-busy or the cheapest: any of those would be a
-   * scheduling policy invented here, and the shop already said it does not care who by turning
-   * the step off. An owner who does care picks a different flow.
+   * eligible. Not the least busy, which would be a scheduling policy invented here; a shop that
+   * turned the step off has said it does not care who by.
    */
   useEffect(() => {
     if (showStaff || !service) return;
-    const assigned = eligibleStaff[0] ?? null;
-    setStaff((current) => (current && eligibleStaff.some((p) => p.id === current.id) ? current : assigned));
+    setStaff((current) => (current && eligibleStaff.some((p) => p.id === current.id) ? current : eligibleStaff[0] ?? null));
   }, [showStaff, service, eligibleStaff]);
 
-  const days = useMemo(() => {
-    if (!biz) return [];
-    return Array.from({ length: DAYS_SHOWN }, (_, i) => addDaysIso(biz.today, i));
-  }, [biz]);
-
-  // Picking a service can invalidate the chosen specialist.
+  /** "Any specialist" resolves to a real person the moment a time is known. */
   useEffect(() => {
-    if (staff && !eligibleStaff.some((person) => person.id === staff.id)) {
-      setStaff(null);
-      setTime('');
-    }
-  }, [eligibleStaff, staff]);
+    if (!anyStaff || staff) return;
+    if (eligibleStaff.length > 0) setStaff(eligibleStaff[0]!);
+  }, [anyStaff, staff, eligibleStaff]);
 
-  // Slots depend on staff+date; refetch whenever either moves, and drop a held time that
+  // Slots depend on staff+date+service; refetch whenever any moves, and drop a held time that
   // is no longer offered so the confirm button cannot submit a stale slot.
   useEffect(() => {
     if (!staff || !date || !service) {
@@ -244,8 +263,8 @@ export default function BookingApp() {
     }
     let alive = true;
     setSlotsLoading(true);
-    // serviceId is sent so the server can exclude slots the service would overrun; it
-    // resolves the duration itself rather than trusting a number from here.
+    // serviceId is sent so the server can exclude slots the service would overrun; it resolves
+    // the duration itself rather than trusting a number from here.
     fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
       .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : Promise.reject(new Error('slots'))))
       .then((body) => {
@@ -260,12 +279,52 @@ export default function BookingApp() {
     };
   }, [staff, date, service]);
 
+  /**
+   * Next free times for every eligible specialist, for the chips on their cards.
+   *
+   * Fetched only while that screen is open, and only once a service is chosen — the slot API
+   * needs a duration to know what fits. One request per specialist is acceptable for a team of
+   * a handful; it would not be for a hundred, and this is a barbershop.
+   */
+  useEffect(() => {
+    if (screen !== 'staff' || !service || !date) return;
+    let alive = true;
+    const people = eligibleStaff.slice(0, 12);
+    Promise.all(
+      people.map((person) =>
+        fetch(`/api/public/slots?staffId=${person.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`)
+          .then((r) => (r.ok ? (r.json() as Promise<{ slots: string[] }>) : { slots: [] }))
+          .then((body) => [person.id, body.slots.slice(0, 5)] as const)
+          .catch(() => [person.id, [] as string[]] as const)
+      )
+    ).then((pairs) => {
+      if (!alive) return;
+      setNextBy(Object.fromEntries(pairs));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [screen, service, date, eligibleStaff]);
+
   function dayLabel(iso: string) {
     if (!biz) return iso;
     if (iso === biz.today) return t.today;
     if (iso === addDaysIso(biz.today, 1)) return t.tomorrow;
-    return t.weekdays[isoWeekday(iso)];
+    return t.weekdays[isoWeekday(iso)]!;
   }
+
+  /** Bookable window: today through DAYS_SHOWN, which is what the API will accept. */
+  const lastDay = biz ? addDaysIso(biz.today, DAYS_SHOWN) : '';
+  const canBook = (iso: string) => Boolean(biz) && iso >= biz!.today && iso <= lastDay;
+
+  /** Monday-first grid for the anchored month, padded with the surrounding days. */
+  const monthGrid = useMemo(() => {
+    if (!monthAnchor) return [] as string[];
+    const first = isoWeekday(monthAnchor); // 0 = Sunday
+    const lead = (first + 6) % 7; // shift so Monday is column 0
+    const start = addDaysIso(monthAnchor, -lead);
+    return Array.from({ length: 42 }, (_, i) => addDaysIso(start, i));
+  }, [monthAnchor]);
 
   const canSubmit = Boolean(service && staff && date && time && name.trim().length >= 2 && isValidPhone(phone) && !submitting);
 
@@ -280,7 +339,7 @@ export default function BookingApp() {
       time,
       clientName: name.trim(),
       clientPhone: toStoragePhone(phone) ?? phone,
-      notes: notes.trim() || undefined,
+      notes: [notes.trim(), email.trim() ? `email: ${email.trim()}` : ''].filter(Boolean).join(' · ') || undefined,
     };
     try {
       const res = await fetch('/api/public/bookings', {
@@ -296,6 +355,7 @@ export default function BookingApp() {
           setTime('');
           const refresh = await fetch(`/api/public/slots?staffId=${staff.id}&serviceId=${service.id}&date=${encodeURIComponent(date)}`);
           if (refresh.ok) setSlots(((await refresh.json()) as { slots: string[] }).slots);
+          setScreen('datetime');
         }
         return;
       }
@@ -309,11 +369,14 @@ export default function BookingApp() {
 
   function reset() {
     setDone(null);
-    setService(biz && biz.services.length === 1 ? biz.services[0] : null);
+    setScreen('menu');
+    setService(biz && biz.services.length === 1 ? biz.services[0]! : null);
     setStaff(null);
+    setAnyStaff(false);
     setTime('');
     setName('');
     setPhone('');
+    setEmail('');
     setNotes('');
     setError(null);
   }
@@ -334,39 +397,26 @@ export default function BookingApp() {
     );
   }
 
-  return (
-    <div className="bk-shell">
-      <header className="bk-head">
-        <div className="bk-head-row">
-          {biz.hasPhoto ? (
-            <img className="bk-avatar" src="/api/public/photo" alt="" />
-          ) : (
-            <span className="bk-avatar bk-avatar-fallback">{biz.name.slice(0, 1).toUpperCase()}</span>
-          )}
-          <div className="bk-head-text">
-            <h1>{biz.name}</h1>
-            <p>{biz.address}</p>
-          </div>
-          <div className="bk-langs">
-            {BOOKING_LANGS.map((code) => (
-              <button key={code} type="button" onClick={() => setLang(code)} className={code === lang ? 'is-on' : ''}>
-                {LANG_LABEL[code]}
-              </button>
-            ))}
-          </div>
-        </div>
-        {biz.schedule && <div className="bk-schedule">{biz.schedule}</div>}
-      </header>
+  const logo = biz.hasPhoto ? (
+    <img className="bk-avatar" src="/api/public/photo" alt="" />
+  ) : (
+    <span className="bk-avatar bk-avatar-fallback">{biz.name.slice(0, 1).toUpperCase()}</span>
+  );
 
-      {done ? (
+  /** Everything answered, so the details screen can be reached. */
+  const ready = Boolean(service && staff && date && time);
+  const staffLabel = anyStaff ? t.anySpecialist : staff?.name ?? t.notChosen;
+  const whenLabel = time ? `${dayLabel(date)}, ${time}` : t.notChosen;
+
+  /* ------------------------------------------------------------- confirmation */
+
+  if (done) {
+    return (
+      <div className="bk-shell">
         <div className="bk-card bk-done">
-          <span className="bk-done-mark" aria-hidden="true">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-              <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <h2>{t.doneTitle}</h2>
-          <p className="bk-done-detail">
+          <div className="bk-done-mark">✓</div>
+          <h2 className="bk-done-title">{t.doneTitle}</h2>
+          <p className="bk-done-line">
             {done.serviceName} · {done.staffName}
             <br />
             {date} · {time}
@@ -376,149 +426,374 @@ export default function BookingApp() {
             {t.addAnother}
           </button>
         </div>
-      ) : (
+      </div>
+    );
+  }
+
+  /* -------------------------------------------------------------------- head */
+
+  const head = (
+    <header className={`bk-head${screen === 'menu' ? ' is-menu' : ''}`}>
+      <div className="bk-head-row">
+        {screen !== 'menu' && (
+          <button type="button" className="bk-back" onClick={() => setScreen('menu')} aria-label={t.back}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        )}
+        {logo}
+        <div className="bk-head-text">
+          <h1>{biz.name}</h1>
+          <p>{biz.address}</p>
+        </div>
+        {screen === 'menu' && (
+          <div className="bk-langs">
+            {BOOKING_LANGS.map((code) => (
+              <button key={code} type="button" onClick={() => setLang(code)} className={code === lang ? 'is-on' : ''}>
+                {LANG_LABEL[code]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </header>
+  );
+
+  /* -------------------------------------------------------------------- menu */
+
+  if (screen === 'menu') {
+    // Order follows the owner's setting; the specialist entry disappears for service_only.
+    const rows: Array<{ key: Screen; icon: 'staff' | 'date' | 'service'; label: string; value: string }> = [];
+    const staffRow = { key: 'staff' as Screen, icon: 'staff' as const, label: t.chooseStaff, value: staffLabel };
+    const serviceRow = { key: 'service' as Screen, icon: 'service' as const, label: t.chooseService, value: service?.name ?? t.notChosen };
+    if (showStaff && staffFirst) rows.push(staffRow);
+    if (!staffFirst) rows.push(serviceRow);
+    rows.push({ key: 'datetime', icon: 'date', label: t.chooseDate, value: whenLabel });
+    if (showStaff && !staffFirst) rows.push(staffRow);
+    if (staffFirst) rows.push(serviceRow);
+
+    return (
+      <div className="bk-shell">
+        {head}
         <div className="bk-card">
           {biz.services.length === 0 ? (
             <div className="bk-empty">{t.noServices}</div>
           ) : (
-            <>
-              {/* Step order is the shop's choice — see shared/bookingFlow.ts. The two blocks below
-                  are the same pickers either way; only which renders first, and whether the
-                  specialist one renders at all, changes. Numbers are computed rather than
-                  written so "Date" is step 3 in one flow and step 2 in another. */}
-              {[
-                staffFirst ? 'staff' : 'service',
-                ...(staffFirst ? ['service'] : showStaff ? ['staff'] : []),
-              ].map((which, index) => {
-                const step = index + 1;
-                // The second picker waits for the first, so a customer is never choosing a
-                // service for a specialist they have not named yet.
-                if (index === 1 && (staffFirst ? !staff : !service)) return null;
+            <div className="bk-menu">
+              {rows.map((row) => (
+                <button key={row.key} type="button" className="bk-menu-row" onClick={() => setScreen(row.key)}>
+                  <RowIcon name={row.icon} />
+                  <span className="bk-menu-text">
+                    <span className="bk-menu-label">{row.label}</span>
+                    <span className={`bk-menu-value${row.value === t.notChosen ? ' is-empty' : ''}`}>{row.value}</span>
+                  </span>
+                  <Chevron />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {ready && (
+          <div className="bk-bar">
+            <button type="button" className="bk-primary" onClick={() => setScreen('details')}>
+              {t.confirm}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-                if (which === 'service') {
-                  return (
-                    <Section key="service" step={step} title={t.service}>
-                      <div className="bk-list">
-                        {offeredServices.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setService(item);
-                              setTime('');
-                            }}
-                            className={`bk-row${service?.id === item.id ? ' is-on' : ''}`}
-                          >
-                            <span className="bk-row-main">
-                              <span className="bk-row-name">{item.name}</span>
-                              {item.duration > 0 && (
-                                <span className="bk-row-meta">
-                                  {item.duration} {t.minutes}
-                                </span>
-                              )}
-                            </span>
-                            {/* Omitted entirely, not shown as a dash: the row is a service the
-                                customer is choosing, and an empty price column is quieter than
-                                a placeholder standing in for one. */}
-                            {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    </Section>
-                  );
-                }
+  /* ---------------------------------------------------------------- services */
 
-                return (
-                  <Section key="staff" step={step} title={t.specialist}>
-                    <div className="bk-chips">
-                      {eligibleStaff.map((person) => (
-                        <Chip
-                          key={person.id}
-                          on={staff?.id === person.id}
+  if (screen === 'service') {
+    return (
+      <div className="bk-shell">
+        {head}
+        <h2 className="bk-title">{t.service}</h2>
+        <div className="bk-card">
+          <div className="bk-list">
+            {offeredServices.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setService(item);
+                  setTime('');
+                }}
+                className={`bk-row${service?.id === item.id ? ' is-on' : ''}`}
+              >
+                <span className="bk-row-main">
+                  <span className="bk-row-name">{item.name}</span>
+                  {item.duration > 0 && (
+                    <span className="bk-row-meta">
+                      {item.duration} {t.minutes}
+                    </span>
+                  )}
+                  {/* Omitted entirely when unpriced, not shown as a dash — an empty column is
+                      quieter than a placeholder standing in for a price. */}
+                  {money(item.price) && <span className="bk-row-price">{money(item.price)}</span>}
+                </span>
+                <span className={`bk-check${service?.id === item.id ? ' is-on' : ''}`} />
+              </button>
+            ))}
+          </div>
+        </div>
+        {service && (
+          <div className="bk-bar">
+            <div className="bk-bar-sum">
+              <span>{service.name}</span>
+              <span className="bk-bar-total">{money(service.price) ?? ''}</span>
+            </div>
+            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
+              {t.done}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ------------------------------------------------------------- specialists */
+
+  if (screen === 'staff') {
+    return (
+      <div className="bk-shell">
+        {head}
+        <h2 className="bk-title">{t.specialist}</h2>
+        <div className="bk-card">
+          <button
+            type="button"
+            className={`bk-person${anyStaff ? ' is-on' : ''}`}
+            onClick={() => {
+              setAnyStaff(true);
+              setStaff(eligibleStaff[0] ?? null);
+            }}
+          >
+            <RowIcon name="staff" />
+            <span className="bk-person-main">
+              <span className="bk-person-name">{t.anySpecialist}</span>
+            </span>
+            <span className={`bk-radio${anyStaff ? ' is-on' : ''}`} />
+          </button>
+
+          {eligibleStaff.map((person) => {
+            const next = nextBy[person.id] ?? [];
+            const on = !anyStaff && staff?.id === person.id;
+            return (
+              <div key={person.id} className={`bk-person-block${on ? ' is-on' : ''}`}>
+                <button
+                  type="button"
+                  className="bk-person"
+                  onClick={() => {
+                    setAnyStaff(false);
+                    setStaff(person);
+                  }}
+                >
+                  {person.hasPhoto ? (
+                    <img className="bk-person-photo" src={`/api/public/staff/${person.id}/photo`} alt="" />
+                  ) : (
+                    <span className="bk-person-photo bk-person-initial">{person.name.slice(0, 1).toUpperCase()}</span>
+                  )}
+                  <span className="bk-person-main">
+                    <span className="bk-person-name">{person.name}</span>
+                    {person.role && <span className="bk-person-role">{person.role}</span>}
+                  </span>
+                  <span className={`bk-radio${on ? ' is-on' : ''}`} />
+                </button>
+
+                {/* Next free times, so somebody who mainly cares "when can I be seen" does not
+                    have to open each specialist to find out. */}
+                {next.length > 0 && (
+                  <div className="bk-next">
+                    <span className="bk-next-label">
+                      {t.nearest} {dayLabel(date)}:
+                    </span>
+                    <div className="bk-next-chips">
+                      {next.map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          className="bk-next-chip"
                           onClick={() => {
+                            setAnyStaff(false);
                             setStaff(person);
-                            setTime('');
+                            setTime(slot);
+                            setScreen('menu');
                           }}
                         >
-                          {/* Requested only when the shop uploaded one — an <img> that 404s
-                              would flash a broken icon on every chip for a team with none. */}
-                          {person.hasPhoto && (
-                            <img className="bk-chip-photo" src={`/api/public/staff/${person.id}/photo`} alt="" />
-                          )}
-                          {person.name}
-                          {person.role && <span className="bk-chip-sub">{person.role}</span>}
-                        </Chip>
+                          {slot}
+                        </button>
                       ))}
                     </div>
-                  </Section>
-                );
-              })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {(staff || anyStaff) && (
+          <div className="bk-bar">
+            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
+              {t.done}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-              {service && staff && (
-                <Section step={pickerSteps + 1} title={t.date}>
-                  <div className="bk-days">
-                    {days.map((iso) => (
-                      <Chip key={iso} on={date === iso} onClick={() => setDate(iso)}>
-                        <span className="bk-day-dow">{dayLabel(iso)}</span>
-                        <span className="bk-day-num">{Number(iso.slice(8, 10))}</span>
+  /* ------------------------------------------------------------- date + time */
+
+  if (screen === 'datetime') {
+    const groups: Array<['morning' | 'day' | 'evening', string]> = [
+      ['morning', t.partMorning],
+      ['day', t.partDay],
+      ['evening', t.partEvening],
+    ];
+    const monthIndex = Number(monthAnchor.slice(5, 7)) - 1;
+
+    return (
+      <div className="bk-shell">
+        {head}
+        <div className="bk-card">
+          <div className="bk-cal-head">
+            <span className="bk-cal-month">
+              {t.months[monthIndex]} {monthAnchor.slice(0, 4)}
+            </span>
+            <span className="bk-cal-nav">
+              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, -1).slice(0, 7)}-01`)} aria-label="←">‹</button>
+              <button type="button" onClick={() => setMonthAnchor(`${addDaysIso(monthAnchor, 32).slice(0, 7)}-01`)} aria-label="→">›</button>
+            </span>
+          </div>
+          <div className="bk-cal-grid">
+            {/* Monday first, which is how the calendar is read here. */}
+            {[1, 2, 3, 4, 5, 6, 0].map((wd) => (
+              <span key={wd} className="bk-cal-wd">{t.weekdays[wd]}</span>
+            ))}
+            {monthGrid.map((iso) => {
+              const outside = iso.slice(0, 7) !== monthAnchor.slice(0, 7);
+              const usable = canBook(iso);
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  disabled={!usable}
+                  onClick={() => setDate(iso)}
+                  className={`bk-cal-day${iso === date ? ' is-on' : ''}${outside ? ' is-outside' : ''}`}
+                >
+                  {Number(iso.slice(8, 10))}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bk-card">
+          {!service ? (
+            <div className="bk-empty">{t.noSlotsHint}</div>
+          ) : slotsLoading ? (
+            <div className="bk-empty">{t.loading}</div>
+          ) : !slots || slots.length === 0 ? (
+            <div className="bk-empty">
+              {t.noSlots}
+              <span className="bk-empty-hint">{t.noSlotsHint}</span>
+            </div>
+          ) : (
+            groups.map(([key, label]) => {
+              const inGroup = slots.filter((slot) => partOfDay(slot) === key);
+              if (inGroup.length === 0) return null;
+              return (
+                <div key={key} className="bk-part">
+                  <div className="bk-part-label">{label}</div>
+                  <div className="bk-times">
+                    {inGroup.map((slot) => (
+                      <Chip key={slot} on={time === slot} onClick={() => setTime(slot)}>
+                        {slot}
                       </Chip>
                     ))}
                   </div>
-                </Section>
-              )}
-
-              {service && staff && date && (
-                <Section step={pickerSteps + 2} title={t.time}>
-                  {slotsLoading ? (
-                    <div className="bk-empty">{t.loading}</div>
-                  ) : slots && slots.length > 0 ? (
-                    <div className="bk-chips">
-                      {slots.map((slot) => (
-                        <Chip key={slot} on={time === slot} onClick={() => setTime(slot)}>
-                          {slot}
-                        </Chip>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="bk-empty">
-                      <strong>{t.noSlots}</strong>
-                      <span>{t.noSlotsHint}</span>
-                    </div>
-                  )}
-                </Section>
-              )}
-
-              {service && staff && date && time && (
-                <Section step={pickerSteps + 3} title={t.yourDetails}>
-                  <label className="bk-field">
-                    <span>{t.name}</span>
-                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t.namePh} autoComplete="name" />
-                  </label>
-                  <label className="bk-field">
-                    <span>{t.phone}</span>
-                    <PhoneField value={phone} onChange={setPhone} />
-                  </label>
-                  <label className="bk-field">
-                    <span>{t.notes}</span>
-                    <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t.notesPh} />
-                  </label>
-
-                  {error && <div className="bk-error">{error}</div>}
-
-                  <button type="button" className="bk-primary" disabled={!canSubmit} onClick={() => void submit()}>
-                    {submitting ? t.submitting : t.confirm}
-                  </button>
-                </Section>
-              )}
-            </>
+                </div>
+              );
+            })
           )}
         </div>
-      )}
 
-      {/* Deliberately not brand-coloured: this is easyQ's mark, not the shop's. */}
-      <footer className="bk-foot">
-        easy<span>Q</span>
-      </footer>
+        {time && (
+          <div className="bk-bar">
+            <button type="button" className="bk-primary" onClick={() => setScreen('menu')}>
+              {t.done}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ----------------------------------------------------------------- details */
+
+  return (
+    <div className="bk-shell">
+      {head}
+      <h2 className="bk-title">{t.detailsTitle}</h2>
+
+      <div className="bk-card">
+        <button type="button" className="bk-sum-row" onClick={() => setScreen('staff')}>
+          <span className="bk-sum-main">
+            <span className="bk-sum-label">{t.specialist}</span>
+            <span className="bk-sum-value">{staffLabel}</span>
+          </span>
+          <Pencil />
+        </button>
+        <button type="button" className="bk-sum-row" onClick={() => setScreen('datetime')}>
+          <span className="bk-sum-main">
+            <span className="bk-sum-label">{t.date}</span>
+            <span className="bk-sum-value">{whenLabel}</span>
+          </span>
+          <Pencil />
+        </button>
+        <button type="button" className="bk-sum-row" onClick={() => setScreen('service')}>
+          <span className="bk-sum-main">
+            <span className="bk-sum-label">{t.service}</span>
+            <span className="bk-sum-value">{service?.name ?? t.notChosen}</span>
+          </span>
+          <Pencil />
+        </button>
+        {service && money(service.price) && (
+          <div className="bk-sum-total">
+            <span>{t.total}</span>
+            <span>{money(service.price)}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="bk-card">
+        <div className="bk-section-title">{t.yourDetails}</div>
+        <label className="bk-field">
+          <span>{t.name}</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t.namePh} autoComplete="name" />
+        </label>
+        <label className="bk-field">
+          <span>{t.phone}</span>
+          <PhoneField value={phone} onChange={setPhone} />
+        </label>
+        <label className="bk-field">
+          <span>{t.email}</span>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t.emailPh} inputMode="email" autoComplete="email" />
+        </label>
+        <label className="bk-field">
+          <span>{t.notes}</span>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t.notesPh} />
+        </label>
+        {error && <div className="bk-error">{error}</div>}
+      </div>
+
+      <div className="bk-bar">
+        <button type="button" className="bk-primary" disabled={!canSubmit} onClick={() => void submit()}>
+          {submitting ? t.submitting : t.confirm}
+        </button>
+      </div>
     </div>
   );
 }

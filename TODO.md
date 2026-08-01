@@ -96,9 +96,8 @@ Caret position is restored by **digit count**, not character index, or it drifts
 time a reformat moves a space. That logic is duplicated in all three inputs; if a fourth
 appears, extract it.
 
-Loose end: `SUPhoneInput` is currently **rendered nowhere** — the landing's phone step became
-Telegram contact-sharing, so nothing types a number there any more. Kept in step with the other
-two because `PHONE_VERIFICATION_ENABLED` can be turned back off, which restores a typed step.
+`SUPhoneInput` was dead for a while — the landing's phone step became pure contact-sharing and
+nothing typed a number any more. It is back in use: the step now asks for the number first.
 
 ---
 
@@ -187,6 +186,27 @@ column is UNIQUE.
 `VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET` are no longer read by the
 verification flow, and `/api/telegram/verify-webhook` is dead code kept only until someone
 confirms nothing else calls it.
+
+### The step asks for the number first — 2026-08-01
+
+It used to go straight to "open the bot", and on success it rendered a confirmation card and
+**stopped**: an auto-advance was supposed to move to the business step 900ms later, but
+`setState('done')` re-ran the polling effect, whose cleanup set the `stop` flag before the timer
+fired. So it never advanced. Every web signup dead-ended on a green tick. Now there is an
+explicit **Continue registration** button, which cannot silently fail the same way and lets the
+visitor actually read what was confirmed.
+
+The step also asks for the number before sending anyone to Telegram, and the nonce is not issued
+until then — it lives 15 minutes, and starting that clock while somebody is still typing spent it
+on nothing.
+
+- [ ] **The typed number is not enforced against the confirmed one.** They are compared in the
+      browser and a mismatch is explained, but nothing rejects it, because the confirmed number
+      is the one that gets used either way — this is messaging, not a control. Enforcing it
+      properly means a `claimed_phone` column, `/api/verify/start` storing it, and
+      `easyqueue-business-bot` refusing to mark a row verified when the shared contact differs.
+      Worth doing only if you want "you must sign up with the number you typed" to be a rule;
+      note it would strand anyone whose Telegram lives on a second SIM.
 
 ---
 

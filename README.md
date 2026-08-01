@@ -248,12 +248,21 @@ Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migratio
 and verify the column exists rather than trusting the console's report. Doing it the other
 way round cost a login outage.
 
-## Phone verification bot
+## Phone verification
 
-Web sign-up currently accepts the hard-coded code `1111`
-(`PHONE_VERIFICATION_ENABLED = false` in `src/worker.ts`). The Telegram contact-sharing flow
-that replaces it is parked — see the *Parked* section of [TODO.md](TODO.md) for how to
-finish it and why it needs its own bot.
+Live, and it is contact-sharing rather than a code (`PHONE_VERIFICATION_ENABLED = true` in
+`src/worker.ts`). The visitor types their number, opens the business bot through a deep link
+and taps "share my number"; Telegram hands the bot a number **it** vouches for, the bot writes
+it to `signup_verification` in the shared D1, and this Worker polls for it. There is no code to
+intercept and nothing to brute-force.
+
+The number the visitor typed is a stated intent, not a credential. `/api/signup` reads the
+phone off the verification row, never off the request body, so the account is always created on
+the **confirmed** number; when the two differ, the signup page says so rather than silently
+using the other one.
+
+The handler lives in `easyqueue-business-bot/src/handlers/signup.handler.ts` — in that repo,
+not this one, because a bot has exactly one webhook and that bot's already points there.
 
 ## Notes
 

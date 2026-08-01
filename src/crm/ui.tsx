@@ -8,7 +8,8 @@ import {
 } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { countryFlag, defaultDialPrefix, formatAsYouType, nationalPlaceholder } from '../shared/phone';
+import { defaultDialPrefix, formatAsYouType, nationalPlaceholder } from '../shared/phone';
+import { CountryFlag } from '../shared/CountryFlag';
 
 /* ---------------- Logo ---------------- */
 /**
@@ -190,9 +191,6 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-/** Shown while the prefix has not yet identified a country. */
-const PHONE_GLOBE = '🌐';
-
 /**
  * International phone input.
  *
@@ -200,7 +198,7 @@ const PHONE_GLOBE = '🌐';
  * first. A static `+998` span beside a nine-digit box was the right design while
  * there was one country, and wrong the moment somebody types a Russian number: it
  * silently reinterpreted their digits as Uzbek ones. Now the field holds the whole
- * number, `+998` gets a 🇺🇿, `+7` a 🇷🇺 or 🇰🇿, `+1` a 🇺🇸, and so on for anywhere.
+ * number, `+998` gets an Uzbek flag, `+7` a Russian or Kazakh one, `+1` a US one, and so on.
  *
  * The empty field is seeded with `+998 ` by its placeholder only — the common case
  * still types nine digits, but nothing has to be deleted to type another country's
@@ -242,8 +240,8 @@ export function PhoneInput({
       {/* No flag until the prefix actually identifies a country: +7 is Russia AND
           Kazakhstan, and picking one before the next digit arrives would be a guess
           shown as a fact. A globe is the honest placeholder. */}
-      <span style={{ fontSize: 16, lineHeight: 1, flex: 'none' }} aria-hidden="true">
-        {country ? countryFlag(country) : PHONE_GLOBE}
+      <span style={{ display: 'flex', flex: 'none', color: 'var(--ink-3)' }}>
+        <CountryFlag country={country} size={18} />
       </span>
       <input
         {...rest}

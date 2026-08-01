@@ -818,7 +818,12 @@ export function SlotEditorModal({
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {order.filter((wd) => wd !== weekday).map((wd) => (
               <button key={wd} onClick={() => copyToDay(wd)} style={pill(copiedTo.includes(wd))}>
-                {copiedTo.includes(wd) ? '✓ ' : ''}{labels[wd].slice(0, 3)}
+                {copiedTo.includes(wd) && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: '-1px' }} aria-hidden="true">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                )}
+                {labels[wd].slice(0, 3)}
               </button>
             ))}
             <button onClick={copyToAll} style={{ ...pill(false), fontWeight: 800 }}>{st.copyAll}</button>

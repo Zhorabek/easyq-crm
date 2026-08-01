@@ -5,7 +5,8 @@ import type {
   PublicService,
   PublicStaff,
 } from '../types';
-import { countryFlag, defaultDialPrefix, formatAsYouType, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
+import { defaultDialPrefix, formatAsYouType, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
+import { CountryFlag } from '../shared/CountryFlag';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
 import { nextMissingStep, parseSelection, stepOrder, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
@@ -93,7 +94,7 @@ function Chip({ on, onClick, children, disabled }: { on: boolean; onClick: () =>
  * The customer types a whole number and the flag follows from the prefix — a fixed
  * `+998` label quietly reinterpreted a visitor's Russian number as an Uzbek one. No
  * flag until the prefix is unambiguous (+7 is both Russia and Kazakhstan), so the
- * globe stands in rather than a guess.
+ * globe stands in rather than a guess. Drawn, not emoji — see CountryFlag.
  */
 function PhoneField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -117,7 +118,7 @@ function PhoneField({ value, onChange }: { value: string; onChange: (v: string) 
 
   return (
     <div className="bk-phone">
-      <span className="bk-phone-cc" aria-hidden="true">{country ? countryFlag(country) : '🌐'}</span>
+      <span className="bk-phone-cc"><CountryFlag country={country} size={19} /></span>
       <input
         ref={ref}
         type="tel"
@@ -627,7 +628,13 @@ export default function BookingApp() {
     return (
       <div className="bk-shell">
         <div className="bk-card bk-done">
-          <div className="bk-done-mark">✓</div>
+          <div className="bk-done-mark">
+            {/* Drawn, not the ✓ character: a text glyph picks up whatever the system font
+                does with it, and the confirmation is the one screen worth getting right. */}
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
           <h2 className="bk-done-title">{t.doneTitle}</h2>
           <p className="bk-done-line">
             {done.serviceName} · {done.staffName}

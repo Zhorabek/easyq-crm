@@ -99,6 +99,23 @@ appears, extract it.
 `SUPhoneInput` was dead for a while — the landing's phone step became pure contact-sharing and
 nothing typed a number any more. It is back in use: the step now asks for the number first.
 
+### Flags are drawn, not emoji — `src/shared/CountryFlag.tsx`
+
+The first version used `String.fromCodePoint` over regional-indicator letters, which gives a
+flag for any country in one line and no assets. **Windows does not render flag emoji at all** —
+every version through 11 draws the two letters in a box — so most desktop visitors saw "UZ" in
+a rectangle where the design said flag, looking like a broken glyph. Android and iOS do render
+them, which is exactly what makes it easy to ship without noticing.
+
+So the fourteen countries in `PHONE_COUNTRIES` are drawn as inline SVG, and **everything else
+falls back to the globe** — the same one shown while a prefix is still ambiguous. That is not a
+gap to fill: there are ~250 flags and no honest way to inline them all. Emblem-heavy ones (the
+Kazakh eagle, the Korean trigrams, the American stars) are simplified to what reads at 18px.
+
+Same rule now applies across both sites: **no emoji in UI chrome.** Ticks, stars and the icons
+that were in the broadcast-template labels are SVG or gone. Emoji inside Telegram messages stay
+— that is Telegram's own medium, and a bot message cannot hold an SVG.
+
 ---
 
 ## Product / polish
@@ -199,6 +216,17 @@ visitor actually read what was confirmed.
 The step also asks for the number before sending anyone to Telegram, and the nonce is not issued
 until then — it lives 15 minutes, and starting that clock while somebody is still typing spent it
 on nothing.
+
+**The bot's confirmation carries a link back.** "Go back to the website" assumed they still had
+the tab, remembered the site, and were on the same device — usually none of that holds, because
+they just opened Telegram on a phone. The confirmation now has a "continue registration" button
+pointing at `easyq.uz/signup?v=<nonce>`, and the nonce is what makes it RESUME instead of
+restart: the page polls with it and lands straight on the confirmed step. Safe in a URL — the
+nonce is single-use, 15-minute, and holding it is already what authorises seeing the number.
+
+Reading that parameter is done in a **pure** `useState` initializer, with the strip in an
+effect. Doing both in the initializer looked tidier and silently broke the link: StrictMode
+invokes initializers twice, so the first call cleared the URL and the second read nothing.
 
 - [ ] **The typed number is not enforced against the confirmed one.** They are compared in the
       browser and a mismatch is explained, but nothing rejects it, because the confirmed number

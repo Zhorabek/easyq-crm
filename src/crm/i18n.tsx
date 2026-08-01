@@ -22,7 +22,7 @@ export const CRM_T: Record<Lang, any> = {
       items: [
         { type: 'booking', title: 'Yangi navbat', body: 'Jasur Aliyev — Soch olish, bugun 15:00', time: '2 daq oldin', unread: true },
         { type: 'cancel', title: 'Navbat bekor qilindi', body: 'Dilnoza Rashidova — 16:30 ni bekor qildi', time: '18 daq oldin', unread: true },
-        { type: 'review', title: 'Yangi sharh ⭐ 5', body: 'Otabek M.: “Zo‘r xizmat, rahmat!”', time: '1 soat oldin', unread: true },
+        { type: 'review', title: 'Yangi sharh — 5.0', body: 'Otabek M.: “Zo‘r xizmat, rahmat!”', time: '1 soat oldin', unread: true },
         { type: 'stock', title: 'Ombor tugayapti', body: 'Pomada (gel) — 3 dona qoldi', time: '3 soat oldin', unread: false },
         { type: 'payment', title: 'To‘lov qabul qilindi', body: '110 000 so‘m — Aziz Karimov (Telegram)', time: '5 soat oldin', unread: false },
       ],
@@ -75,7 +75,7 @@ export const CRM_T: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Veb-sayt', walkin: 'Tashrif', phone: 'Telefon' },
     fin: { sub: 'Kassa va to‘lovlar', today: 'Bugungi tushum', cash: 'Naqd', card: 'Karta', online: 'Onlayn', transfer: 'O‘tkazma', other: 'Boshqa', txns: 'So‘nggi to‘lovlar', byMethod: 'To‘lov usuli bo‘yicha', count: 'ta to‘lov', avgCheck: 'O‘rtacha chek', incoming: 'Kirim', refund: 'Qaytarish', noTxns: 'Bu kunda to‘lovlar yo‘q' },
     rev: { sub: 'Mijozlar baholari', avg: 'O‘rtacha baho', total: 'ta sharh', recent: 'So‘nggi sharhlar', reply: 'Javob berish', replied: 'Javob berildi', all: 'Barchasi', positive: 'Ijobiy', replyPh: 'Javobingizni yozing…', send: 'Yuborish', replyToast: 'Javob yuborildi' },
-    mkt: { sub: 'Telegram orqali mijozlarga xabar yuboring', broadcast: 'Telegram tarqatma', audience: 'Auditoriya', segAll: 'Barcha mijozlar', segVip: 'VIP mijozlar', segInactive: 'Nofaol mijozlar', reach: 'qamrov', msg: 'Xabar matni', msgPh: 'Masalan: Shu hafta sochga 20% chegirma! 💈 Hoziroq yoziling.', send: 'Tarqatmani yuborish', sent: 'Tarqatma yuborildi', recent: 'So‘nggi kampaniyalar', opened: 'ochildi', templates: 'Tayyor shablonlar', tpl: ['💈 Chegirma e’loni', '⏰ Bo‘sh vaqt bor', '✨ Yangi xizmat', '🎉 Bayram tabrigi'] },
+    mkt: { sub: 'Telegram orqali mijozlarga xabar yuboring', broadcast: 'Telegram tarqatma', audience: 'Auditoriya', segAll: 'Barcha mijozlar', segVip: 'VIP mijozlar', segInactive: 'Nofaol mijozlar', reach: 'qamrov', msg: 'Xabar matni', msgPh: 'Masalan: Shu hafta sochga 20% chegirma! Hoziroq yoziling.', send: 'Tarqatmani yuborish', sent: 'Tarqatma yuborildi', recent: 'So‘nggi kampaniyalar', opened: 'ochildi', templates: 'Tayyor shablonlar', tpl: ['Chegirma e’loni', 'Bo‘sh vaqt bor', 'Yangi xizmat', 'Bayram tabrigi'] },
     loy: { sub: 'Sodiqlik dasturi va chegirmalar', program: 'Sodiqlik dasturi', programDesc: 'Mijozlar har tashrifda ball to‘playdi', earnRule: 'Ball yig‘ish', earnRuleDesc: 'Har 10 000 so‘mga 1 ball', redeem: '100 ball = 50 000 so‘m chegirma', members: 'ta a’zo', points: 'ball', visits: 'tashrif', topClients: 'Eng sodiq mijozlar', tierName: ['Bronza', 'Kumush', 'Oltin'], tierPerk: ['5% chegirma', '10% chegirma + tug‘ilgan kun sovg‘asi', '15% chegirma + VIP navbat'], tierReq: ['0+ ball', '300+ ball', '800+ ball'] },
     pay: { sub: 'Ish haqi va ulush', period: 'Davr', month: 'Shu oy', staff: 'Xodim', servicesDone: 'Xizmatlar', revenue: 'Tushum', commission: 'Ulush', base: 'Stavka', payout: 'To‘lov', total: 'Jami to‘lov', payAll: 'Hammasini to‘lash', paid: 'To‘langan', pay: 'To‘lash', paidToast: 'Ish haqi to‘landi' },
     set: {
@@ -145,7 +145,7 @@ export const CRM_T: Record<Lang, any> = {
       items: [
         { type: 'booking', title: 'Новая запись', body: 'Жасур Алиев — Стрижка, сегодня 15:00', time: '2 мин назад', unread: true },
         { type: 'cancel', title: 'Запись отменена', body: 'Дильноза Рашидова отменила 16:30', time: '18 мин назад', unread: true },
-        { type: 'review', title: 'Новый отзыв ⭐ 5', body: 'Отабек М.: «Отличный сервис, спасибо!»', time: '1 ч назад', unread: true },
+        { type: 'review', title: 'Новый отзыв — 5.0', body: 'Отабек М.: «Отличный сервис, спасибо!»', time: '1 ч назад', unread: true },
         { type: 'stock', title: 'Заканчивается на складе', body: 'Помада (гель) — осталось 3 шт', time: '3 ч назад', unread: false },
         { type: 'payment', title: 'Оплата получена', body: '110 000 сум — Азиз Каримов (Telegram)', time: '5 ч назад', unread: false },
       ],
@@ -198,7 +198,7 @@ export const CRM_T: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Сайт', walkin: 'Визит', phone: 'Телефон' },
     fin: { sub: 'Касса и платежи', today: 'Выручка за сегодня', cash: 'Наличные', card: 'Карта', online: 'Онлайн', transfer: 'Перевод', other: 'Другое', txns: 'Последние платежи', byMethod: 'По способу оплаты', count: 'платежей', avgCheck: 'Средний чек', incoming: 'Поступление', refund: 'Возврат', noTxns: 'За этот день платежей нет' },
     rev: { sub: 'Оценки клиентов', avg: 'Средняя оценка', total: 'отзывов', recent: 'Последние отзывы', reply: 'Ответить', replied: 'Отвечено', all: 'Все', positive: 'Положительные', replyPh: 'Напишите ответ…', send: 'Отправить', replyToast: 'Ответ отправлен' },
-    mkt: { sub: 'Отправляйте клиентам сообщения через Telegram', broadcast: 'Telegram-рассылка', audience: 'Аудитория', segAll: 'Все клиенты', segVip: 'VIP-клиенты', segInactive: 'Неактивные клиенты', reach: 'охват', msg: 'Текст сообщения', msgPh: 'Например: На этой неделе скидка 20% на стрижку! 💈 Записывайтесь.', send: 'Отправить рассылку', sent: 'Рассылка отправлена', recent: 'Последние кампании', opened: 'открыли', templates: 'Готовые шаблоны', tpl: ['💈 Анонс скидки', '⏰ Есть свободное время', '✨ Новая услуга', '🎉 Поздравление с праздником'] },
+    mkt: { sub: 'Отправляйте клиентам сообщения через Telegram', broadcast: 'Telegram-рассылка', audience: 'Аудитория', segAll: 'Все клиенты', segVip: 'VIP-клиенты', segInactive: 'Неактивные клиенты', reach: 'охват', msg: 'Текст сообщения', msgPh: 'Например: На этой неделе скидка 20% на стрижку! Записывайтесь.', send: 'Отправить рассылку', sent: 'Рассылка отправлена', recent: 'Последние кампании', opened: 'открыли', templates: 'Готовые шаблоны', tpl: ['Анонс скидки', 'Есть свободное время', 'Новая услуга', 'Поздравление с праздником'] },
     loy: { sub: 'Программа лояльности и скидки', program: 'Программа лояльности', programDesc: 'Клиенты копят баллы за каждый визит', earnRule: 'Начисление баллов', earnRuleDesc: '1 балл за каждые 10 000 сум', redeem: '100 баллов = скидка 50 000 сум', members: 'участников', points: 'баллов', visits: 'визитов', topClients: 'Самые лояльные клиенты', tierName: ['Бронза', 'Серебро', 'Золото'], tierPerk: ['Скидка 5%', 'Скидка 10% + подарок на день рождения', 'Скидка 15% + VIP-запись'], tierReq: ['0+ баллов', '300+ баллов', '800+ баллов'] },
     pay: { sub: 'Зарплата и комиссия', period: 'Период', month: 'Этот месяц', staff: 'Сотрудник', servicesDone: 'Услуги', revenue: 'Выручка', commission: 'Комиссия', base: 'Ставка', payout: 'Выплата', total: 'Итого к выплате', payAll: 'Выплатить всем', paid: 'Выплачено', pay: 'Выплатить', paidToast: 'Зарплата выплачена' },
     set: {
@@ -268,7 +268,7 @@ export const CRM_T: Record<Lang, any> = {
       items: [
         { type: 'booking', title: 'New booking', body: 'Jasur Aliyev — Haircut, today 3:00 PM', time: '2 min ago', unread: true },
         { type: 'cancel', title: 'Booking cancelled', body: 'Dilnoza Rashidova cancelled 4:30 PM', time: '18 min ago', unread: true },
-        { type: 'review', title: 'New review ⭐ 5', body: 'Otabek M.: “Great service, thank you!”', time: '1 h ago', unread: true },
+        { type: 'review', title: 'New review — 5.0', body: 'Otabek M.: “Great service, thank you!”', time: '1 h ago', unread: true },
         { type: 'stock', title: 'Running low in stock', body: 'Pomade (gel) — 3 left', time: '3 h ago', unread: false },
         { type: 'payment', title: 'Payment received', body: '110,000 UZS — Aziz Karimov (Telegram)', time: '5 h ago', unread: false },
       ],
@@ -321,7 +321,7 @@ export const CRM_T: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Website', walkin: 'Walk-in', phone: 'Phone' },
     fin: { sub: 'Cash desk & payments', today: 'Today’s revenue', cash: 'Cash', card: 'Card', online: 'Online', transfer: 'Transfer', other: 'Other', txns: 'Recent payments', byMethod: 'By payment method', count: 'payments', avgCheck: 'Avg. check', incoming: 'Incoming', refund: 'Refund', noTxns: 'No payments on this day' },
     rev: { sub: 'Customer ratings', avg: 'Average rating', total: 'reviews', recent: 'Recent reviews', reply: 'Reply', replied: 'Replied', all: 'All', positive: 'Positive', replyPh: 'Write your reply…', send: 'Send', replyToast: 'Reply sent' },
-    mkt: { sub: 'Message your customers through Telegram', broadcast: 'Telegram broadcast', audience: 'Audience', segAll: 'All customers', segVip: 'VIP customers', segInactive: 'Inactive customers', reach: 'reach', msg: 'Message text', msgPh: 'e.g. 20% off haircuts this week! 💈 Book now.', send: 'Send broadcast', sent: 'Broadcast sent', recent: 'Recent campaigns', opened: 'opened', templates: 'Quick templates', tpl: ['💈 Discount announcement', '⏰ Free slots available', '✨ New service', '🎉 Holiday greeting'] },
+    mkt: { sub: 'Message your customers through Telegram', broadcast: 'Telegram broadcast', audience: 'Audience', segAll: 'All customers', segVip: 'VIP customers', segInactive: 'Inactive customers', reach: 'reach', msg: 'Message text', msgPh: 'e.g. 20% off haircuts this week! Book now.', send: 'Send broadcast', sent: 'Broadcast sent', recent: 'Recent campaigns', opened: 'opened', templates: 'Quick templates', tpl: ['Discount announcement', 'Free slots available', 'New service', 'Holiday greeting'] },
     loy: { sub: 'Loyalty program & discounts', program: 'Loyalty program', programDesc: 'Customers earn points on every visit', earnRule: 'Earning points', earnRuleDesc: '1 point per 10,000 UZS', redeem: '100 points = 50,000 UZS discount', members: 'members', points: 'points', visits: 'visits', topClients: 'Most loyal customers', tierName: ['Bronze', 'Silver', 'Gold'], tierPerk: ['5% discount', '10% discount + birthday gift', '15% discount + VIP booking'], tierReq: ['0+ points', '300+ points', '800+ points'] },
     pay: { sub: 'Payroll & commission', period: 'Period', month: 'This month', staff: 'Staff', servicesDone: 'Services', revenue: 'Revenue', commission: 'Commission', base: 'Base', payout: 'Payout', total: 'Total payout', payAll: 'Pay everyone', paid: 'Paid', pay: 'Pay', paidToast: 'Payroll paid out' },
     set: {

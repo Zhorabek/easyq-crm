@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { PHONE_NATIONAL_PLACEHOLDER, formatNational, nationalDigits } from '../shared/phone';
+import { countryFlag, defaultDialPrefix, formatAsYouType, nationalPlaceholder } from '../shared/phone';
 
 /* ---------------- Logo ---------------- */
 /**
@@ -190,27 +190,38 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
+/** Shown while the prefix has not yet identified a country. */
+const PHONE_GLOBE = '🌐';
+
 /**
- * `+998 XX XXX XX XX` masked input.
+ * International phone input.
  *
- * The country code is a static span rather than part of the input value, which
- * removes the whole class of bugs where the caret lands inside the prefix or a
- * user deletes it. The input therefore holds only the national part, and
- * `onChange` reports that same national string — callers store whatever
- * toStoragePhone() makes of it.
+ * The country is **inferred from what has been typed**, not chosen from a dropdown
+ * first. A static `+998` span beside a nine-digit box was the right design while
+ * there was one country, and wrong the moment somebody types a Russian number: it
+ * silently reinterpreted their digits as Uzbek ones. Now the field holds the whole
+ * number, `+998` gets a 🇺🇿, `+7` a 🇷🇺 or 🇰🇿, `+1` a 🇺🇸, and so on for anywhere.
+ *
+ * The empty field is seeded with `+998 ` by its placeholder only — the common case
+ * still types nine digits, but nothing has to be deleted to type another country's
+ * code, which is what a hardcoded prefix in the *value* would have forced.
+ *
+ * `onChange` reports the formatted international string. Callers keep passing it to
+ * `toStoragePhone`/`isValidPhone`, which read the leading `+` and so no longer fall
+ * back to assuming Uzbekistan.
  */
 export function PhoneInput({
   value,
   onChange,
   ...rest
-}: { value: string; onChange: (national: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+}: { value: string; onChange: (phone: string) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
   const ref = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
-  const national = formatNational(nationalDigits(value));
+  const { text, country } = formatAsYouType(value);
 
   // Reformatting only moves separators, so the caret has to be restored by DIGIT
   // count — restoring it by character index drifts every time a space is inserted.
-  // Runs on every render rather than keying on `national`, so a keystroke that
+  // Runs on every render rather than keying on `text`, so a keystroke that
   // leaves the formatted value unchanged (a letter, a stray space) still clears the
   // pending caret instead of leaving it to fire against a later edit.
   useLayoutEffect(() => {
@@ -219,8 +230,8 @@ export function PhoneInput({
     if (target == null || !ref.current) return;
     let index = 0;
     let digitsSeen = 0;
-    while (index < national.length && digitsSeen < target) {
-      if (/\d/.test(national[index])) digitsSeen += 1;
+    while (index < text.length && digitsSeen < target) {
+      if (/\d/.test(text[index])) digitsSeen += 1;
       index += 1;
     }
     ref.current.setSelectionRange(index, index);
@@ -228,18 +239,24 @@ export function PhoneInput({
 
   return (
     <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 8, padding: '0 13px' }}>
-      <span style={{ color: 'var(--ink-3)', fontWeight: 700, flex: 'none' }}>+998</span>
+      {/* No flag until the prefix actually identifies a country: +7 is Russia AND
+          Kazakhstan, and picking one before the next digit arrives would be a guess
+          shown as a fact. A globe is the honest placeholder. */}
+      <span style={{ fontSize: 16, lineHeight: 1, flex: 'none' }} aria-hidden="true">
+        {country ? countryFlag(country) : PHONE_GLOBE}
+      </span>
       <input
         {...rest}
         ref={ref}
         type="tel"
         inputMode="tel"
-        value={national}
-        placeholder={PHONE_NATIONAL_PLACEHOLDER}
+        autoComplete="tel"
+        value={text}
+        placeholder={defaultDialPrefix() + nationalPlaceholder()}
         onChange={(e) => {
           const caret = e.target.selectionStart ?? e.target.value.length;
           caretRef.current = e.target.value.slice(0, caret).replace(/\D/g, '').length;
-          onChange(formatNational(nationalDigits(e.target.value)));
+          onChange(formatAsYouType(e.target.value).text);
         }}
         style={{
           flex: 1,

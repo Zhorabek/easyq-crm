@@ -248,10 +248,11 @@
   border-color: var(--accent-deep);
   background: var(--panel);
 }
+/* Holds a flag emoji now, not "+998" — no weight or colour, those do nothing to an
+   emoji and only matter for the globe placeholder. */
 .bk-phone-cc {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--ink-3);
+  font-size: 18px;
+  line-height: 1;
   flex: none;
 }
 .bk-phone input {

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   CreatePublicBookingInput,
   PublicBusinessPayload,
   PublicService,
   PublicStaff,
 } from '../types';
-import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
+import { countryFlag, defaultDialPrefix, formatAsYouType, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
 import { nextMissingStep, parseSelection, stepOrder, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
@@ -87,17 +87,49 @@ function Chip({ on, onClick, children, disabled }: { on: boolean; onClick: () =>
   );
 }
 
+/**
+ * Phone entry for any country.
+ *
+ * The customer types a whole number and the flag follows from the prefix — a fixed
+ * `+998` label quietly reinterpreted a visitor's Russian number as an Uzbek one. No
+ * flag until the prefix is unambiguous (+7 is both Russia and Kazakhstan), so the
+ * globe stands in rather than a guess.
+ */
 function PhoneField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+  const { text, country } = formatAsYouType(value);
+
+  // Restore the caret by DIGIT count, not character index: reformatting inserts and
+  // removes spaces, so a character index drifts and edits land a place or two off.
+  useLayoutEffect(() => {
+    const target = caretRef.current;
+    caretRef.current = null;
+    if (target == null || !ref.current) return;
+    let index = 0;
+    let seen = 0;
+    while (index < text.length && seen < target) {
+      if (/\d/.test(text[index])) seen += 1;
+      index += 1;
+    }
+    ref.current.setSelectionRange(index, index);
+  });
+
   return (
     <div className="bk-phone">
-      <span className="bk-phone-cc">+998</span>
+      <span className="bk-phone-cc" aria-hidden="true">{country ? countryFlag(country) : '🌐'}</span>
       <input
+        ref={ref}
         type="tel"
         inputMode="tel"
-        autoComplete="tel-national"
-        value={formatNational(nationalDigits(value))}
-        placeholder={PHONE_NATIONAL_PLACEHOLDER}
-        onChange={(e) => onChange(formatNational(nationalDigits(e.target.value)))}
+        autoComplete="tel"
+        value={text}
+        placeholder={defaultDialPrefix() + nationalPlaceholder()}
+        onChange={(e) => {
+          const caret = e.target.selectionStart ?? e.target.value.length;
+          caretRef.current = e.target.value.slice(0, caret).replace(/\D/g, '').length;
+          onChange(formatAsYouType(e.target.value).text);
+        }}
       />
     </div>
   );

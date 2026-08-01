@@ -2983,7 +2983,7 @@ async function deleteEmployee(env: Env, business: BusinessRow, staffId: number) 
 async function updateBusinessProfile(env: Env, business: BusinessRow, input: UpdateBusinessProfileInput) {
   const nextName = input.name === undefined ? business.name : input.name.trim();
   const nextAddress = input.address === undefined ? business.address : input.address.trim();
-  // Canonicalize only what parses as a +998 number. Businesses created before this
+  // Canonicalize only what parses as a real number, of any country. Businesses created before this
   // rule existed can hold anything, and rejecting their stored value here would lock
   // them out of editing every OTHER profile field until they retyped the phone.
   const submittedPhone = input.phone === undefined ? business.phone : input.phone.trim();

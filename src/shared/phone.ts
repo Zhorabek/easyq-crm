@@ -162,3 +162,39 @@ export function countryOfPhone(raw: string): CountryCode | null {
 }
 
 export type { CountryCode };
+
+/* ------------------------------------------------------ country-aware input */
+
+/**
+ * Format a number as it is typed, and work out which country it is.
+ *
+ * The input used to be a fixed `+998` label beside a nine-digit box, which is a fine design for
+ * a product with one country and wrong the moment somebody types a Russian or Kazakh number.
+ * This treats the field as international: the customer types a full number and the country is
+ * INFERRED from the prefix rather than picked from a dropdown first.
+ *
+ * `AsYouType` with no country argument does the work — it formats progressively and reports
+ * the country as soon as the prefix identifies one. That is why the leading `+` matters and is
+ * added for the caller: without it the library has no way to know 7 means a country code
+ * rather than the start of a subscriber number.
+ *
+ * A shared calling code stays honest: +7 is Russia AND Kazakhstan, and the library only commits
+ * once enough digits arrive to tell them apart. Until then `country` is undefined and the field
+ * simply shows no flag, which is better than showing the wrong one.
+ */
+export function formatAsYouType(raw: string): { text: string; country: CountryCode | undefined } {
+  const digits = String(raw ?? "").replace(/[^\d]/g, "");
+  if (!digits) return { text: "", country: undefined };
+
+  const typer = new AsYouType();
+  const text = typer.input(`+${digits}`);
+  return { text, country: typer.getCountry() };
+}
+
+/**
+ * What to seed an empty field with, so somebody in the common case types nine digits and not
+ * twelve. They can delete it and type any other country's code instead.
+ */
+export function defaultDialPrefix(): string {
+  return `+${callingCodeFor(DEFAULT_COUNTRY)} `;
+}

@@ -75,6 +75,33 @@ in `src/server/captcha.ts`.
 
 ---
 
+## Phone numbers — any country, SHIPPED 2026-08-01
+
+`src/shared/phone.ts` runs on `libphonenumber-js`, and every input on the platform now takes
+any country and works out which one from the prefix: `+998` → 🇺🇿, `+7` → 🇷🇺 or 🇰🇿, `+1` → 🇺🇸.
+Three inputs share the behaviour — `PhoneInput` (`src/crm/ui.tsx`), `PhoneField`
+(`src/booking/BookingApp.tsx`), `SUPhoneInput` (`easyq-landing/src/components/Signup.tsx`).
+
+Three things worth not re-litigating:
+
+- **No dropdown.** The country is inferred, never picked first. A picker in front of the field
+  is a step for everybody to serve the minority who are not local.
+- **No flag until the prefix decides.** `+7` is Russia *and* Kazakhstan; the library commits
+  only once a digit separates them (Kazakh mobiles start 6 or 7, Russian ones 9). Until then
+  the field shows a globe. Showing one of the two would be a guess presented as a fact.
+- **`+998 ` is the placeholder, not the value.** As a hardcoded prefix it would have to be
+  deleted before anyone could type another country's code — which is the exact bug being fixed.
+
+Caret position is restored by **digit count**, not character index, or it drifts a place every
+time a reformat moves a space. That logic is duplicated in all three inputs; if a fourth
+appears, extract it.
+
+Loose end: `SUPhoneInput` is currently **rendered nowhere** — the landing's phone step became
+Telegram contact-sharing, so nothing types a number there any more. Kept in step with the other
+two because `PHONE_VERIFICATION_ENABLED` can be turned back off, which restores a typed step.
+
+---
+
 ## Product / polish
 
 - [ ] **KPI card labels are hardcoded Russian in the worker.** `getCrmPayload` builds

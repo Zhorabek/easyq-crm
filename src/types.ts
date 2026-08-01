@@ -138,7 +138,7 @@ export interface EmployeeRow {
    * verbatim to Uzbek and English owners. The UI localizes the empty case.
    */
   role: string;
-  /** Canonical +998XXXXXXXXX, or null. */
+  /** Canonical E.164, e.g. +998901234567. Null when unknown. */
   phone: string | null;
   /** Whether GET /api/staff/<id>/photo will return an image. */
   hasPhoto: boolean;
@@ -200,7 +200,7 @@ export interface ClientRow {
   key: string;
   name: string;
   userId: number | null;
-  /** Canonical +998XXXXXXXXX, or null for bot bookings which carry no phone. */
+  /** Canonical E.164, or null for bot bookings which carry no phone. */
   phone: string | null;
   totalVisits: number;
   completedVisits: number;

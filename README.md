@@ -261,8 +261,17 @@ finish it and why it needs its own bot.
   `bookings` and `payments` with them. Additive columns only.
 - Set `CRM_SESSION_SECRET` in Cloudflare secrets for production auth cookies.
 - No Telegram bot token is stored in the source tree.
-- Phone numbers have one definition — `src/shared/phone.ts`, canonical `+998XXXXXXXXX` for
-  storage and `+998 90 123 45 67` for display. Mirrored verbatim into `easyq-landing`.
+- Phone numbers have one definition — `src/shared/phone.ts`, built on `libphonenumber-js`.
+  Stored as E.164 (`+998901234567`, `+14155552671`); Uzbek numbers keep the exact shape the
+  hand-rolled version produced, so nothing needed migrating — which matters because clients are
+  **keyed on the stored phone**. Mirrored verbatim into `easyq-landing`.
+- Every phone field takes **any country**, and infers which one from the prefix rather than
+  offering a dropdown first: `+998` shows a 🇺🇿, `+7` a 🇷🇺 or 🇰🇿, `+1` a 🇺🇸. No flag until the
+  prefix is unambiguous — `+7` alone is both Russia and Kazakhstan, so a globe stands in until
+  the digit that separates them arrives. The empty field is seeded with `+998 ` by its
+  **placeholder only**, so the common case types nine digits and nobody has to delete anything
+  to type another country's code. Caret position is restored by digit count, not character
+  index, or it drifts a place every time reformatting moves a space.
 - Availability has one definition — `src/shared/availability.ts`, shared by the owner's
   calendar and the public booking API. Do not fork it.
 - Money is UZS. A **price** of 0 prints nothing, because it means nobody set one; a **total**

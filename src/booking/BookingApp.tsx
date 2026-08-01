@@ -8,7 +8,7 @@ import type {
 import { formatNational, isValidPhone, nationalDigits, PHONE_NATIONAL_PLACEHOLDER, toStoragePhone } from '../shared/phone';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
-import { nextMissingStep, parseSelection, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
+import { nextMissingStep, parseSelection, stepOrder, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
 import './booking.css';
@@ -192,9 +192,30 @@ export default function BookingApp() {
   const [biz, setBiz] = useState<PublicBusinessPayload | null>(null);
   const [loadError, setLoadError] = useState(false);
 
-  // Seeded from the URL so a refresh, the back button, or a link forwarded to whoever is
-  // actually paying all resume the same booking. See shared/bookingUrl.ts.
-  const initial = useMemo(() => parseSelection(typeof window === 'undefined' ? '' : window.location.search), []);
+  /**
+   * A RELOAD STARTS FRESH.
+   *
+   * The URL still carries the selection, and the in-page back button still walks it, but a page
+   * load does not resume what was there before. Someone who reloads is telling you the last
+   * attempt did not go the way they wanted; handing them back a half-built booking with a
+   * specialist already ticked reads as the page ignoring them, which is what it looked like.
+   *
+   * The one exception is a link somebody was SENT. That is the case the URL exists for, and it
+   * is distinguishable: a shared link is a fresh navigation with params and no history behind
+   * it in this tab, whereas a reload has a referrer of itself.
+   */
+  const initial = useMemo(() => {
+    if (typeof window === 'undefined') return parseSelection('');
+    const reloaded =
+      // A reload reports itself; a link click or a typed address does not.
+      (performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
+    if (reloaded) {
+      // Clear the bar too, so the state and what the customer can see agree.
+      window.history.replaceState(null, '', window.location.pathname);
+      return parseSelection('');
+    }
+    return parseSelection(window.location.search);
+  }, []);
 
   const [screen, setScreen] = useState<Screen>('menu');
   /** Chosen services, in the order they were ticked. Ids, because the catalogue arrives later. */
@@ -529,6 +550,27 @@ export default function BookingApp() {
     );
   }
 
+  /**
+   * One step back along the path, not all the way to the menu.
+   *
+   * The flow runs forward through an order that depends on where the customer came in, so back
+   * has to walk the same order in reverse. Jumping to the menu from the middle of a path threw
+   * away the sense of being partway through something — the complaint that prompted this.
+   *
+   * From the first step of a path there is nowhere further back, so the menu IS the previous
+   * screen. From the details screen, back is the last step of the path.
+   */
+  function goBack() {
+    const order = stepOrder(entry);
+    if (screen === 'details') {
+      setScreen(order[order.length - 1] as Screen);
+      return;
+    }
+    const here = order.indexOf(screen as 'staff' | 'service' | 'datetime');
+    // -1 means a screen outside the path; the menu is the safe answer.
+    setScreen(here > 0 ? (order[here - 1] as Screen) : 'menu');
+  }
+
   const logo = biz.hasPhoto ? (
     <img className="bk-avatar" src="/api/public/photo" alt="" />
   ) : (
@@ -575,7 +617,7 @@ export default function BookingApp() {
     <header className={`bk-head${screen === 'menu' ? ' is-menu' : ''}`}>
       <div className="bk-head-row">
         {screen !== 'menu' && (
-          <button type="button" className="bk-back" onClick={() => setScreen('menu')} aria-label={t.back}>
+          <button type="button" className="bk-back" onClick={goBack} aria-label={t.back}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 18l-6-6 6-6" />
             </svg>

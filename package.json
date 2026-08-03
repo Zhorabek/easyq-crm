@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "bot": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run bot",
+    "bot:check": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run bot -- --check",
+    "bot:login": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run login",
     "dev:worker": "npm run build && wrangler dev",
     "dev:worker:remote": "npm run build && wrangler dev --remote",
     "db:init:local": "wrangler d1 execute easyqueue_db --local --file=../easyqueue-business-bot/schema.sql",
@@ -41,7 +44,8 @@
     "typecheck": "tsc --noEmit",
     "preflight": "npm run typecheck && npm run build",
     "preview": "vite preview",
-    "deploy": "npm run typecheck && npm run build && wrangler deploy"
+    "deploy": "npm run typecheck && npm run build && wrangler deploy",
+    "bot:debug": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run bot -- --debug"
   },
   "dependencies": {
     "libphonenumber-js": "^1.13.10",

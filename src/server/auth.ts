@@ -1,6 +1,17 @@
 const COOKIE_NAME = "easyq_crm_session";
 const PBKDF2_HASH_BYTES = 32;
-const PBKDF2_ITERATIONS = 100_000;
+/**
+ * OWASP's current floor for PBKDF2-SHA256 is 600k; this was at 100k.
+ *
+ * Safe to raise in place because `verifyCrmPassword` reads the iteration count out of the
+ * stored hash rather than assuming this constant — so existing passwords keep verifying at
+ * whatever they were hashed with, and only new or changed ones use the higher number. There is
+ * no migration and no forced reset.
+ *
+ * The cost lands on the Worker, once per login. That is also why the rate limiter counts a
+ * login attempt BEFORE the hash runs: see server/rateLimit.ts.
+ */
+const PBKDF2_ITERATIONS = 600_000;
 
 /**
  * Who the CRM is acting as. The owner is the business account itself; managers and
@@ -74,6 +85,19 @@ function parseCookies(request: Request) {
     cookies.set(pair.slice(0, separatorIndex), pair.slice(separatorIndex + 1));
   }
   return cookies;
+}
+
+/**
+ * Constant-time string comparison, for values where the LENGTH is not itself a secret —
+ * signatures and tokens, which are fixed-width by construction.
+ */
+function timingSafeEqualString(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return diff === 0;
 }
 
 function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
@@ -172,6 +196,37 @@ export async function hashCrmPassword(password: string) {
   return `pbkdf2_sha256$${PBKDF2_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
 }
 
+/**
+ * A real hash of a value nobody knows, for the "no such user" branch.
+ *
+ * Without it, an unknown username returns before any hashing happens and a known one pays for
+ * 600k PBKDF2 iterations — a difference of hundreds of milliseconds, which is a reliable oracle
+ * for "does this account exist" from anywhere on the internet. Feeding this to the same
+ * verification path makes both branches cost the same.
+ *
+ * Generated once at module load rather than hardcoded, so it is not a constant anyone can
+ * recognise, and the iteration count tracks PBKDF2_ITERATIONS automatically.
+ */
+let decoyHashPromise: Promise<string> | null = null;
+
+function decoyHash() {
+  if (!decoyHashPromise) {
+    decoyHashPromise = hashCrmPassword(toBase64Url(crypto.getRandomValues(new Uint8Array(24))));
+  }
+  return decoyHashPromise;
+}
+
+/**
+ * Burn the same work a real verification would, and always fail.
+ *
+ * Call this on every "user not found" path so the response time does not distinguish a
+ * username that exists from one that does not.
+ */
+export async function verifyAgainstDecoy(password: string) {
+  await verifyCrmPassword(password, await decoyHash());
+  return false;
+}
+
 export async function verifyCrmPassword(password: string, storedHash: string | null | undefined) {
   if (!storedHash) return false;
 
@@ -250,7 +305,11 @@ export async function readSession(request: Request, secret: string | undefined):
     return null;
   }
 
-  if (signature !== expectedSignature) {
+  // Timing-safe, like the password comparison below it. A plain !== on an HMAC leaks how many
+  // leading characters matched, and while that is a hard attack to land across a network it is
+  // free to close and the file already had the helper — using it for passwords and not for the
+  // token that grants a session was simply inconsistent.
+  if (!timingSafeEqualString(signature, expectedSignature)) {
     return null;
   }
 

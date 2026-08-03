@@ -39,9 +39,11 @@ import {
   normalizeCrmUsernameBase,
   normalizeCrmUsername,
   readSession,
+  verifyAgainstDecoy,
   verifyCrmPassword,
 } from "./server/auth";
 import { issueCaptcha, verifyCaptcha } from "./server/captcha";
+import { clientIp, consumeRateLimit, LIMITS, type RateLimitRule } from "./server/rateLimit";
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
@@ -590,6 +592,35 @@ function requireCapability(actor: Actor, capability: Capability) {
   if (!can(actor.role, capability)) throw forbidden(capability);
 }
 
+/**
+ * Count a hit and throw a 429 if it is over the limit.
+ *
+ * Throws rather than returning a verdict so a caller cannot check the limit and then forget to
+ * act on it — the same reason `requireCapability` throws. `extraHeaders` carries the CORS
+ * headers of whichever endpoint is being limited, or the browser reports a CORS failure instead
+ * of the 429 and the visitor sees nothing useful.
+ */
+async function requireUnderRateLimit(
+  env: Env,
+  request: Request,
+  rule: RateLimitRule,
+  identifier?: string,
+  extraHeaders: Record<string, string> = {}
+) {
+  const verdict = await consumeRateLimit(env.DB, rule, identifier ?? clientIp(request));
+  if (verdict.allowed) return;
+
+  throw new HttpResponseError(
+    json(
+      { error: "Too many requests. Please wait a moment and try again.", code: "rate_limited" },
+      {
+        status: 429,
+        headers: { ...extraHeaders, "retry-after": String(verdict.retryAfter) },
+      }
+    )
+  );
+}
+
 async function requireAuthenticatedBusiness(
   env: Env,
   request: Request,
@@ -775,6 +806,13 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
     return json({ error: "Введите логин и пароль." }, { status: 400 });
   }
 
+  // Both buckets, and BEFORE the first password hash. Per-IP stops one machine grinding; the
+  // per-username bucket is what catches a distributed attempt on a single account, where every
+  // request comes from a different address and no IP bucket ever fills. Counting before the
+  // hash is the point — the 100k PBKDF2 iterations are the cost being defended.
+  await requireUnderRateLimit(env, request, LIMITS.loginPerIp);
+  await requireUnderRateLimit(env, request, LIMITS.loginPerUser, username);
+
   const row = await env.DB
     .prepare(
       `SELECT
@@ -876,7 +914,14 @@ async function loginStaff(
     .bind(username)
     .first<StaffLoginRow>();
 
-  if (!member || !(await verifyCrmPassword(password, member.crm_password_hash))) {
+  // The decoy on the not-found branch is what stops response time from answering "does this
+  // account exist". This is the LAST place a username can fail to resolve — login() falls
+  // through to here — so it is the only branch that needs it.
+  if (!member) {
+    await verifyAgainstDecoy(password);
+    return invalid;
+  }
+  if (!(await verifyCrmPassword(password, member.crm_password_hash))) {
     return invalid;
   }
 
@@ -1182,6 +1227,9 @@ function verifyStartPayload(nonce: string, lang: string) {
 }
 
 async function startVerification(env: Env, request: Request) {
+  // Each call writes a row and starts a 15-minute clock. Cheap to ask for, so worth bounding.
+  await requireUnderRateLimit(env, request, LIMITS.verifyStart, undefined, SIGNUP_CORS);
+
   // No token check any more. Issuing a nonce is a database write and a string; nothing here
   // talks to Telegram, so there is no secret this endpoint could be missing.
   const input = (await request.json().catch(() => ({}))) as { lang?: string };
@@ -1520,6 +1568,11 @@ async function getCaptcha(env: Env, request: Request) {
 }
 
 async function signupBusiness(env: Env, request: Request) {
+  // Ahead of everything. With SIGNUP_CAPTCHA_ENABLED off this endpoint writes a `users` row and
+  // a `businesses` row per call with nothing in between, so until the captcha comes back this
+  // is the only thing standing between a script and an unbounded pile of fake businesses.
+  await requireUnderRateLimit(env, request, LIMITS.signup, undefined, SIGNUP_CORS);
+
   const input = (await request.json().catch(() => ({}))) as SignupInput;
   const name = (input.name ?? "").trim();
   const type = (input.type ?? "").trim() || "other";
@@ -1734,6 +1787,10 @@ type FeedbackInput = { name?: string; text?: string; rating?: number | null };
 type FeedbackRow = { id: number; name: string; text: string; rating: number | null; created_at: string };
 
 async function submitFeedback(env: Env, request: Request) {
+  // Unauthenticated and uncaptcha'd. Rows land with approved = 0 so nothing reaches the public
+  // page, which means the damage was never publication — it was drowning the moderation queue.
+  await requireUnderRateLimit(env, request, LIMITS.feedback, undefined, FEEDBACK_CORS);
+
   const input = (await request.json().catch(() => ({}))) as FeedbackInput;
   const name = (input.name ?? "").trim().slice(0, 80);
   const text = (input.text ?? "").trim().slice(0, 1000);
@@ -2650,18 +2707,6 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
 
     visible = {
       ...visible,
-      // Money is the owner's business, not a line on someone's own calendar.
-      kpis: [],
-      analytics: {
-        employeeRevenue: [],
-        monthlyRevenue: 0,
-        totalRevenue: 0,
-        collectedToday: 0,
-        refundsToday: 0,
-        totalOutstanding: 0,
-        totalCompletedVisits: 0,
-        totalCancelledVisits: 0,
-      },
       // Their own clients — the people who have actually sat in their chair — and nobody
       // else's. This used to be `[]` on the grounds that the client book is a business
       // asset, which is true of the WHOLE book and not of a master's own regulars: they
@@ -2680,22 +2725,48 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         ...visible.calendar,
         columns: visible.calendar.columns.filter((column) => column.id === mine),
         bookings: visible.calendar.bookings.filter((card) => isMine(card.staffId)),
-        dayRevenue: 0,
       },
-      employees: visible.employees
-        .filter((employee) => employee.id === mine)
-        .map((employee) => ({
-          ...employee,
-          completedRevenue: 0,
-          todayRevenue: 0,
-          outstandingRevenue: 0,
-        })),
+      employees: visible.employees.filter((employee) => employee.id === mine),
       // Sharing links are the owner's to hand out.
       bookingLinks: [],
     };
   }
 
   // ── Capability gates: apply to EVERY role that lacks the capability ────────
+
+  // Money. This used to live inside the specialist-only block above, which quietly made the
+  // whole "keyed on capabilities, not role names" claim false for the figures that matter
+  // most: any role that was not literally `specialist` received every KPI, the full analytics
+  // block, per-employee revenue and the day's takings, whatever its capabilities said. Adding
+  // a fourth role would have handed it the shop's finances by default — the exact failure the
+  // comment below promises cannot happen.
+  //
+  // payment:write is the right capability to gate on. Someone who may not record money has no
+  // use for the totals, and the two move together: the specialist payload was already zeroing
+  // these, so this changes nothing for today's three roles and makes tomorrow's safe.
+  if (!can(actor.role, "payment:write")) {
+    visible = {
+      ...visible,
+      kpis: [],
+      analytics: {
+        employeeRevenue: [],
+        monthlyRevenue: 0,
+        totalRevenue: 0,
+        collectedToday: 0,
+        refundsToday: 0,
+        totalOutstanding: 0,
+        totalCompletedVisits: 0,
+        totalCancelledVisits: 0,
+      },
+      calendar: { ...visible.calendar, dayRevenue: 0 },
+      employees: visible.employees.map((employee) => ({
+        ...employee,
+        completedRevenue: 0,
+        todayRevenue: 0,
+        outstandingRevenue: 0,
+      })),
+    };
+  }
 
   // Who can sign in, under what username, and who still holds a temporary password is
   // only the business of whoever can change those things.
@@ -3643,6 +3714,11 @@ export default {
       }
 
       if (url.pathname === "/api/subdomain/check" && request.method === "GET") {
+        // One D1 read per call and no caching, which made this a fast oracle for enumerating
+        // every claimed slug. Slugs are public DNS names so the answers are not secret; the
+        // free bulk enumeration is what is being taken away. The limit is well above what the
+        // signup form's debounced typing produces.
+        await requireUnderRateLimit(env, request, LIMITS.subdomainCheck, undefined, PUBLIC_GET_CORS);
         return await checkSubdomain(env, url);
       }
 
@@ -3659,6 +3735,16 @@ export default {
           return await publicSlotsEndpoint(env, tenant, url);
         }
         if (url.pathname === "/api/public/bookings" && request.method === "POST") {
+          // The existing cap is three per phone per day, which a script sidesteps by changing
+          // the phone. Availability then bounds the damage in the worst way possible: every
+          // spam booking holds a real slot, so filling a shop's calendar IS the attack. Scoped
+          // per tenant, so one busy shop cannot exhaust another's allowance.
+          await requireUnderRateLimit(
+            env,
+            request,
+            LIMITS.publicBooking,
+            `${tenant.businessId}:${clientIp(request)}`
+          );
           return await publicBookingEndpoint(env, tenant, request);
         }
         if (url.pathname === "/api/public/photo" && request.method === "GET") {
@@ -3678,17 +3764,21 @@ export default {
         return new Response(null, { status: 204, headers: SIGNUP_CORS });
       }
 
+      // `return await`, like every other route here. Without the await a rejection escapes the
+      // try/catch at the bottom of this handler: the caller gets a bare Cloudflare 1101 instead
+      // of the JSON 500, and `console.error("CRM worker error")` never runs, so the failure is
+      // invisible in the logs too. These three were the only ones missing it.
       if (url.pathname === "/api/verify/start" && request.method === "POST") {
-        return startVerification(env, request);
+        return await startVerification(env, request);
       }
 
       if (url.pathname === "/api/verify/status" && request.method === "GET") {
-        return verificationStatus(env, url);
+        return await verificationStatus(env, url);
       }
 
       // Called by Telegram, not by a browser — no CORS, gated on the shared secret.
       if (url.pathname === "/api/telegram/verify-webhook" && request.method === "POST") {
-        return telegramVerifyWebhook(env, request);
+        return await telegramVerifyWebhook(env, request);
       }
 
       if (url.pathname === "/api/captcha" && request.method === "GET") {

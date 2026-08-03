@@ -105,5 +105,13 @@ export function can(role: ActorRole, capability: Capability) {
  * validating the one it was sent.
  */
 export function isScopedToOwnBookings(role: ActorRole) {
-  return role === "specialist";
+  // Written as "who is NOT scoped" on purpose. `role === "specialist"` reads the same today and
+  // fails in opposite directions: under it, a role added tomorrow is unscoped — it sees every
+  // colleague's calendar and client list — until somebody remembers to come back here. Listing
+  // the exemptions instead means a new role starts scoped to itself, which is the same default
+  // the capability matrix already gives it.
+  //
+  // Running the calendar for everyone is the job for these two, so the list is not likely to
+  // grow; if it does, that is a deliberate line to add rather than an omission.
+  return role !== "owner" && role !== "manager";
 }

@@ -29,6 +29,21 @@ and not a `fetch`.
 - Branding: logo, booking-page colours, and what the booking page asks for first
 - Share links and a printable QR for the public booking page
 
+## Rate limiting
+
+`src/server/rateLimit.ts`, counters in the `rate_limit` table. Fixed windows, keyed on
+`CF-Connecting-IP` — which the edge overwrites on every request, so unlike `X-Forwarded-For` the
+caller cannot choose their own bucket.
+
+Applied to login (per IP *and* per username, so a distributed attempt on one account still
+fills a bucket), sign-up, feedback, subdomain checks, public bookings and verification starts.
+Login is counted **before** the password hash, because the 600k PBKDF2 iterations are the cost
+being defended — unlimited login attempts were a way for a stranger to spend the account's CPU.
+
+**It fails open, and it does nothing until the migration is applied.** A limiter that 500s takes
+down the endpoint it protects, and pushing to `main` deploys before anyone can run SQL. Until
+`migrations/2026-08-03-rate-limit.sql` has run, every call logs `RATE LIMITING IS OFF`.
+
 ### Roles
 
 `owner`, `manager`, `specialist`. The matrix is one table in `src/server/permissions.ts`,
@@ -241,6 +256,10 @@ npm run db:migrate:local:booking-services
 
 ```bash
 npm run db:migrate:local:reviews
+```
+
+```bash
+npm run db:migrate:local:rate-limit
 ```
 
 Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migration rule in

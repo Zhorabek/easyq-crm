@@ -33,6 +33,8 @@
     "db:migrate:remote:booking-services": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-31-booking-services.sql",
     "db:migrate:local:reviews": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-31-reviews.sql",
     "db:migrate:remote:reviews": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-31-reviews.sql",
+    "db:migrate:local:rate-limit": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-08-03-rate-limit.sql",
+    "db:migrate:remote:rate-limit": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-08-03-rate-limit.sql",
     "db:migrate:local:images": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-07-30-crm-images.sql",
     "db:migrate:remote:images": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-07-30-crm-images.sql",
     "build": "vite build",

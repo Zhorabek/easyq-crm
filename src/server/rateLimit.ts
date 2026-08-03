@@ -137,7 +137,21 @@ export const LIMITS = {
   loginPerUser: { action: "login:user", limit: 10, windowSeconds: 300 },
   signup: { action: "signup", limit: 5, windowSeconds: 3600 },
   feedback: { action: "feedback", limit: 5, windowSeconds: 3600 },
-  publicBooking: { action: "booking", limit: 10, windowSeconds: 3600 },
+  /**
+   * Deliberately loose, and looser than it first looked right.
+   *
+   * An IP is a poor proxy for a person on this product's audience: Uzbek mobile carriers put
+   * large numbers of subscribers behind CGNAT, so one address can be a whole neighbourhood
+   * booking haircuts. At 10/hour a busy shop would have started refusing genuine customers
+   * whose only mistake was sharing a carrier with the last nine.
+   *
+   * The precise control here is the existing cap of three bookings per phone per day, which is
+   * enforced in publicBooking.ts and keyed on something an attacker has to actually own. This
+   * limit is the blunt backstop behind it — it exists to stop one machine writing thousands of
+   * rows, not to price individual customers, so it should sit far above any believable hour of
+   * real trade.
+   */
+  publicBooking: { action: "booking", limit: 50, windowSeconds: 3600 },
   subdomainCheck: { action: "slugcheck", limit: 60, windowSeconds: 60 },
   verifyStart: { action: "verifystart", limit: 10, windowSeconds: 3600 },
 } satisfies Record<string, RateLimitRule>;

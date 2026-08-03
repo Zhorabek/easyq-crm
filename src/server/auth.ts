@@ -1,17 +1,23 @@
 const COOKIE_NAME = "easyq_crm_session";
 const PBKDF2_HASH_BYTES = 32;
 /**
- * OWASP's current floor for PBKDF2-SHA256 is 600k; this was at 100k.
+ * 100_000 is the CEILING, not a choice.
  *
- * Safe to raise in place because `verifyCrmPassword` reads the iteration count out of the
- * stored hash rather than assuming this constant — so existing passwords keep verifying at
- * whatever they were hashed with, and only new or changed ones use the higher number. There is
- * no migration and no forced reset.
+ * OWASP's current floor for PBKDF2-SHA256 is 600k, and this was raised to it — which
+ * Cloudflare's runtime rejects outright: "iteration counts above 100000 are not supported".
+ * WebCrypto in Workers caps PBKDF2 there, so 100k is simultaneously the platform maximum and
+ * below the recommendation, and no amount of tuning this constant changes that.
  *
- * The cost lands on the Worker, once per login. That is also why the rate limiter counts a
- * login attempt BEFORE the hash runs: see server/rateLimit.ts.
+ * What actually compensates is the rate limiter, which counts a login attempt BEFORE the hash
+ * runs (see server/rateLimit.ts): offline cracking of a stolen hash is bounded by the iteration
+ * count, but online guessing — the attack this codebase can do something about — is bounded by
+ * the limiter instead. If the gap ever needs closing properly, the route is chaining several
+ * 100k derivations into one stored hash, which changes the hash format and needs a migration.
+ *
+ * `verifyCrmPassword` reads the iteration count out of the stored hash rather than assuming
+ * this constant, so changing it never invalidates existing passwords.
  */
-const PBKDF2_ITERATIONS = 600_000;
+const PBKDF2_ITERATIONS = 100_000;
 
 /**
  * Who the CRM is acting as. The owner is the business account itself; managers and

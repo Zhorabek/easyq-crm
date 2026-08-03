@@ -1,0 +1,15 @@
+{
+  "name": "easyq-outreach",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Sends the EasyQ intro message from the project's own Telegram account.",
+  "scripts": {
+    "login": "node login.mjs",
+    "send": "node send.mjs",
+    "dry": "node send.mjs --dry-run"
+  },
+  "dependencies": {
+    "telegram": "^2.26.22"
+  }
+}

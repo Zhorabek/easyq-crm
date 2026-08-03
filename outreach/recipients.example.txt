@@ -1,0 +1,13 @@
+# One Telegram username per line. Copy this to recipients.txt and put the real list there
+# (recipients.txt is gitignored — this repo is public).
+#
+# All of these forms work; they normalise to the same thing:
+#   @barbershop_tashkent
+#   barbershop_tashkent
+#   https://t.me/barbershop_tashkent
+#
+# Duplicates are collapsed. Lines starting with # are ignored.
+# Phone numbers do NOT work here — only usernames.
+
+@example_barbershop
+@example_beauty_salon

@@ -1,0 +1,17 @@
+# Everything here is either a credential or a list of real people. easyq-crm is a PUBLIC
+# repository — treat an accidental commit of any of these as a leak, not a mistake.
+
+# The session string IS the login. Anyone holding it is signed in as you, with no code and no
+# password prompt. It is not recoverable-by-reset like a password; revoke it from
+# Telegram → Settings → Devices.
+session.txt
+*.session
+
+# Who you are writing to.
+recipients.txt
+
+# Who has already been written to.
+sent.jsonl
+
+node_modules/
+.env

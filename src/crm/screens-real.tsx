@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
-import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, useData } from './data';
+import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, serviceSummary, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import type { BookingFlow } from '../shared/bookingFlow';
@@ -71,7 +71,7 @@ export function Dashboard() {
                   <Avatar name={b.clientName} color={avatarColor(b.clientName)} size={36} />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.clientName}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{b.serviceName} · {b.staffName.split(' ')[0]}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{serviceSummary(b.services, b.serviceName)} · {b.staffName.split(' ')[0]}</div>
                   </div>
                   <StatusBadge status={b.status} />
                 </button>
@@ -305,7 +305,7 @@ function DayView({ payload }: { payload: CrmPayload }) {
                   <button key={b.id} onClick={() => openBooking(b)} className="cal-block" style={{ position: 'absolute', left: 8, right: 8, top: Math.max(0, top), height: Math.max(28, (b.duration || 30) * scale - 5), background: `color-mix(in srgb, ${col} 13%, var(--panel))`, borderRadius: 11, padding: '8px 11px 8px 15px', overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
                     <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 3, background: col }} />
                     <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)' }}>{b.clientName}</div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.serviceName}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{serviceSummary(b.services, b.serviceName)}</div>
                     {(b.duration || 0) >= 45 && <div className="tnum" style={{ fontSize: 10.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 'auto' }}>{b.time}</div>}
                   </button>
                 );
@@ -545,7 +545,7 @@ export function Customers() {
               {cust.history.slice(0, 5).map((v) => (
                 <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: colorForId(v.id), flex: 'none' }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.serviceName}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{serviceSummary(v.services, v.serviceName)}</span>
                   <span className="tnum" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{v.date.slice(5)}</span>
                   <span className="tnum" style={{ fontSize: 12.5, fontWeight: 800, width: 70, textAlign: 'right' }}>{fmtPrice(v.price) ?? ''}</span>
                 </div>

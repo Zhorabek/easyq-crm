@@ -68,11 +68,29 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
     ['cancelled', t.status.cancelled, 'var(--rose)'],
   ];
   return (
-    <Modal title={booking.clientName} sub={`${booking.serviceName} · ${booking.staffName}`} icon="calendar" onClose={onClose}>
+    <Modal title={booking.clientName} sub={booking.staffName} icon="calendar" onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <StatusBadge status={booking.status} />
         <Badge color="var(--ink-2)" tint="var(--panel-2)">{booking.date} · {booking.time}</Badge>
         <Badge color="var(--ink-2)" tint="var(--panel-2)">{booking.duration} {t.serv.min}</Badge>
+      </div>
+
+      {/* Every service, itemised. The subtitle used to carry `serviceName`, which for a
+          multi-service booking is the summary string "Haircut +1" — so the person who has to
+          perform the second service could not find out what it was anywhere in the CRM. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--line)', borderRadius: 11, overflow: 'hidden' }}>
+        {booking.services.map((line, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', background: 'var(--panel-2)' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {line.name}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>{line.duration} {t.serv.min}</span>
+              {/* A price of 0 means nobody set one, so it prints nothing rather than "0". */}
+              <span className="tnum" style={{ fontSize: 13, fontWeight: 800 }}>{fmtPrice(line.price) ?? '—'}</span>
+            </span>
+          </div>
+        ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
         {/* Price can be unset; the two payment figures are real totals and 0 is meaningful. */}

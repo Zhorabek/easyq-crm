@@ -75,10 +75,32 @@ export interface KpiCard {
   tone: "sun" | "mint" | "sky" | "ink";
 }
 
+/** One line of a booking: what was sold, at the price and length agreed then. */
+export interface BookingServiceLine {
+  serviceId: number | null;
+  name: string;
+  price: number;
+  duration: number;
+}
+
 export interface ReservationItem {
   id: number;
   clientName: string;
+  /**
+   * The FIRST service, plus "+N" when there are more.
+   *
+   * Kept because both Telegram bots read `bookings.service_name` by name and deploy from their
+   * own repos, so the column cannot go away. Prefer `services` for anything that has room to
+   * show the lines — this string is a summary, not the content.
+   */
   serviceName: string;
+  /**
+   * Every service on the booking, in the order it was chosen.
+   *
+   * Always at least one line: the migration backfilled historical bookings, so nothing has to
+   * special-case "old booking with no lines".
+   */
+  services: BookingServiceLine[];
   staffName: string;
   date: string;
   time: string;

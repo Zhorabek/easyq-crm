@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type {
+  BookingServiceLine,
   CalendarBookingCard,
   ClientRow,
   CrmPayload,
@@ -81,6 +82,23 @@ export function fmtSom(n: number): string {
  * Returning null instead of a dash keeps the choice with the caller: a table cell wants "—" to
  * hold the column, a line of running text wants the money and its separator to vanish.
  */
+/**
+ * A booking's services in one line, for somewhere with no room to list them.
+ *
+ * Built from the LINES, not from `serviceName`. That column holds whatever wrote the booking:
+ * the web page stores "Haircut +1", both Telegram bots store a single name, and a row from
+ * before multi-service existed stores the only service there was. Deriving it here means the
+ * count is right no matter which of those made the row.
+ *
+ * Where there IS room — the booking detail — show `booking.services` itemised instead. This is
+ * a summary; it deliberately does not say what the other services were.
+ */
+export function serviceSummary(services: BookingServiceLine[], fallback: string): string {
+  if (services.length === 0) return fallback;
+  const extra = services.length - 1;
+  return extra > 0 ? `${services[0].name} +${extra}` : services[0].name;
+}
+
 export function fmtPrice(n: number): string | null {
   return Number.isFinite(n) && n > 0 ? fmtSom(n) : null;
 }

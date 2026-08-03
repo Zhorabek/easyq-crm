@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-07-31. Everything below is either not started or waiting on someone.
+Last updated 2026-08-03. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -9,6 +9,26 @@ Items are ordered within each section by what I'd do first.
 
 Nothing here can be done from the repo.
 
+- [ ] **Set the two webhook secrets. Until this is done, the bots accept forged updates.**
+      The check shipped on 2026-08-03 but is INERT while `TELEGRAM_WEBHOOK_SECRET` is unset —
+      deliberately, because enforcing it before Telegram sends the header would take both bots
+      down. Every update logs `WEBHOOK IS UNAUTHENTICATED` until you finish. Steps and the
+      reasoning are in each bot's README under *Telegram Webhook*; do it for
+      `easyqueue-business-bot` and `easyqueue-client-bot`, with a different secret each.
+- [ ] **Apply `migrations/2026-08-03-rate-limit.sql`. Until this is done, there is no rate
+      limiting.** Same shape of problem: the limiter fails open so that pushing to `main`
+      cannot deploy ahead of the SQL, which means it does nothing until the table exists.
+      Every limited request logs `RATE LIMITING IS OFF` until then.
+
+      ```
+      npm run db:migrate:remote:rate-limit
+      ```
+
+      Then confirm it took, per the migration rule below:
+
+      ```sql
+      SELECT name FROM sqlite_master WHERE type='table' AND name='rate_limit';
+      ```
 - [ ] **Rotate `@easyqueue_business_bot`'s token.** It was pasted in plaintext in a chat on
       2026-07-28 and must be treated as compromised. `/revoke` with
       [@BotFather](https://t.me/BotFather). Logos no longer depend on it, but the two bots do.
@@ -51,18 +71,28 @@ Nothing here can be done from the repo.
 
 ---
 
-## Security — open since the first review, never fixed
+## Security — reviewed 2026-08-03, mostly closed
 
-These are real and unaddressed. The captcha machinery to fix the first one already exists
-in `src/server/captcha.ts`.
+A full pass over auth, permissions, SQL, CORS, uploads and both bots. What it found and what
+is left.
 
-- [ ] **`POST /api/feedback` is unprotected.** Unauthenticated, wildcard CORS, no captcha,
-      no rate limit. Rows land with `approved = 0` so nothing renders publicly, but the
-      moderation queue will drown. Reuse `verifyCaptcha`, or rate limit by IP.
-- [ ] **`GET /api/subdomain/check` has no rate limit and no caching.** One D1 read per
-      request, which is a fast oracle for enumerating every claimed slug. Slugs are public
-      DNS names so the information is not secret, but the free bulk enumeration is
-      avoidable — cache the negative answer for 60s at minimum.
+**Closed.** Bot webhooks now require Telegram's `secret_token` — they previously accepted any
+POST from anyone, which was a sign-up verification bypass, not merely spam, because
+`contactBelongsToSender` compares two fields a forger controls. Rate limiting now exists at all
+(`src/server/rateLimit.ts`) and covers login, sign-up, feedback, subdomain checks, public
+bookings and verification starts. Money redaction moved onto `payment:write` rather than the
+role name. `isScopedToOwnBookings` fails closed. Session HMACs are compared timing-safely,
+PBKDF2 is at 600k, and an unknown username burns a decoy hash so timing no longer answers
+"does this account exist".
+
+**Verified clean, so nobody re-checks it:** no SQL injection anywhere (both dynamic `IN` lists
+build placeholders from the array length and bind the values); wildcard CORS is safe because no
+endpoint sets `Allow-Credentials` and the cookie is `SameSite=Lax`; tenant binding, per-request
+staff re-reads and `session_version` eviction all hold; the upload hardening matches what the
+README claims; no secrets in the git history of the two public repos.
+
+Still open:
+
 - [ ] **`RESERVED_HOST_LABELS` and `RESERVED_SLUGS` are two hand-maintained lists.**
       `worker.ts` and `shared/slug.ts` respectively. They overlap but neither derives from
       the other, so drift means somebody claims a slug that can never route to them.
@@ -71,7 +101,12 @@ in `src/server/captcha.ts`.
       `POST /api/staff/<id>/photo` need `business:write` / `staff:write`, so only an
       authenticated owner can reach them — but an owner can replace a logo in a loop and
       each call writes a 512 KB row. Bounded by `INSERT OR REPLACE` on a unique key, so it
-      cannot grow the table; it can still burn D1 writes.
+      cannot grow the table; it can still burn D1 writes. The limiter now exists, so this is
+      one call to `requireUnderRateLimit` whenever it is judged worth the write.
+- [ ] **`crm_temp_password` is stored in plaintext** and persists until the person first
+      changes their password — which may be never. It is cleared on change and on revoke, and
+      the owner has to be able to read it out to the staff member, so the alternative is
+      showing it once at issue and never again. Worth deciding: both bots bind the same D1.
 
 ---
 
@@ -259,9 +294,14 @@ chips and search, the two-tab specialist step, month calendar, times grouped by 
       a pill on a specialist card does not say which day it belongs to.
 - [ ] **Ratings and review counts on specialist cards.** The schema is applied; nothing
       collects, moderates or reads reviews yet. See the section below.
-- [ ] **The CRM read side for multi-service.** The calendar and the booking detail modal still
-      render `service_name`, which for a two-service booking now reads "Haircut +1". The lines
-      are in `booking_services` and nothing reads them back yet.
+- [x] ~~**The CRM read side for multi-service.**~~ Done 2026-08-03. `booking_services` had zero
+      read sites — the lines were written and never looked at, so a two-service booking showed
+      as "Haircut +1" everywhere and the second service was invisible to the person who had to
+      perform it. The booking detail now itemises every line with its own price and duration;
+      compact rows keep a summary but DERIVE it via `serviceSummary`, so the count is right
+      whether the row came from the booking page, a bot, or predates multi-service. A booking
+      with no lines falls back to a single line built from the `bookings` columns, which is
+      what both bots still write.
 
 ---
 
@@ -277,11 +317,10 @@ own repos.
 - [ ] **Moderate them.** `approved` defaults to 0 and the CRM's Reviews screen is still mock
       data. Nothing should render publicly until an owner approves it.
 - [ ] **Per-staff averages** on the public payload, for the stars the booking page wants.
-- [ ] **Fix both bots first.** Neither filters `AND approved = 1`, because until now there was
-      nothing to filter. The moment a real review lands, Telegram will show unmoderated text
-      while the web page correctly hides it. Two-line change in each repo:
-      `easyqueue-business-bot/src/db/repositories.ts` and
-      `easyqueue-client-bot/src/services/booking.service.ts`.
+- [x] ~~**Fix both bots first.**~~ Done 2026-08-03. Every review query now filters
+      `AND approved = 1`. It was THREE sites, not the two recorded here — this entry missed
+      `easyqueue-client-bot/src/services/business.service.ts`, which would have kept publishing
+      unmoderated text from the business card while the other two were fixed.
 
 ---
 

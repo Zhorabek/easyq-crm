@@ -148,6 +148,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       id: idx + 1,
       clientName: CUSTOMERS[b.cu].name,
       serviceName: servName(b.sv),
+      services: [{ serviceId: svc.id, name: servName(b.sv), price, duration: svc.dur }],
       staffName: STAFF[b.st].name,
       date,
       time: b.time,
@@ -166,8 +167,8 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
   const reservationsToday: ReservationItem[] = bookings
     .slice()
     .sort((a, b) => a.time.localeCompare(b.time))
-    .map(({ id, clientName, serviceName, staffName, date: d, time, datetime, status, price, duration, userId, payment }) => ({
-      id, clientName, serviceName, staffName, date: d, time, datetime, status, price, duration, userId, payment,
+    .map(({ id, clientName, serviceName, services, staffName, date: d, time, datetime, status, price, duration, userId, payment }) => ({
+      id, clientName, serviceName, services, staffName, date: d, time, datetime, status, price, duration, userId, payment,
     }));
 
   const employees: EmployeeRow[] = STAFF.map((s, i) => {
@@ -223,6 +224,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
         id: c.id * 10 + k,
         clientName: c.name,
         serviceName: SERV_NAME[lang][sv.key],
+        services: [{ serviceId: sv.id, name: SERV_NAME[lang][sv.key], price, duration: sv.dur }],
         staffName: fav.name,
         staffId: fav.id,
         date: addDays(date, -(k + 1) * 7),

@@ -1,4 +1,5 @@
 import type {
+  BookingServiceLine,
   AddEmployeeInput,
   AuthSession,
   BookingLinkItem,
@@ -191,6 +192,15 @@ type BookingRow = {
   duration_snapshot: number | null;
   notes: string | null;
   client_phone: string | null;
+};
+
+/** One row of `booking_services`. Snapshots, not joins — see the migration. */
+type BookingServiceRow = {
+  booking_id: number;
+  service_id: number | null;
+  service_name: string;
+  price: number;
+  duration: number;
 };
 
 type PaymentRow = {
@@ -2078,7 +2088,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   // logo and a photo per specialist on the wire on every poll.
   const imageIds = await storedImageIds(env, business.id);
 
-  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes] =
+  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes, bookingServicesRes] =
     await Promise.all([
     env.DB
       .prepare(
@@ -2137,6 +2147,26 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       )
       .bind(business.id)
       .all<PaymentRow>(),
+    // The lines behind a multi-service booking. These were being WRITTEN and never read, so a
+    // two-service visit showed up everywhere as "Haircut +1" — the summary string — and the
+    // second service was invisible to the owner who has to perform it.
+    //
+    // Joined through `bookings` rather than trusting a business_id on the line, because the
+    // line table does not carry one: the booking owns the tenancy and duplicating it would be
+    // a second place for it to be wrong.
+    env.DB
+      .prepare(
+        `SELECT bs.booking_id, bs.service_id, bs.service_name, bs.price, bs.duration
+         FROM booking_services bs
+         JOIN bookings b ON b.id = bs.booking_id
+         WHERE b.business_id = ?
+         ORDER BY bs.booking_id ASC, bs.position ASC`
+      )
+      .bind(business.id)
+      .all<BookingServiceRow>()
+      // Older deployments may not have the table yet, and a missing one must not take the whole
+      // CRM payload down — the summary string still renders, just without the breakdown.
+      .catch(() => ({ results: [] as BookingServiceRow[] })),
     ]);
 
   const services = (servicesRes.results ?? []) as unknown as ServiceRow[];
@@ -2146,6 +2176,36 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   const staffUnavailability = (staffUnavailabilityRes.results ?? []) as unknown as StaffUnavailabilityRow[];
   const bookings = (bookingsRes.results ?? []) as unknown as BookingRow[];
   const payments = (paymentsRes.results ?? []) as unknown as PaymentRow[];
+
+  // booking id -> its lines, in the order they were chosen.
+  const linesByBooking = new Map<number, BookingServiceLine[]>();
+  for (const row of (bookingServicesRes.results ?? []) as unknown as BookingServiceRow[]) {
+    const list = linesByBooking.get(row.booking_id) ?? [];
+    list.push({
+      serviceId: row.service_id,
+      name: row.service_name,
+      price: Number(row.price || 0),
+      duration: Number(row.duration || 0),
+    });
+    linesByBooking.set(row.booking_id, list);
+  }
+
+  /**
+   * The lines for a booking, or one line synthesised from the booking's own columns.
+   *
+   * The fallback is what keeps every caller free of "might be empty" branches. It fires for a
+   * booking written by either Telegram bot: those repos deploy separately and still insert a
+   * single service straight onto `bookings`, with no lines at all.
+   */
+  const servicesFor = (booking: BookingRow): BookingServiceLine[] =>
+    linesByBooking.get(booking.id) ?? [
+      {
+        serviceId: booking.service_id,
+        name: booking.service_name,
+        price: Number(booking.price_snapshot || 0),
+        duration: Number(booking.duration_snapshot || 60),
+      },
+    ];
 
   const servicesByStaff = new Map<number, string[]>();
   for (const row of staffServices) {
@@ -2290,6 +2350,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     id: booking.id,
     clientName: booking.client_name,
     serviceName: booking.service_name,
+    services: servicesFor(booking),
     staffName: booking.staff_name,
     date: getDatePart(booking.datetime),
     time: getTimePart(booking.datetime),
@@ -2308,6 +2369,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     id: booking.id,
     clientName: booking.client_name,
     serviceName: booking.service_name,
+    services: servicesFor(booking),
     staffName: booking.staff_name,
     date: getDatePart(booking.datetime),
     time: getTimePart(booking.datetime),
@@ -2459,6 +2521,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       businessName: business.name,
       clientName: booking.client_name,
       serviceName: booking.service_name,
+      services: servicesFor(booking),
       staffName: booking.staff_name,
       staffId: booking.staff_id,
       date: getDatePart(booking.datetime),

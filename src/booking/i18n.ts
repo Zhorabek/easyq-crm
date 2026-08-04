@@ -59,6 +59,10 @@ type Copy = {
   tomorrow: string;
   noSlots: string;
   noSlotsHint: string;
+  pickServiceForTimes: string;
+  pickServiceForTimesHint: string;
+  pickStaffForTimes: string;
+  pickStaffForTimesHint: string;
   noServices: string;
   loading: string;
   back: string;
@@ -119,6 +123,10 @@ export const T: Record<BookingLang, Copy> = {
     tomorrow: "Ertaga",
     noSlots: "Bu kunga bo‘sh vaqt yo‘q",
     noSlotsHint: "Boshqa kunni yoki ustani tanlab ko‘ring.",
+    pickServiceForTimes: "Avval xizmatni tanlang",
+    pickServiceForTimesHint: "Bo‘sh vaqtlar xizmat davomiyligiga qarab ko‘rsatiladi.",
+    pickStaffForTimes: "Endi ustani tanlang",
+    pickStaffForTimesHint: "Har bir ustaning o‘z ish vaqti bor.",
     noServices: "Hozircha xizmatlar qo‘shilmagan.",
     loading: "Yuklanmoqda…",
     back: "Orqaga",
@@ -173,6 +181,10 @@ export const T: Record<BookingLang, Copy> = {
     tomorrow: "Завтра",
     noSlots: "На этот день нет свободного времени",
     noSlotsHint: "Попробуйте другой день или мастера.",
+    pickServiceForTimes: "Сначала выберите услугу",
+    pickServiceForTimesHint: "Свободное время зависит от длительности услуги.",
+    pickStaffForTimes: "Теперь выберите мастера",
+    pickStaffForTimesHint: "У каждого мастера своё расписание.",
     noServices: "Услуги пока не добавлены.",
     loading: "Загрузка…",
     back: "Назад",
@@ -227,6 +239,10 @@ export const T: Record<BookingLang, Copy> = {
     tomorrow: "Tomorrow",
     noSlots: "No free times on this day",
     noSlotsHint: "Try another day or specialist.",
+    pickServiceForTimes: "Choose a service first",
+    pickServiceForTimesHint: "Available times depend on how long the service takes.",
+    pickStaffForTimes: "Now choose a specialist",
+    pickStaffForTimesHint: "Each specialist keeps their own hours.",
     noServices: "No services have been added yet.",
     loading: "Loading…",
     back: "Back",

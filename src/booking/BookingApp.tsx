@@ -593,7 +593,7 @@ export default function BookingApp() {
    * screen. From the details screen, back is the last step of the path.
    */
   function goBack() {
-    const order = stepOrder(entry);
+    const order = stepOrder(entry, flow);
     if (screen === 'details') {
       setScreen(order[order.length - 1] as Screen);
       return;
@@ -612,7 +612,7 @@ export default function BookingApp() {
   /** Everything answered, so the details screen can be reached. */
   const missing = nextMissingStep(
     { staffId, serviceIds, date: date || null, time: time || null },
-    { needsStaff: showStaff, entry }
+    { needsStaff: showStaff, entry, flow }
   );
   const ready = missing === null;
   /** The CTA's destination AND its label come from one place, so they cannot disagree. */
@@ -1019,8 +1019,21 @@ export default function BookingApp() {
         </div>
 
         <div className="bk-times-wrap">
+          {/* Times cannot be computed until the duration and the person are known, and saying so
+              is the whole point of this branch. It used to fall through to "No free times on this
+              day - try another day or specialist", which is a LIE when nothing is missing from
+              the day: a customer following a date-first shop tapped the date row, was told the
+              day was full, tried every other day, and got the same sentence each time. */}
           {services.length === 0 ? (
-            <div className="bk-empty">{t.noSlotsHint}</div>
+            <div className="bk-empty">
+              {t.pickServiceForTimes}
+              <span className="bk-empty-hint">{t.pickServiceForTimesHint}</span>
+            </div>
+          ) : showStaff && !staff ? (
+            <div className="bk-empty">
+              {t.pickStaffForTimes}
+              <span className="bk-empty-hint">{t.pickStaffForTimesHint}</span>
+            </div>
           ) : slotsLoading ? (
             <div className="bk-empty">{t.loading}</div>
           ) : !slots || slots.length === 0 ? (

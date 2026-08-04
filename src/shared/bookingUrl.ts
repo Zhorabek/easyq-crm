@@ -25,6 +25,8 @@
  * reader has to check for.
  */
 
+import { DEFAULT_BOOKING_FLOW, flowEntryOrder, type BookingFlow } from "./bookingFlow";
+
 export type BookingSelection = {
   staffId: number | null;
   serviceIds: number[];
@@ -160,10 +162,22 @@ export type BookingEntry = "staff" | "datetime" | "service";
  * correct until the total duration is known. In the date-first path the customer has picked a
  * time before choosing services, so the specialist step re-checks who can actually fit it.
  */
-export function stepOrder(entry: BookingEntry): Array<"staff" | "service" | "datetime"> {
-  if (entry === "staff") return ["staff", "service", "datetime"];
-  if (entry === "datetime") return ["datetime", "service", "staff"];
-  return ["service", "staff", "datetime"];
+export function stepOrder(
+  entry: BookingEntry,
+  flow: BookingFlow = DEFAULT_BOOKING_FLOW
+): Array<"staff" | "service" | "datetime"> {
+  // The owner's setting decides the order; the tapped row only decides where it STARTS.
+  //
+  // This used to be three hardcoded orders keyed on `entry` alone, which meant the booking-order
+  // setting reordered the menu rows and then stopped mattering: the moment a customer tapped
+  // anything, the sequence came from where they tapped. A shop set to "specialist first" sent
+  // everyone who tapped Services down the service-first path, so the setting looked broken
+  // because for everything past the first tap it was.
+  //
+  // Entry still wins for its own position, because the customer has already answered that
+  // question by tapping it — sending them back to a different first step would be paperwork.
+  const rest = flowEntryOrder(flow).filter((step) => step !== entry);
+  return [entry, ...rest];
 }
 
 /**
@@ -175,14 +189,14 @@ export function stepOrder(entry: BookingEntry): Array<"staff" | "service" | "dat
  */
 export function nextMissingStep(
   selection: BookingSelection,
-  opts: { needsStaff: boolean; entry?: BookingEntry }
+  opts: { needsStaff: boolean; entry?: BookingEntry; flow?: BookingFlow }
 ): MissingStep {
   const filled = {
     staff: !opts.needsStaff || Boolean(selection.staffId),
     service: selection.serviceIds.length > 0,
     datetime: Boolean(selection.date && selection.time),
   };
-  for (const step of stepOrder(opts.entry ?? "service")) {
+  for (const step of stepOrder(opts.entry ?? "service", opts.flow)) {
     if (!filled[step]) return step;
   }
   return null;

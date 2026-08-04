@@ -280,19 +280,21 @@ function NotifBell() {
   const [dismissed, setDismissed] = useState<Set<number>>(() => new Set());
   const ref = useRef<HTMLDivElement>(null);
 
-  const pending = (payload?.reservationsToday ?? []).filter((booking: ReservationItem) => booking.status === 'pending');
+  // Every pending booking, not just today's — see CrmPayload.pendingBookings.
+  const pending = payload?.pendingBookings ?? [];
   const items = demo
     ? (n.items as any[]).map((x: any) => ({ ...x }))
-    : pending.map((booking: ReservationItem) => ({
+    : pending.map((booking) => ({
         id: booking.id,
         type: 'booking',
         title: n.pendingTitle,
         body: `${booking.clientName} · ${booking.serviceName}`,
-        time: booking.time,
+        // The DATE matters now that these are not all today.
+        time: `${booking.date} · ${booking.time}`,
         unread: !dismissed.has(booking.id),
         booking,
       }));
-  const setItems = (_next: any[]) => setDismissed(new Set(pending.map((booking: ReservationItem) => booking.id)));
+  const setItems = (_next: any[]) => setDismissed(new Set(pending.map((booking) => booking.id)));
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };

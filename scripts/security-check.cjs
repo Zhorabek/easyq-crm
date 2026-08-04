@@ -157,6 +157,15 @@ for (const f of payloadFields) {
   check(`payload field "${f}" is inside the money gate`, moneyGate.includes(`${f}: []`));
 }
 
+// Pending bookings are booking rows, so they follow the same scoping as the calendar: a master
+// is asked to confirm their OWN bookings, never the shop's.
+check('pending bookings are sent', /pendingBookings,/.test(worker));
+check('pending bookings are scoped for a master',
+  /pendingBookings: visible\.pendingBookings\.filter\(\(booking\) => isMine\(booking\.staffId\)\)/.test(worker));
+check('pending is measured against the business today, not the browsed date',
+  /booking\.status === "pending" && getDatePart\(booking\.datetime\) >= getTodayIso/.test(worker));
+check('the pending list is capped', /\.slice\(0, 50\)/.test(worker));
+
 // The per-staff service breakdown is a transport field: it exists so a master's donut can be
 // scoped, and it must leave the payload for EVERY role, not just the one that consumes it.
 check('services carry a per-staff breakdown server-side', /bookingsCountByStaff: serviceBookings\.reduce/.test(worker));

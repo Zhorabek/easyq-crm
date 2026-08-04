@@ -423,6 +423,13 @@ export interface CrmPayload {
     totalCancelledVisits: number;
   };
   bookingLinks: BookingLinkItem[];
+  /**
+   * Bookings still awaiting confirmation, today onwards — what the bell counts.
+   *
+   * Not limited to the selected day: a booking taken overnight for next week is exactly the
+   * thing somebody needs telling about.
+   */
+  pendingBookings: CalendarBookingCard[];
   /** Payments recorded on `selectedDate`, for the cash desk. */
   paymentsToday: DayPayment[];
   /**

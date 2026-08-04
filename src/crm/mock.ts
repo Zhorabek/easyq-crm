@@ -319,6 +319,8 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       totalCompletedVisits: bookings.filter((b) => b.status === 'done').length,
       totalCancelledVisits: 0,
     },
+    // The demo confirms everything on the spot, so nothing is ever waiting.
+    pendingBookings: [],
     // The demo takes no payments, so the cash desk is empty rather than invented.
     paymentsToday: [],
     bookingLinks: [

@@ -2485,6 +2485,43 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     });
   }
 
+  /**
+   * Every booking still waiting for a decision, today onwards.
+   *
+   * The bell was fed from the selected day alone, so a booking made overnight for next Tuesday
+   * — which is most of what a public booking page produces — never raised a badge. A bell that
+   * only tells you about today is not telling you what is waiting for you.
+   *
+   * Full CalendarBookingCard shape rather than a summary, so tapping one in the bell opens the
+   * same modal the calendar opens and there is only one booking detail view in the product.
+   * Capped: a shop that has ignored confirmations for a year should not have that year's
+   * backlog serialised into every payload.
+   */
+  const pendingBookings: CalendarBookingCard[] = bookings
+    // The business's OWN today, not selectedDate: browsing back to last week must not hide
+    // what is still waiting, and must not resurrect what is already past.
+    .filter((booking) => booking.status === "pending" && getDatePart(booking.datetime) >= getTodayIso(env.APP_TIMEZONE || "UTC"))
+    .sort((a, b) => a.datetime.localeCompare(b.datetime))
+    .slice(0, 50)
+    .map((booking) => ({
+      id: booking.id,
+      clientName: booking.client_name,
+      serviceName: booking.service_name,
+      services: servicesFor(booking),
+      staffName: booking.staff_name,
+      date: getDatePart(booking.datetime),
+      time: getTimePart(booking.datetime),
+      datetime: booking.datetime,
+      status: booking.status,
+      price: Number(booking.price_snapshot || 0),
+      duration: Number(booking.duration_snapshot || 60),
+      userId: booking.user_id,
+      payment: paymentSummaryByBooking.get(booking.id)!,
+      staffId: booking.staff_id,
+      serviceId: booking.service_id,
+      color: CARD_COLORS[(booking.staff_id ?? booking.id) % CARD_COLORS.length],
+    }));
+
   const calendarBookings: CalendarBookingCard[] = bookingsToday.map((booking) => ({
     id: booking.id,
     clientName: booking.client_name,
@@ -2824,6 +2861,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     miniCalendarAnchor: selectedDate,
     kpis,
     reservationsToday,
+    pendingBookings,
     calendar: {
       date: selectedDate,
       columns: calendarColumns,
@@ -2994,6 +3032,8 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         bookings: visible.calendar.bookings.filter((card) => isMine(card.staffId)),
       },
       employees: visible.employees.filter((employee) => employee.id === mine),
+      // A master is asked to confirm their own bookings, not the shop's.
+      pendingBookings: visible.pendingBookings.filter((booking) => isMine(booking.staffId)),
       // "Bookings by service" becomes THEIR bookings by service.
       services: visible.services.map((service) => ({
         ...service,

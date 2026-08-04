@@ -284,6 +284,8 @@ export default function BookingApp() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const [slots, setSlots] = useState<string[] | null>(null);
+  /** Days with room, so the calendar can dim the ones without. */
+  const [availableDays, setAvailableDays] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   /**
    * Every free slot on the chosen day, per staff id.
@@ -447,6 +449,43 @@ export default function BookingApp() {
     // booking row needs a staff_id — the customer simply never had to pick.
     if (eligibleStaff.length > 0) setStaffId(eligibleStaff[0]!.id);
   }, [anyStaff, staffId, eligibleStaff]);
+
+  /**
+   * Open the date step on the first day that has room.
+   *
+   * It used to open on today. When today was full — which on a busy shop is most of the
+   * afternoon — the customer read "no free time, try another day" and had to tap dates one at a
+   * time looking for one that worked. Searching for availability is the shop's job, not the
+   * customer's.
+   *
+   * Only when they have NOT chosen a date themselves (`autoDay` fires once per staff+service
+   * combination). A date typed into the URL, or picked and then returned to, is left alone —
+   * moving somebody off their own choice is worse than opening on a full day.
+   */
+  const autoDay = useRef<string | null>(null);
+  useEffect(() => {
+    if (screen !== 'datetime' || !staff || services.length === 0) return;
+    const key = `${staff.id}:${serviceIds.join(',')}`;
+    if (autoDay.current === key || time) return;
+    autoDay.current = key;
+
+    let alive = true;
+    fetch(`/api/public/available-days?staffId=${staff.id}&serviceIds=${serviceIds.join(',')}&from=${encodeURIComponent(biz?.today ?? '')}&days=14`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ available: string[] }>) : Promise.reject(new Error('days'))))
+      .then((body) => {
+        if (!alive) return;
+        const days = body.available ?? [];
+        setAvailableDays(days);
+        // Only move them forward, never backwards, and never off a day that already works.
+        if (days.length > 0 && !days.includes(date)) setDate(days[0]!);
+      })
+      // A failure here costs the convenience, not the booking: the picker stays on today and
+      // behaves exactly as it did before.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [screen, staff, services.length, serviceIds, biz, date, time]);
 
   // Slots depend on staff+date+service; refetch whenever any moves, and drop a held time that
   // is no longer offered so the confirm button cannot submit a stale slot.
@@ -1014,12 +1053,19 @@ export default function BookingApp() {
             {monthGrid.map((iso) => {
               const outside = iso.slice(0, 7) !== monthAnchor.slice(0, 7);
               const usable = canBook(iso);
+              // Dimmed, not disabled. We only know about the fourteen days the availability
+              // call covered, so a day beyond that window is unknown rather than full — and a
+              // customer who taps one still gets the real answer from the slot list. Marking
+              // the known-empty ones saves the tapping without ever lying about the rest.
+              const known = availableDays.length > 0 && iso >= (biz?.today ?? '');
+              const empty = known && !availableDays.includes(iso) && iso <= availableDays[availableDays.length - 1]!;
               return (
                 <button
                   key={iso}
                   type="button"
                   disabled={!usable}
                   onClick={() => setDate(iso)}
+                  style={empty ? { opacity: 0.38 } : undefined}
                   className={`bk-cal-day${iso === date ? ' is-on' : ''}${outside ? ' is-outside' : ''}`}
                 >
                   {Number(iso.slice(8, 10))}

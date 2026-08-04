@@ -1580,6 +1580,71 @@ async function publicSlotsEndpoint(env: Env, tenant: TenantContext, url: URL) {
   return json({ date, staffId, slots }, { headers: { "cache-control": "no-store" } });
 }
 
+/**
+ * Which of the next N days have room, so the picker can open on one.
+ *
+ * The date picker opened on today and, when today was full, said "no free time — try another
+ * day". The customer then hunts by tapping dates one at a time, which on a busy shop means
+ * tapping through a week of nothing. A booking page that makes you search for availability is
+ * a booking page people leave.
+ *
+ * One request rather than the client probing each date: the same walk done from the browser
+ * would be fourteen round trips on a phone connection, and every one of them re-reads the same
+ * staff row and booking list.
+ *
+ * The days are computed with getPublicSlots — the identical function the slot list uses — so
+ * "this day has room" can never disagree with what the day then offers.
+ */
+async function publicAvailableDaysEndpoint(env: Env, tenant: TenantContext, url: URL) {
+  const timeZone = env.APP_TIMEZONE || "UTC";
+  const today = getTodayIso(timeZone);
+  const staffId = Number(url.searchParams.get("staffId") ?? 0);
+  const from = url.searchParams.get("from") ?? today;
+  // Bounded hard: this walks a day at a time, and the query string does not get to decide how
+  // much work the Worker does.
+  const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? 14) || 14, 1), 30);
+
+  const wanted = requestedServiceIds({
+    serviceIds: (url.searchParams.get("serviceIds") ?? "")
+      .split(",")
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0),
+  });
+
+  if (!Number.isInteger(staffId) || staffId <= 0 || !isIsoDate(from)) {
+    return json({ error: "A staffId and a from date are required." }, { status: 400 });
+  }
+
+  let serviceDuration: number | null = null;
+  if (wanted.length > 0) {
+    const placeholders = wanted.map(() => "?").join(", ");
+    const rows = await env.DB
+      .prepare(`SELECT id, name, price, duration FROM services WHERE business_id = ? AND is_active = 1 AND id IN (${placeholders})`)
+      .bind(tenant.businessId, ...wanted)
+      .all<{ id: number; name: string; price: number; duration: number }>();
+    const basket = buildBasket(wanted, rows.results ?? []);
+    serviceDuration = basket ? basket.totalDuration : null;
+  }
+
+  const start = from < today ? today : from;
+  const available: string[] = [];
+  for (let i = 0; i < days; i += 1) {
+    const date = addDays(start, i);
+    const slots = await getPublicSlots(
+      env.DB,
+      tenant.businessId,
+      staffId,
+      date,
+      date === today ? getNowMinuteInTimeZone(timeZone) : null,
+      serviceDuration
+    );
+    if (slots.length > 0) available.push(date);
+  }
+
+  // Never cached, for the same reason the slot list is not.
+  return json({ from: start, days, available }, { headers: { "cache-control": "no-store" } });
+}
+
 async function publicBookingEndpoint(env: Env, tenant: TenantContext, request: Request) {
   const timeZone = env.APP_TIMEZONE || "UTC";
   const input = (await request.json().catch(() => ({}))) as CreatePublicBookingInput;
@@ -4101,6 +4166,9 @@ const router = {
         }
         if (url.pathname === "/api/public/slots" && request.method === "GET") {
           return await publicSlotsEndpoint(env, tenant, url);
+        }
+        if (url.pathname === "/api/public/available-days" && request.method === "GET") {
+          return await publicAvailableDaysEndpoint(env, tenant, url);
         }
         if (url.pathname === "/api/public/bookings" && request.method === "POST") {
           // The existing cap is three per phone per day, which a script sidesteps by changing

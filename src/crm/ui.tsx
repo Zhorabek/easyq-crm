@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { defaultDialPrefix, formatAsYouType, nationalPlaceholder } from '../shared/phone';
@@ -435,48 +436,84 @@ export const iconBtn: CSSProperties = { width: 38, height: 38, borderRadius: 11,
  * a counter with a customer waiting.
  */
 export function InfoTip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // Measured from the trigger and rendered into <body> with position: fixed.
+  //
+  // The first version was absolutely positioned inside its parent, which put it inside the
+  // booking modal — a rounded, scrollable box — so the bubble was cut off at the modal's edge
+  // and half the sentence was unreadable. Any ancestor with overflow, a transform or a stacking
+  // context does that, and this thing is meant to be usable next to ANY label on ANY screen.
+  // A portal takes it out of that argument entirely.
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 240;
+    const margin = 10;
+    // Clamped to the viewport, so a tip on a right-hand column does not run off the screen.
+    const left = Math.min(Math.max(margin, r.left - 8), window.innerWidth - width - margin);
+    // Below by default; above when there is no room, which is what happens in a modal footer.
+    const below = r.bottom + 8;
+    const top = below + 120 > window.innerHeight ? Math.max(margin, r.top - 128) : below;
+    setBox({ top, left });
+  };
 
   useEffect(() => {
-    if (!open) return;
+    if (!box) return;
+    const close = () => setBox(null);
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) close();
     };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+    document.addEventListener('keydown', onKey);
+    // Reposition rather than follow: the trigger may scroll away under a fixed bubble.
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [box]);
 
   return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle', marginLeft: 6 }}>
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((prev: boolean) => !prev); }}
+        onClick={(e) => { e.stopPropagation(); if (box) setBox(null); else place(); }}
         aria-label={text}
-        aria-expanded={open}
+        aria-expanded={Boolean(box)}
         style={{
-          width: 16, height: 16, borderRadius: '50%', display: 'grid', placeItems: 'center',
-          fontSize: 10.5, fontWeight: 800, lineHeight: 1, cursor: 'pointer',
-          background: open ? 'var(--accent)' : 'var(--panel-2)',
-          color: open ? 'var(--accent-ink)' : 'var(--ink-3)',
-          border: '1px solid var(--line-2)',
+          display: 'inline-grid', placeItems: 'center', verticalAlign: 'middle', marginLeft: 5,
+          width: 16, height: 16, borderRadius: '50%', cursor: 'pointer', flex: 'none',
+          background: 'transparent', color: box ? 'var(--accent-deep)' : 'var(--ink-3)',
         }}
       >
-        ?
+        {/* The drawn icon, not a "?" character. A text glyph is positioned by font metrics —
+            its ink sits above the baseline with descender space below — so it never actually
+            centres in a circle no matter what line-height you give it. This one is centred by
+            construction. */}
+        <Ic name="help" size={15} stroke={2.2} />
       </button>
-      {open && (
-        <span
-          role="tooltip"
-          style={{
-            position: 'absolute', top: 22, left: -8, zIndex: 70, width: 230,
-            background: 'var(--ink)', color: 'var(--panel)', borderRadius: 10,
-            padding: '9px 11px', fontSize: 12, fontWeight: 600, lineHeight: 1.45,
-            boxShadow: 'var(--shadow-lg)', textAlign: 'left', whiteSpace: 'normal',
-          }}
-        >
-          {text}
-        </span>
-      )}
-    </span>
+      {box &&
+        createPortal(
+          <div
+            role="tooltip"
+            style={{
+              position: 'fixed', top: box.top, left: box.left, width: 240, zIndex: 9999,
+              background: 'var(--ink)', color: 'var(--panel)', borderRadius: 10,
+              padding: '10px 12px', fontSize: 12, fontWeight: 600, lineHeight: 1.45,
+              boxShadow: 'var(--shadow-lg)', textAlign: 'left', pointerEvents: 'none',
+            }}
+          >
+            {text}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }

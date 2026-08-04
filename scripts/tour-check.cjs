@@ -55,12 +55,54 @@ for (const s of steps) {
   });
 }
 
-// 2. No locale carries copy for a step that no longer exists (dead translation).
+// Role variants: same step, different words when the role changes what it can honestly say.
+// Parsed from copyKeyFor so this file cannot fall behind the component.
+const variants = [...tourSrc.matchAll(/return '(\w+)';/g)].map((m) => m[1]);
+const validCopy = new Set([...steps.map((s) => s.key), ...variants]);
+check('two role variants are declared', variants.length === 2);
+
+// 2. No locale carries copy for a step or variant that no longer exists (dead translation).
 locales.forEach((block, i) => {
   const keys = [...block.matchAll(/^\s{8}(\w+): \{ title:/gm)].map((m) => m[1]);
-  check(`${localeNames[i]} has no orphan step copy`, keys.every((k) => steps.some((s) => s.key === k)));
-  check(`${localeNames[i]} step count matches`, keys.length === steps.length);
+  check(`${localeNames[i]} has no orphan step copy`, keys.every((k) => validCopy.has(k)));
+  check(`${localeNames[i]} copy count matches`, keys.length === validCopy.size);
 });
+
+// 2b. Every variant is translated everywhere too.
+for (const v of variants) {
+  locales.forEach((block, i) => {
+    // Substring, not RegExp: `\b` inside a template literal is a BACKSPACE character, not a
+    // word boundary, so the first version of this line searched for a control code and reported
+    // every locale as missing copy that was sitting right there.
+    check(`variant "${v}" exists in ${localeNames[i]}`, block.includes(`${v}: { title:`));
+  });
+}
+
+// 2c. Resolve the copy each role actually READS, and prove the wrong instruction is gone.
+//     Filtering by access is not enough: a step can survive the filter and still tell someone to
+//     do something they have no button for.
+function copyKeyFor(stepKey, role, allowed) {
+  if (stepKey === 'staff' && role !== 'owner') return 'staffNoAccess';
+  if (stepKey === 'finish' && allowed && !allowed.includes('services')) return 'finishNoServices';
+  return stepKey;
+}
+const resolved = {};
+for (const [role, allowed] of Object.entries(roleScreens)) {
+  resolved[role] = steps
+    .filter((s) => !s.screen || !allowed || allowed.includes(s.screen))
+    .map((s) => copyKeyFor(s.key, role, allowed));
+}
+check('owner reads the full-access Staff copy', resolved.owner.includes('staff'));
+check('manager reads the no-access Staff copy', resolved.manager.includes('staffNoAccess'));
+check('manager is NOT told to grant CRM access', !resolved.manager.includes('staff'));
+check('owner ends on "add your first service"', resolved.owner.includes('finish'));
+check('manager ends on "add your first service"', resolved.manager.includes('finish'));
+check('specialist ends on their Schedule instead', resolved.specialist.includes('finishNoServices'));
+check('specialist is NOT told to add a service', !resolved.specialist.includes('finish'));
+for (const [role, keys] of Object.entries(resolved)) {
+  check(`${role} resolves only to copy that exists`, keys.every((k) => validCopy.has(k)));
+  console.log(`  ${role.padEnd(11)} reads: ${keys.join(', ')}`);
+}
 
 // 3. Every spotlight target is an anchor the shell really renders. THE regression that made the
 //    tour point at nothing after screens moved.

@@ -48,6 +48,25 @@ const TOUR_STEPS: TourStep[] = [
   { key: 'finish', target: null },
 ];
 
+/**
+ * Same step, different words, when the role changes what the step can honestly say.
+ *
+ * Filtering steps by access is not enough on its own: a step can survive the filter and still
+ * describe something the reader cannot do.
+ *
+ *  - A MANAGER sees the Staff screen but cannot grant CRM access — that control is owner-only
+ *    (`onAccess` in App.tsx is passed only when role === 'owner'). Telling them to hand out
+ *    logins sends them looking for a button that is not rendered for them.
+ *  - A SPECIALIST has no Services screen, so ending on "add your first service" is an
+ *    instruction they cannot follow. They get pointed at their Schedule instead, which is the
+ *    screen they actually live in.
+ */
+function copyKeyFor(stepKey: string, role: string, allowed?: string[] | null): string {
+  if (stepKey === 'staff' && role !== 'owner') return 'staffNoAccess';
+  if (stepKey === 'finish' && allowed && !allowed.includes('services')) return 'finishNoServices';
+  return stepKey;
+}
+
 type Rect = { top: number; left: number; width: number; height: number };
 
 export function Tour({
@@ -62,16 +81,18 @@ export function Tour({
   /** Per-business, so two owners sharing a browser each get their own first run. */
   storageKey: string;
 }) {
-  const { t, lang, allowed } = useCRM();
+  const { t, lang, allowed, role } = useCRM();
   const tour = t.tour;
 
   // Only steps this role can actually reach, and only those with copy in the current language.
   const steps = useMemo(
     () =>
       TOUR_STEPS.filter(
-        (s) => (!s.screen || !allowed || allowed.includes(s.screen)) && Boolean(tour.steps?.[s.key])
+        (s) =>
+          (!s.screen || !allowed || allowed.includes(s.screen)) &&
+          Boolean(tour.steps?.[copyKeyFor(s.key, role, allowed)])
       ),
-    [allowed, tour]
+    [allowed, role, tour]
   );
   const total = steps.length;
 
@@ -225,7 +246,7 @@ export function Tour({
 
   if (!open || total === 0 || !current) return null;
 
-  const st = tour.steps[current.key] as { title: string; body: string };
+  const st = tour.steps[copyKeyFor(current.key, role, allowed)] as { title: string; body: string };
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>

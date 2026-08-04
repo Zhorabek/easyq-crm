@@ -88,7 +88,16 @@ for (const topic of topics) {
 // 5. The guide itself is reachable: registered, routed, in the sidebar, and allowed for everyone.
 check('help is a registered screen', realScreens.includes('help'));
 check('help has a route', /^\s{2}help: Help,$/m.test(appSrc));
-check('help is in the sidebar', navItems.includes('help'));
+// Rendered as a literal button in the footer group beside Settings, not through NAV_ITEMS: the
+// guide is not part of the daily working list, it is one of the two things you go to when
+// something needs explaining or changing.
+// The window has to clear the inline style attribute between the two, which is ~330 chars —
+// a 220 window reported the button missing while it was sitting right there.
+check('the guide has its own sidebar button', /data-tour="nav-help"[\s\S]{0,500}t\.nav\.help/.test(shellSrc));
+check('it is styled like Settings', /nav-help"[\s\S]{0,120}crm-navbtn--on2/.test(shellSrc));
+check('it sits ABOVE Settings', shellSrc.indexOf('data-tour="nav-help"') < shellSrc.indexOf('data-tour="nav-settings"'));
+check('it is gated by access like Settings is', /const helpAllowed = !allowed \|\| allowed\.includes\('help'\);/.test(shellSrc));
+check('it is no longer in the working nav list', !navItems.includes('help'));
 check('help has a topbar title', /help: \{ title: t\.nav\.help/.test(appSrc));
 for (const [role, allowed] of Object.entries(roleScreens)) {
   check(`${role} can open the guide`, allowed === null || allowed.includes('help'));

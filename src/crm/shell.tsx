@@ -23,7 +23,6 @@ const NAV_ITEMS: string[] = [
   'automations',
   'analytics',
   'branding',
-  'help',
 ];
 
 /**
@@ -74,6 +73,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
   const headSub = curBranch ? curBranch.type : t.branchAll;
   const roleNames: Record<Role, string> = { owner: t.roles.owner, manager: t.roles.manager, specialist: t.roles.specialist };
   const settingsAllowed = !allowed || allowed.includes('settings');
+  const helpAllowed = !allowed || allowed.includes('help');
 
   return (
     <aside className={`crm-sidebar${navOpen ? ' crm-sidebar--open' : ''}`} style={{ width: 248, flex: 'none', background: 'var(--sidebar)', display: 'flex', flexDirection: 'column', padding: '20px 14px', position: 'sticky', top: 0, height: '100vh' }}>
@@ -174,6 +174,16 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
             );
           })}
         </div>
+        {/* The guide belongs with Settings, not in the working list above it.
+            Dashboard through Branding are the shop's daily work; the guide and the settings are
+            the things you go to when something needs explaining or changing. Same treatment as
+            Settings so the pair reads as one group. */}
+        {helpAllowed && (
+          <button data-tour="nav-help" onClick={() => setActive('help')} className="crm-navbtn crm-navbtn--on2" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, fontSize: 14.5, fontWeight: 600, color: active === 'help' ? '#fff' : 'var(--on-sidebar-2)', background: active === 'help' ? 'rgba(255,255,255,.06)' : 'transparent' }}>
+            <Ic name="help" size={19} />
+            {t.nav.help}
+          </button>
+        )}
         {settingsAllowed && (
           <button data-tour="nav-settings" onClick={() => setActive('settings')} className="crm-navbtn crm-navbtn--on2" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, fontSize: 14.5, fontWeight: 600, color: active === 'settings' ? '#fff' : 'var(--on-sidebar-2)', background: active === 'settings' ? 'rgba(255,255,255,.06)' : 'transparent' }}>
             <Ic name="settings" size={19} />

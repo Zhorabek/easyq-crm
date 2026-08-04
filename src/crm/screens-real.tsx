@@ -230,7 +230,15 @@ export function Calendar() {
 
       {view === 'day' && <DayView payload={payload} />}
       {view === 'week' && <WeekView weekDays={weekDays} dayCache={dayCache} selfPayload={payload} selectedDate={selectedDate} />}
-      {view === 'month' && <MonthView dt={dt} dayCache={dayCache} selfPayload={payload} selectedDate={selectedDate} />}
+      {view === 'month' && (
+        <MonthView
+          dt={dt}
+          dayCache={dayCache}
+          selfPayload={payload}
+          selectedDate={selectedDate}
+          onPickDay={(date) => { setSelectedDate(date); setView('day'); }}
+        />
+      )}
     </div>
   );
 }
@@ -361,9 +369,16 @@ function WeekView({ weekDays, dayCache, selfPayload, selectedDate }: { weekDays:
   );
 }
 
-function MonthView({ dt, dayCache, selfPayload, selectedDate }: { dt: Date; dayCache: Record<string, CrmPayload>; selfPayload: CrmPayload; selectedDate: string }) {
+/**
+ * `onPickDay` switches to the DAY view as well as selecting the date.
+ *
+ * Clicking a day used to call setSelectedDate and nothing else, so the month grid stayed on
+ * screen and looked completely unresponsive — the bookings you had just clicked were now
+ * loaded, one view away, with no way of knowing it. Tapping "2 navbat" means "show me those
+ * two", so that is what it does.
+ */
+function MonthView({ dt, dayCache, selfPayload, selectedDate, onPickDay }: { dt: Date; dayCache: Record<string, CrmPayload>; selfPayload: CrmPayload; selectedDate: string; onPickDay: (date: string) => void }) {
   const { t } = useCRM();
-  const { setSelectedDate } = useData();
   const today = isoToday();
   const year = dt.getFullYear();
   const month = dt.getMonth();
@@ -394,7 +409,7 @@ function MonthView({ dt, dayCache, selfPayload, selectedDate }: { dt: Date; dayC
           const isToday = day != null && iso(day) === today;
           const n = day ? countFor(day) : -1;
           return (
-            <div key={i} onClick={() => day && setSelectedDate(iso(day))} style={{ minHeight: 92, padding: '8px 9px', borderLeft: dow ? '1px solid var(--line)' : 'none', borderTop: i >= 7 ? '1px solid var(--line)' : 'none', background: !day ? 'var(--panel-2)' : weekend ? 'color-mix(in srgb, var(--panel-2) 45%, transparent)' : 'transparent', opacity: day ? 1 : 0.5, display: 'flex', flexDirection: 'column', gap: 6, cursor: day ? 'pointer' : 'default' }}>
+            <div key={i} onClick={() => day && onPickDay(iso(day))} style={{ minHeight: 92, padding: '8px 9px', borderLeft: dow ? '1px solid var(--line)' : 'none', borderTop: i >= 7 ? '1px solid var(--line)' : 'none', background: !day ? 'var(--panel-2)' : weekend ? 'color-mix(in srgb, var(--panel-2) 45%, transparent)' : 'transparent', opacity: day ? 1 : 0.5, display: 'flex', flexDirection: 'column', gap: 6, cursor: day ? 'pointer' : 'default' }}>
               {day && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1326,7 +1341,12 @@ export function Settings() {
                     crmUsername is redacted for non-owners. */}
                 {role === 'owner' && (
                   <>
-                    <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.save}</button>
+                    {/* Labelled "Edit", not "Save".
+                        The fields above are read-only text and this opens the editor modal, but
+                        the button said "Save" — so the screen read as a form that could not be
+                        filled in, next to a button that would not do anything. Nobody clicks
+                        Save to start editing. */}
+                    <button onClick={openBusinessEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="settings" size={16} stroke={2} />{s.editProfile}</button>
                     <button onClick={openCredentialsEditor} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--line-2)', color: 'var(--ink)', fontWeight: 800, fontSize: 14, padding: '11px 18px', borderRadius: 11 }}><Ic name="user" size={16} stroke={2} />{s.credentials}</button>
                   </>
                 )}

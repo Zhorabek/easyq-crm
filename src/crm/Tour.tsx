@@ -63,6 +63,10 @@ const TOUR_STEPS: TourStep[] = [
  */
 function copyKeyFor(stepKey: string, role: string, allowed?: string[] | null): string {
   if (stepKey === 'staff' && role !== 'owner') return 'staffNoAccess';
+  // A manager has no Branding step, so without this nothing in their tour ever says where the
+  // booking link is — and handing that link to customers is most of their job. It lives in
+  // their Settings (BookingLinkPanel), so their Settings step is where it gets mentioned.
+  if (stepKey === 'settings' && role === 'manager') return 'settingsWithLink';
   if (stepKey === 'finish' && allowed && !allowed.includes('services')) return 'finishNoServices';
   return stepKey;
 }

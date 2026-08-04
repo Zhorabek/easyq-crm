@@ -1074,6 +1074,76 @@ function QRBlock({ link }: { link: string }) {
 }
 
 /**
+ * The booking link, the other share links, and the QR code.
+ *
+ * Module scope because TWO screens need it. It lives on Branding for owners — the link and the
+ * brand are two halves of what a customer sees — and on Settings for managers, who have no
+ * Branding screen because it needs `business:write`.
+ *
+ * That gap was real: moving this panel to Branding took the booking link away from the people
+ * who spend all day sending it to customers. A manager could run the shop but not answer "where
+ * do I book?".
+ *
+ * Rendering nothing when there are no links is what keeps this honest for specialists: the
+ * worker sends them `bookingLinks: []` on purpose, so they get an empty section rather than a
+ * link the server decided was not theirs. The gate stays on the server; this just does not draw
+ * an empty box.
+ */
+function BookingLinkPanel() {
+  const { t } = useCRM();
+  const { payload } = useData();
+  const [copied, setCopied] = useState(false);
+  const s = t.set;
+
+  if (!payload || payload.bookingLinks.length === 0) return null;
+
+  // Prefer the business's own booking page for the headline link and the QR. It only exists
+  // once a slug is assigned; before that fall back to the generic client bot, which is the
+  // best available answer to "what do I send my customers?".
+  const publicLink =
+    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
+  const link = publicLink?.url || '';
+  const copy = () => {
+    try { navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <Panel>
+      <SetHead title={s.booking} sub={s.bookingSub} />
+      {link && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '18px 0 6px' }}>
+          <Ic name="grid" size={16} stroke={2} style={{ color: 'var(--accent-deep)', flex: 'none' }} />
+          <span className="mono" style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
+          <button onClick={copy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copied ? 'var(--accent)' : 'var(--panel)', color: copied ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
+            <Ic name={copied ? 'check' : 'copy'} size={14} stroke={2.4} />{copied ? s.copied : s.copy}
+          </button>
+          <a href={link} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: 'var(--ink)', color: 'var(--panel)', whiteSpace: 'nowrap' }}>
+            <Ic name="send" size={14} stroke={2.2} />{s.open}
+          </a>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+        {payload.bookingLinks.map((bl) => (
+          <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
+            <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {/* Title comes from a key, not the payload — the worker cannot know
+                  which language this reader uses. */}
+              <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
+              <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
+            </div>
+            <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+          </a>
+        ))}
+      </div>
+      {link && <QRBlock link={link} />}
+    </Panel>
+  );
+}
+
+/**
  * One colour of the theme: native picker, hex field, and optional quick swatches.
  *
  * Module scope, not nested in Settings — a component declared inside another is a new type
@@ -1184,10 +1254,18 @@ export function Settings() {
   const s = t.set;
   const b = payload.business;
 
-  // Down to two sections. `booking` moved to Branding, which is the other half of what a
-  // customer sees, and `team` moved to Staff, next to the people it grants access to.
+  // `booking` moved to Branding, which is the other half of what a customer sees, and `team`
+  // moved to Staff, next to the people it grants access to.
+  //
+  // It comes BACK here for anyone without a Branding screen. Managers run the shop day to day
+  // and are the ones sending customers the link, and moving the section left them with no way
+  // to reach it. The condition is the absence of Branding rather than a role name, so it stays
+  // correct if the role table changes; specialists fall out anyway, because the worker sends
+  // them no links and the panel draws nothing without them.
+  const showBookingHere = role !== 'owner' && (payload.bookingLinks?.length ?? 0) > 0;
   const navItems: Array<[string, string]> = [
     ['profile', 'user'],
+    ...(showBookingHere ? ([['booking', 'grid']] as Array<[string, string]>) : []),
     ['appearance', 'sun'],
   ];
 
@@ -1206,6 +1284,7 @@ export function Settings() {
         </Panel>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {sec === 'booking' && showBookingHere && <BookingLinkPanel />}
           {sec === 'profile' && (
             <Panel>
               <SetHead title={s.profile} sub={s.profileSub} />
@@ -1314,7 +1393,6 @@ export function Branding() {
   // above sees nothing and falls back to the defaults. Re-sync from the payload until
   // the owner touches a field, so a slow first load cannot show the wrong brand.
   const [touched, setTouched] = useState(false);
-  const [copied, setCopied] = useState(false);
   // Saved on click rather than gathered into the colour form's Save: it is one value out of a
   // closed set, so there is nothing to review before committing it, and pairing it with the
   // colours would mean a contrast failure blocked an unrelated change.
@@ -1331,13 +1409,6 @@ export function Branding() {
   if (!payload) return null;
   const b = payload.business;
 
-  // Prefer the business's own booking page for the headline link and the QR. It only exists
-  // once a slug is assigned; before that fall back to the generic client bot, which is the
-  // best available answer to "what do I send my customers?".
-  const publicLink =
-    payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
-  const link = publicLink?.url || '';
-  const copy = () => { try { navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ } setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
   const onPickFlow = async (flow: BookingFlow) => {
     if (flow === payload.business.bookingFlow) return;
@@ -1570,39 +1641,7 @@ export function Branding() {
           </div>
         </Panel>
 
-    {payload.bookingLinks.length > 0 && (
-
-      <Panel>
-        <SetHead title={s.booking} sub={s.bookingSub} />
-        {link && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '18px 0 6px' }}>
-            <Ic name="grid" size={16} stroke={2} style={{ color: 'var(--accent-deep)', flex: 'none' }} />
-            <span className="mono" style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
-            <button onClick={copy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copied ? 'var(--accent)' : 'var(--panel)', color: copied ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
-              <Ic name={copied ? 'check' : 'copy'} size={14} stroke={2.4} />{copied ? s.copied : s.copy}
-            </button>
-            <a href={link} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: 'var(--ink)', color: 'var(--panel)', whiteSpace: 'nowrap' }}>
-              <Ic name="send" size={14} stroke={2.2} />{s.open}
-            </a>
-          </div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
-          {payload.bookingLinks.map((bl) => (
-            <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-              <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                {/* Title comes from a key, not the payload — the worker cannot know
-                    which language this owner reads. */}
-                <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
-                <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
-              </div>
-              <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
-            </a>
-          ))}
-        </div>
-        {link && <QRBlock link={link} />}
-      </Panel>
-    )}
+        <BookingLinkPanel />
 
       </div>
     </div>

@@ -59,7 +59,7 @@ for (const s of steps) {
 // Parsed from copyKeyFor so this file cannot fall behind the component.
 const variants = [...tourSrc.matchAll(/return '(\w+)';/g)].map((m) => m[1]);
 const validCopy = new Set([...steps.map((s) => s.key), ...variants]);
-check('two role variants are declared', variants.length === 2);
+check('three role variants are declared', variants.length === 3);
 
 // 2. No locale carries copy for a step or variant that no longer exists (dead translation).
 locales.forEach((block, i) => {
@@ -81,8 +81,11 @@ for (const v of variants) {
 // 2c. Resolve the copy each role actually READS, and prove the wrong instruction is gone.
 //     Filtering by access is not enough: a step can survive the filter and still tell someone to
 //     do something they have no button for.
+// Mirrors Tour.tsx. `variants.length` above is the tripwire: add a variant there without adding
+// its rule here and the resolution checks below fail loudly rather than quietly agreeing.
 function copyKeyFor(stepKey, role, allowed) {
   if (stepKey === 'staff' && role !== 'owner') return 'staffNoAccess';
+  if (stepKey === 'settings' && role === 'manager') return 'settingsWithLink';
   if (stepKey === 'finish' && allowed && !allowed.includes('services')) return 'finishNoServices';
   return stepKey;
 }
@@ -99,6 +102,16 @@ check('owner ends on "add your first service"', resolved.owner.includes('finish'
 check('manager ends on "add your first service"', resolved.manager.includes('finish'));
 check('specialist ends on their Schedule instead', resolved.specialist.includes('finishNoServices'));
 check('specialist is NOT told to add a service', !resolved.specialist.includes('finish'));
+// The manager has no Branding step, so their Settings step is the only place the booking link
+// can be named. Without it their tour never mentions the link they spend all day sending.
+check('manager is told where the booking link is', resolved.manager.includes('settingsWithLink'));
+check('owner keeps the plain Settings copy', resolved.owner.includes('settings'));
+check('specialist keeps the plain Settings copy', resolved.specialist.includes('settings'));
+check('booking section is gated on lacking Branding, not a role name',
+  /role !== 'owner' && \(payload\.bookingLinks\?\.length \?\? 0\) > 0/.test(
+    require('fs').readFileSync('src/crm/screens-real.tsx', 'utf8')));
+check('the link panel is shared, not duplicated',
+  (require('fs').readFileSync('src/crm/screens-real.tsx', 'utf8').match(/function BookingLinkPanel/g) || []).length === 1);
 for (const [role, keys] of Object.entries(resolved)) {
   check(`${role} resolves only to copy that exists`, keys.every((k) => validCopy.has(k)));
   console.log(`  ${role.padEnd(11)} reads: ${keys.join(', ')}`);

@@ -8,7 +8,7 @@ import type {
 import { defaultDialPrefix, formatAsYouType, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
 import { CountryFlag } from '../shared/CountryFlag';
 import { brandTokens } from '../shared/brand';
-import { DEFAULT_BOOKING_FLOW, flowShowsStaff, flowStaffFirst } from '../shared/bookingFlow';
+import { DEFAULT_BOOKING_FLOW, flowEntryOrder, flowShowsStaff } from '../shared/bookingFlow';
 import { nextMissingStep, parseSelection, stepOrder, stringifySelection, type BookingEntry } from '../shared/bookingUrl';
 import { BOOKING_LANGS, LANG_LABEL, T, type BookingLang, detectLang, errorCopy, rememberLang } from './i18n';
 import '../crm/crm.css';
@@ -379,7 +379,6 @@ export default function BookingApp() {
 
   const flow = biz?.bookingFlow ?? DEFAULT_BOOKING_FLOW;
   const showStaff = flowShowsStaff(flow);
-  const staffFirst = flowStaffFirst(flow);
 
   /**
    * Only the specialists actually assigned to the chosen service.
@@ -687,11 +686,15 @@ export default function BookingApp() {
     const rows: Array<{ key: Screen; icon: 'staff' | 'date' | 'service'; label: string; value: string }> = [];
     const staffRow = { key: 'staff' as Screen, icon: 'staff' as const, label: t.chooseStaff, value: staffLabel };
     const serviceRow = { key: 'service' as Screen, icon: 'service' as const, label: t.chooseService, value: services.length === 0 ? t.notChosen : services.length === 1 ? services[0]!.name : `${services.length} · ${money(totalPrice) ?? ''}` };
-    if (showStaff && staffFirst) rows.push(staffRow);
-    if (!staffFirst) rows.push(serviceRow);
-    rows.push({ key: 'datetime', icon: 'date', label: t.chooseDate, value: whenLabel });
-    if (showStaff && !staffFirst) rows.push(staffRow);
-    if (staffFirst) rows.push(serviceRow);
+    const dateRow = { key: 'datetime' as Screen, icon: 'date' as const, label: t.chooseDate, value: whenLabel };
+    // One ordering function rather than a chain of booleans: adding time_first to the old
+    // if/else ladder would have meant four flags describing three positions, which is how the
+    // fourth option ends up rendering a row twice.
+    const byKey = { staff: staffRow, service: serviceRow, datetime: dateRow };
+    for (const key of flowEntryOrder(flow)) {
+      if (key === 'staff' && !showStaff) continue;
+      rows.push(byKey[key]);
+    }
 
     return (
       <div className="bk-shell">

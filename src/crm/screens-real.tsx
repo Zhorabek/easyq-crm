@@ -5,7 +5,7 @@ import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, Statu
 import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, serviceSummary, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
-import type { BookingFlow } from '../shared/bookingFlow';
+import { BOOKING_FLOWS, type BookingFlow } from '../shared/bookingFlow';
 import { updateBusinessProfile } from '../lib/api';
 import {
   BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
@@ -1534,10 +1534,13 @@ export function Branding() {
         <Panel>
           <SetHead title={s.flow} sub={s.flowSub} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 18 }}>
-            {(['service_first', 'staff_first', 'service_only'] as BookingFlow[]).map((flow) => {
+            {/* Driven by BOOKING_FLOWS rather than a literal list, so a flow added to the
+                shared model cannot be missing here — which is exactly how time_first stayed
+                unreachable while the booking page had supported it all along. */}
+            {BOOKING_FLOWS.map((flow) => {
               const on = payload.business.bookingFlow === flow;
-              const label = { service_first: s.flowServiceFirst, staff_first: s.flowStaffFirst, service_only: s.flowServiceOnly }[flow];
-              const hint = { service_first: s.flowServiceFirstHint, staff_first: s.flowStaffFirstHint, service_only: s.flowServiceOnlyHint }[flow];
+              const label = { service_first: s.flowServiceFirst, staff_first: s.flowStaffFirst, time_first: s.flowTimeFirst, service_only: s.flowServiceOnly }[flow];
+              const hint = { service_first: s.flowServiceFirstHint, staff_first: s.flowStaffFirstHint, time_first: s.flowTimeFirstHint, service_only: s.flowServiceOnlyHint }[flow];
               return (
                 <button
                   key={flow}

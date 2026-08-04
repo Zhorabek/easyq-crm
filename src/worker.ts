@@ -68,6 +68,7 @@ import {
   type RejectionReason,
 } from "./shared/imageFile";
 import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server/publicBooking";
+import { buildBookingMeta, injectBookingMeta } from "./server/bookingMeta";
 import {
   consumeVerification,
   contactBelongsToSender,
@@ -4161,7 +4162,44 @@ export default {
         );
       }
 
-      return await env.ASSETS.fetch(request);
+      const asset = await env.ASSETS.fetch(request);
+
+      /**
+       * A tenant's booking page gets that shop's own preview card.
+       *
+       * Everything from here down serves the built SPA shell, whose <head> says "EasyQ CRM".
+       * That is right for the CRM and wrong for a booking link: paste one into Telegram or
+       * Instagram and the card advertised US instead of the barbershop whose page it is.
+       *
+       * It has to happen server-side. Unfurlers and crawlers do not run JavaScript, so setting
+       * document.title from React changes the browser tab and nothing that gets shared.
+       *
+       * Guarded tightly — only a tenant host, only /booking, only an HTML 200 — so the CRM
+       * shell, every asset and every error response are untouched. And the whole thing is
+       * wrapped: a failure here must serve the ordinary page, because a booking link that
+       * previews plainly still works, and one that 500s does not.
+       */
+      if (tenant && url.pathname.startsWith("/booking") && asset.status === 200) {
+        const contentType = asset.headers.get("content-type") ?? "";
+        if (contentType.includes("text/html")) {
+          try {
+            const business = await getBusinessById(env.DB, tenant.businessId);
+            if (business) {
+              const html = injectBookingMeta(
+                await asset.text(),
+                buildBookingMeta(business, url.origin)
+              );
+              const headers = new Headers(asset.headers);
+              headers.delete("content-length"); // rewritten body is a different size
+              return new Response(html, { status: 200, headers });
+            }
+          } catch (error) {
+            console.log("booking meta not injected:", error instanceof Error ? error.message : error);
+          }
+        }
+      }
+
+      return asset;
     } catch (error) {
       const authResponse = getHttpErrorResponse(error);
       if (authResponse) {

@@ -11,10 +11,19 @@ export type BookingFlow =
   | "service_first"
   /** Specialist, then service — for shops where people come back to one person. */
   | "staff_first"
+  /**
+   * Date and time first, then service, then specialist.
+   *
+   * For a shop whose customers think in "am I free Thursday evening" rather than in services —
+   * and the one entry the booking page has always supported without the owner ever being able
+   * to choose it. `stepOrder("datetime")` has ordered this since the hub was built; the setting
+   * simply never offered it.
+   */
+  | "time_first"
   /** Service only. The specialist is assigned and never shown to the customer. */
   | "service_only";
 
-export const BOOKING_FLOWS: BookingFlow[] = ["service_first", "staff_first", "service_only"];
+export const BOOKING_FLOWS: BookingFlow[] = ["service_first", "staff_first", "time_first", "service_only"];
 
 /**
  * `service_first` for anything unrecognised, including null.
@@ -40,4 +49,23 @@ export function flowShowsStaff(flow: BookingFlow) {
 /** Whether the specialist is chosen BEFORE the service. */
 export function flowStaffFirst(flow: BookingFlow) {
   return flow === "staff_first";
+}
+
+/** Whether the day and time lead. */
+export function flowTimeFirst(flow: BookingFlow) {
+  return flow === "time_first";
+}
+
+/**
+ * Which of the three entries the menu leads with.
+ *
+ * The booking page is a hub, so this is the ORDER of the rows rather than a gate — the customer
+ * can still start anywhere. It exists because the first row is the one most people tap, and the
+ * owner knows better than we do which question their customers arrive with.
+ */
+export function flowEntryOrder(flow: BookingFlow): Array<"staff" | "service" | "datetime"> {
+  if (flow === "staff_first") return ["staff", "service", "datetime"];
+  if (flow === "time_first") return ["datetime", "service", "staff"];
+  // service_only has no staff row at all; the caller drops it.
+  return ["service", "staff", "datetime"];
 }

@@ -265,11 +265,14 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
 
   const dash = CRM_T[lang].dash;
   const tones = ['mint', 'sky', 'sun', 'ink'] as const;
+  // The demo keeps its own invented figures, so it maps onto the same four keys in order
+  // rather than inventing a second shape.
+  const liveKeys = ['todayRevenue', 'todayVisits', 'monthRevenue', 'outstanding'] as const;
   const kpis = dash.kpis.map((k: { l: string; v: string; u: string; d: string }, i: number) => ({
     id: 'k' + i,
-    label: k.l,
+    labelKey: liveKeys[i % liveKeys.length],
     value: `${k.v}${k.u ? ' ' + k.u : ''}`,
-    hint: k.d,
+    hintValues: [],
     tone: tones[i % tones.length],
   }));
 

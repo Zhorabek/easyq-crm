@@ -46,8 +46,13 @@ export function Dashboard() {
               <Ic name={kpiIcons[i % 4]} size={21} stroke={2} />
             </span>
             <div className="tnum" style={{ marginTop: 14, fontSize: 24, fontWeight: 800, letterSpacing: '-.03em', whiteSpace: 'nowrap' }}>{k.value}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{k.label}</div>
-            {k.hint && <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, marginTop: 4 }}>{k.hint}</div>}
+            {/* Translated here, from a key. The Worker sends no prose — see KpiCard. */}
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{t.dash.live[k.labelKey]}</div>
+            {(() => {
+              const hint = t.dash.live[`${k.labelKey}Hint`];
+              const text = typeof hint === 'function' ? hint(...(k.hintValues ?? [])) : hint;
+              return text ? <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, marginTop: 4 }}>{text}</div> : null;
+            })()}
           </Panel>
         ))}
       </div>

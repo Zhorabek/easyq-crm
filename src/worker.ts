@@ -2636,30 +2636,30 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   const kpis: KpiCard[] = [
     {
       id: "today-visits",
-      label: "Записи на сегодня",
+      labelKey: "todayVisits",
       value: String(reservationsToday.length),
-      hint: `${completedToday.length} уже пришли`,
+      hintValues: [completedToday.length],
       tone: "sun",
     },
     {
       id: "today-revenue",
-      label: "Собрано за день",
+      labelKey: "todayRevenue",
       value: formatMoney(dayRevenue),
-      hint: `возвраты: ${formatMoney(paymentsToday.outgoing)}`,
+      hintValues: [formatMoney(paymentsToday.outgoing)],
       tone: "mint",
     },
     {
       id: "month-revenue",
-      label: "Собрано за месяц",
+      labelKey: "monthRevenue",
       value: formatMoney(monthRevenue),
-      hint: "по фактически зафиксированным платежам",
+      hintValues: [],
       tone: "sky",
     },
     {
       id: "outstanding",
-      label: "Остаток к оплате",
+      labelKey: "outstanding",
       value: formatMoney(totalOutstanding),
-      hint: `${employees.length} сотрудников · ${services.filter((service) => Number(service.is_active) === 1).length} услуг`,
+      hintValues: [employees.length, services.filter((service) => Number(service.is_active) === 1).length],
       tone: "ink",
     },
   ];

@@ -93,9 +93,20 @@ export interface StaffAccessRow {
 
 export interface KpiCard {
   id: string;
-  label: string;
+  /**
+   * An i18n KEY, never text.
+   *
+   * These four cards shipped Russian strings straight from the Worker and the dashboard
+   * rendered them verbatim, so an owner working in Uzbek opened their main screen and read
+   * "Записи на сегодня". Same mistake bookingLinks already fixed, on the more visible screen.
+   *
+   * The Worker cannot know which language a reader uses — the session says nothing about it,
+   * and the same payload is cached and reused. Only the client knows.
+   */
+  labelKey: "todayVisits" | "todayRevenue" | "monthRevenue" | "outstanding";
   value: string;
-  hint: string;
+  /** Numbers and already-formatted money for the hint; the client assembles the sentence. */
+  hintValues: Array<string | number>;
   tone: "sun" | "mint" | "sky" | "ink";
 }
 

@@ -153,5 +153,19 @@ export const LIMITS = {
    */
   publicBooking: { action: "booking", limit: 50, windowSeconds: 3600 },
   subdomainCheck: { action: "slugcheck", limit: 60, windowSeconds: 60 },
+  /**
+   * Image uploads. Authenticated, and limited anyway.
+   *
+   * Every other limit here defends the door; this one defends the DATABASE. Each accepted
+   * upload writes up to 512 KB into D1, and the endpoint sits behind a session — so the
+   * attacker is a shop's own stolen or disgruntled staff login, and nothing between that
+   * session and the storage bill said no. A tab left running a loop would have done it by
+   * accident.
+   *
+   * 40 an hour is far above real use: setting up a whole team's photos and a logo is a dozen
+   * uploads once, then near zero. Keyed per BUSINESS rather than per IP, because the cost is
+   * per tenant and a shop behind CGNAT should not inherit its neighbour's uploads.
+   */
+  imageUpload: { action: "imageupload", limit: 40, windowSeconds: 3600 },
   verifyStart: { action: "verifystart", limit: 10, windowSeconds: 3600 },
 } satisfies Record<string, RateLimitRule>;

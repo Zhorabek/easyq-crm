@@ -86,6 +86,8 @@ interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   APP_TIMEZONE?: string;
+  /** Extra origins allowed to frame the CRM, comma-separated. See withSecurityHeaders. */
+  EMBED_ANCESTORS?: string;
   CRM_BUSINESS_ID?: string;
   CRM_BUSINESS_TELEGRAM_ID?: string;
   CRM_SESSION_SECRET?: string;
@@ -1097,6 +1099,18 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
   const username = normalizeCrmUsername(String(form?.get("username") ?? ""));
   const password = String(form?.get("password") ?? "");
 
+  // The SAME buckets `login` uses, and for the same reason.
+  //
+  // This endpoint checks the identical credentials against the identical tables and hands back
+  // the identical session cookie — it just takes a form POST instead of JSON. Rate limiting one
+  // door and not the other does not slow an attacker down, it only decides which URL they use.
+  // The throttle on /api/auth/login was effectively decorative while this was open.
+  //
+  // Counted BEFORE the first password hash, so the 100k PBKDF2 iterations are what is being
+  // protected rather than what pays for the check.
+  await requireUnderRateLimit(env, request, LIMITS.loginPerIp);
+  await requireUnderRateLimit(env, request, LIMITS.loginPerUser, username);
+
   if (username && password) {
     const row = await env.DB
       .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password, slug, session_version FROM businesses WHERE crm_username = ? LIMIT 1")
@@ -1150,6 +1164,15 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
   // Bad/missing creds → clear any stale session and land on the login screen. Deliberately
   // the same response for a wrong password, a revoked account and a wrong tenant, so this
   // endpoint cannot be used to probe which of those it was.
+  //
+  // The decoy hash makes that true of the TIMING as well, which the identical response alone
+  // does not: a real username spends ~100k PBKDF2 iterations failing, an unknown one returned
+  // immediately, and the gap is measurable from outside. `login` already did this; this door
+  // did not, so usernames stayed enumerable through it.
+  if (username && password) {
+    await verifyAgainstDecoy(password);
+  }
+
   return new Response(null, { status: 303, headers: { location: "/", "set-cookie": clearSessionCookie(request) } });
 }
 
@@ -3820,8 +3843,70 @@ function hasAssetsBinding(env: Env): env is Env & { ASSETS: Fetcher } {
   return Boolean(env.ASSETS && typeof env.ASSETS.fetch === "function");
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+/**
+ * Headers every response carries.
+ *
+ * There were none. The CRM could be framed by any site on the internet, which is the whole
+ * setup for a clickjacking attack: overlay an invisible copy of a logged-in owner's CRM on a
+ * page they were persuaded to visit, and their clicks land on our buttons — "delete", "revoke
+ * access", "log out".
+ *
+ * `frame-ancestors` is an ALLOWLIST rather than a flat DENY because the landing page genuinely
+ * frames us: the demo at easyq.uz is this Worker in an iframe with ?embed=1. X-Frame-Options
+ * cannot express "these origins and no others", so CSP does the work and X-Frame-Options is
+ * left off rather than set to something that would break the demo.
+ *
+ * Deliberately NOT a full script-src/style-src policy. That is worth doing, but it is a change
+ * that breaks silently at runtime rather than at build time — the wrong directive shows an
+ * owner a blank page, not an error — so it wants its own pass with the pages open in front of
+ * me, not a paragraph in a security sweep.
+ */
+function withSecurityHeaders(response: Response, env: Env): Response {
+  const headers = new Headers(response.headers);
+
+  // The one that matters for the image endpoints: bytes we accepted as a PNG cannot be talked
+  // into executing as script by a browser that would rather guess.
+  headers.set("x-content-type-options", "nosniff");
+  // Tenant slugs are in our own URLs, and a slug is a customer's business name.
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+
+  const ancestors = ["'self'"];
+  for (const root of tenantRoots(env)) {
+    if (root === "localhost" || root === "127.0.0.1") {
+      // Dev only: the landing runs on another port, so same-origin does not cover it.
+      ancestors.push(`http://${root}:*`);
+    } else {
+      ancestors.push(`https://${root}`, `https://*.${root}`);
+    }
+  }
+
+  // The landing is a Pages project, so besides easyq.uz it also answers on its .pages.dev
+  // domain, and every preview deployment gets a subdomain of that. Those are where the demo
+  // iframe gets looked at before a release, and without this the frame would come up blank
+  // with only a console message to explain it.
+  //
+  // Scoped to the PROJECT (`*.easyq-landing.pages.dev`), never to `*.pages.dev` — that is a
+  // shared namespace where anyone can create a site, so allowing it would let a stranger's
+  // Pages project frame a logged-in owner's CRM, which is exactly what this header is for.
+  //
+  // An env var so the list can change without a code deploy, but with the default committed
+  // here rather than living only in a dashboard someone has to remember to set.
+  for (const extra of String(env.EMBED_ANCESTORS ?? "https://easyq-landing.pages.dev,https://*.easyq-landing.pages.dev")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    ancestors.push(extra);
+  }
+  headers.set(
+    "content-security-policy",
+    `frame-ancestors ${ancestors.join(" ")}; base-uri 'self'; form-action 'self'`
+  );
+
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+const router = {
+  async handle(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     // NOTE: every handler below is dispatched with `return await`, never a bare
@@ -4106,6 +4191,7 @@ export default {
       if (url.pathname === "/api/business/photo" && request.method === "POST") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "business:write");
+        await requireUnderRateLimit(env, request, LIMITS.imageUpload, `biz:${actor.business.id}`);
         return await uploadBusinessPhoto(env, actor.business, request);
       }
 
@@ -4121,6 +4207,7 @@ export default {
       if (/^\/api\/staff\/\d+\/photo$/.test(url.pathname) && request.method === "POST") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "staff:write");
+        await requireUnderRateLimit(env, request, LIMITS.imageUpload, `biz:${actor.business.id}`);
         return await uploadStaffPhoto(env, actor.business, Number(url.pathname.split("/")[3]), request);
       }
 
@@ -4139,6 +4226,7 @@ export default {
       if (/^\/api\/services\/\d+\/photo$/.test(url.pathname) && request.method === "POST") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "service:write");
+        await requireUnderRateLimit(env, request, LIMITS.imageUpload, `biz:${actor.business.id}`);
         return await uploadServicePhoto(env, actor.business, Number(url.pathname.split("/")[3]), request);
       }
 
@@ -4247,5 +4335,11 @@ export default {
         { status: 500 }
       );
     }
+  },
+};
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return withSecurityHeaders(await router.handle(request, env), env);
   },
 };

@@ -140,7 +140,7 @@ function PlanCard({
       )}
 
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-2)' }}>
-        {t.sub.upTo} {plan.maxStaff} {t.sub.staffWord}
+        {t.sub.upToStaff(plan.maxStaff)}
       </div>
       <div className="tnum" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em' }}>
         {money(plan.price)}
@@ -180,7 +180,8 @@ export function PlanGrid({
   const { t, bizName } = useCRM();
 
   const pick = async (plan: SubscriptionInfo['plans'][number]) => {
-    const label = `${t.sub.upTo} ${plan.maxStaff} ${t.sub.staffWord}`;
+    // One call, not three fragments glued in English order — see upToStaff in i18n.
+    const label = t.sub.upToStaff(plan.maxStaff);
     const message = requestText(t.sub.req, label, plan.price, bizName, subscription.staffCount);
 
     // Copied FIRST: a clipboard write from a document that has just lost focus to a new tab is

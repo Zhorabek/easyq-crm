@@ -355,6 +355,94 @@ function NotifBell() {
   );
 }
 
+/**
+ * The top-bar search, which until now was an `<input>` with no value, no onChange and no
+ * handler — a decorative box promising "search client, booking or service" on every screen of
+ * the product. Typing a real customer's name did nothing at all.
+ *
+ * Everything it needs is already in the payload, so this searches in memory and adds no
+ * request: customers by name or phone, today's bookings by customer, and services by name.
+ * Picking a result opens the thing rather than filtering a list, because the reason to search
+ * in a CRM is to get to one record.
+ *
+ * Phone matching strips punctuation on both sides, so "901234567" finds "+998 90 123 45 67" —
+ * the number as it is written down is never the number as it was typed.
+ */
+function TopSearch() {
+  const { t, setActive } = useCRM();
+  const { payload, openClient, openBooking } = useData();
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const digits = q.replace(/\D/g, '');
+  const hit = (value: string | null | undefined) => String(value ?? '').toLowerCase().includes(q);
+
+  const clients = !q || !payload ? [] : payload.clients
+    .filter((c) => hit(c.name) || (digits.length >= 3 && String(c.phone ?? '').replace(/\D/g, '').includes(digits)))
+    .slice(0, 4);
+  // calendar.bookings, not reservationsToday: openBooking wants a CalendarBookingCard, and
+  // only that one carries staffId/serviceId/colour.
+  const bookings = !q || !payload ? [] : payload.calendar.bookings
+    .filter((b) => hit(b.clientName) || hit(b.serviceName))
+    .slice(0, 4);
+  const services = !q || !payload ? [] : payload.services
+    .filter((sv) => hit(sv.name))
+    .slice(0, 4);
+  const empty = q.length > 0 && clients.length + bookings.length + services.length === 0;
+
+  const row = (key: string, icon: string, title: string, sub: string, onPick: () => void) => (
+    <button
+      key={key}
+      onClick={() => { onPick(); setOpen(false); setQuery(''); }}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '10px 14px', textAlign: 'left', cursor: 'pointer' }}
+    >
+      <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}>
+        <Ic name={icon} size={15} stroke={2} />
+      </span>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+        <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--ink-3)' }}>{sub}</span>
+      </span>
+    </button>
+  );
+
+  return (
+    <div ref={ref} className="crm-search" style={{ position: 'relative', marginLeft: 12, flex: 1, maxWidth: 420 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 11, padding: '9px 13px' }}>
+        <Ic name="search" size={17} style={{ color: 'var(--ink-3)', flex: 'none' }} />
+        <input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); setOpen(false); } }}
+          placeholder={t.search}
+          style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13.5, color: 'var(--ink)', width: '100%' }}
+        />
+      </div>
+
+      {open && q.length > 0 && (
+        <div style={{ position: 'absolute', top: 46, left: 0, right: 0, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 60, overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
+          {empty && (
+            <div style={{ padding: '22px 16px', textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>{t.searchEmpty}</div>
+          )}
+          {clients.map((c) => row(`c${c.key}`, 'customers', c.name, t.nav.customers, () => openClient(c)))}
+          {bookings.map((b) => row(`b${b.id}`, 'calendar', b.clientName, `${b.serviceName} · ${b.time}`, () => { setActive('calendar'); openBooking(b); }))}
+          {services.map((sv) => row(`s${sv.id}`, 'services', sv.name, t.nav.services, () => setActive('services')))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Topbar({ title, sub, action, onMenu, extra }: { title: string; sub?: string | null; action?: { label: string; onClick: () => void } | null; onMenu: () => void; extra?: React.ReactNode }) {
   const { t, lang, setLang, demo, startTour } = useCRM();
   return (
@@ -367,10 +455,7 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
         {sub && <div className="crm-sub" style={{ fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
       </div>
 
-      <div className="crm-search" style={{ marginLeft: 12, flex: 1, maxWidth: 420, display: 'flex', alignItems: 'center', gap: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 11, padding: '9px 13px' }}>
-        <Ic name="search" size={17} style={{ color: 'var(--ink-3)', flex: 'none' }} />
-        <input placeholder={t.search} style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13.5, color: 'var(--ink)', width: '100%' }} />
-      </div>
+      <TopSearch />
 
       <div className="crm-topctl" data-tour="topbar" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
         {extra}

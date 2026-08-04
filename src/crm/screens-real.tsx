@@ -1092,7 +1092,9 @@ function QRBlock({ link }: { link: string }) {
 function BookingLinkPanel() {
   const { t } = useCRM();
   const { payload } = useData();
-  const [copied, setCopied] = useState(false);
+  // Keyed by which row was copied, not a single boolean: with one flag, copying the client bot
+  // link lit up "Copied" on the booking link too.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const s = t.set;
 
   if (!payload || payload.bookingLinks.length === 0) return null;
@@ -1103,10 +1105,10 @@ function BookingLinkPanel() {
   const publicLink =
     payload.bookingLinks.find((l) => l.id === 'public-booking') ?? payload.bookingLinks.find((l) => l.kind === 'public');
   const link = publicLink?.url || '';
-  const copy = () => {
-    try { navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
+  const copy = (value: string, id: string) => {
+    try { navigator.clipboard.writeText(value); } catch { /* clipboard blocked */ }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1600);
   };
 
   return (
@@ -1116,8 +1118,8 @@ function BookingLinkPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '18px 0 6px' }}>
           <Ic name="grid" size={16} stroke={2} style={{ color: 'var(--accent-deep)', flex: 'none' }} />
           <span className="mono" style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
-          <button onClick={copy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copied ? 'var(--accent)' : 'var(--panel)', color: copied ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
-            <Ic name={copied ? 'check' : 'copy'} size={14} stroke={2.4} />{copied ? s.copied : s.copy}
+          <button onClick={() => copy(link, 'headline')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: copiedId === 'headline' ? 'var(--accent)' : 'var(--panel)', color: copiedId === 'headline' ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap' }}>
+            <Ic name={copiedId === 'headline' ? 'check' : 'copy'} size={14} stroke={2.4} />{copiedId === 'headline' ? s.copied : s.copy}
           </button>
           <a href={link} target="_blank" rel="noopener" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, padding: '7px 13px', borderRadius: 9, background: 'var(--ink)', color: 'var(--panel)', whiteSpace: 'nowrap' }}>
             <Ic name="send" size={14} stroke={2.2} />{s.open}
@@ -1126,16 +1128,35 @@ function BookingLinkPanel() {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
         {payload.bookingLinks.map((bl) => (
-          <a key={bl.id} href={bl.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              {/* Title comes from a key, not the payload — the worker cannot know
-                  which language this reader uses. */}
-              <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
-              <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
-            </div>
-            <Ic name="chevR" size={16} style={{ color: 'var(--ink-3)', flex: 'none' }} />
-          </a>
+          /* A row, not one big <a>. Every one of these is meant to be SENT to somebody — the
+             client bot link most of all — and the only way to send it was to open it and copy
+             out of the address bar. A copy button cannot be nested inside a link, so the row
+             is a flex container with the link as its tappable left side. */
+          <div key={bl.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
+            <a
+              href={bl.url}
+              target="_blank"
+              rel="noopener"
+              style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1, color: 'inherit' }}
+            >
+              <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name={bl.id === 'public-booking' ? 'grid' : bl.kind === 'admin' ? 'user' : 'send'} size={17} stroke={2} /></span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Title comes from a key, not the payload — the worker cannot know
+                    which language this reader uses. */}
+                <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.links[bl.titleKey]}</div>
+                <div className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bl.url.replace(/^https?:\/\//, '')}</div>
+              </div>
+            </a>
+            <button
+              onClick={() => copy(bl.url, bl.id)}
+              title={s.copy}
+              aria-label={s.copy}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', fontSize: 12.5, fontWeight: 800, padding: '7px 12px', borderRadius: 9, background: copiedId === bl.id ? 'var(--accent)' : 'var(--panel)', color: copiedId === bl.id ? 'var(--accent-ink)' : 'var(--ink)', border: '1px solid var(--line-2)', whiteSpace: 'nowrap', cursor: 'pointer' }}
+            >
+              <Ic name={copiedId === bl.id ? 'check' : 'copy'} size={14} stroke={2.4} />
+              {copiedId === bl.id ? s.copied : s.copy}
+            </button>
+          </div>
         ))}
       </div>
       {link && <QRBlock link={link} />}

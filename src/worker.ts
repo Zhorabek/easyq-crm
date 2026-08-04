@@ -2458,6 +2458,9 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       phone: person.phone,
       // A flag, not an id. Either store counts; the CRM asks /api/staff/<id>/photo for bytes.
       hasPhoto: imageIds.has(person.id) || Boolean(person.photo_file_id),
+      // Same cache-busting as services. Null for a photo that lives in Telegram rather than
+      // crm_images — that one cannot change without an upload, which writes a row here anyway.
+      photoVersion: imageIds.get(person.id) ?? null,
       linkedServices: serviceNames,
       totalLinkedServices: serviceNames.length,
       weeklySlotCount: weeklySlots.reduce((sum, day) => sum + day.slots.length, 0),
@@ -2488,6 +2491,9 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       duration: Number(service.duration || 0),
       isActive: Number(service.is_active) === 1,
       hasPhoto: serviceImageIds.has(service.id),
+      // When it was last written. Goes into the <img> URL so replacing a picture is a NEW url
+      // and the browser cannot serve the old one from cache.
+      photoVersion: serviceImageIds.get(service.id) ?? null,
       linkedStaffIds: staffIdsByService.get(service.id) ?? [],
       linkedStaffNames: staffNamesByService.get(service.id) ?? [],
       bookingsCount: serviceBookings.length,
@@ -3426,7 +3432,11 @@ async function serveStoredImage(env: Env, businessId: number, staffId: number, s
   headers.set("content-type", contentType);
   headers.set("x-content-type-options", "nosniff");
   headers.set("content-disposition", `inline; filename="image.${IMAGE_EXTENSION[contentType]}"`);
-  headers.set("cache-control", "public, max-age=300");
+  // `private`: this route requires a session, so only the requesting browser may keep a copy.
+  // A long max-age is safe because the URL carries the row's updated_at - a replaced picture is
+  // a different URL, so nothing stale can be served. Without that version, `public, max-age=300`
+  // meant an owner saw their old photo for five minutes after replacing it.
+  headers.set("cache-control", "private, max-age=3600");
   // Copied into its own exact-length ArrayBuffer. A Uint8Array can be a view onto a larger
   // buffer, and passing one straight to Response is also the one binary body shape the DOM and
   // Workers type definitions disagree about — an ArrayBuffer is unambiguous to both.
@@ -3438,10 +3448,10 @@ async function serveStoredImage(env: Env, businessId: number, staffId: number, s
 async function storedImageIds(env: Env, businessId: number) {
   try {
     const rows = await env.DB
-      .prepare("SELECT staff_id FROM crm_images WHERE business_id = ?")
+      .prepare("SELECT staff_id, updated_at FROM crm_images WHERE business_id = ?")
       .bind(businessId)
-      .all<{ staff_id: number }>();
-    return new Set((rows.results ?? []).map((r) => Number(r.staff_id)));
+      .all<{ staff_id: number; updated_at: string }>();
+    return new Map((rows.results ?? []).map((r) => [Number(r.staff_id), String(r.updated_at ?? "")]));
   } catch {
     // Swallowed ON PURPOSE, and only here. This runs inside getCrmPayload, so a throw takes
     // the whole CRM down with a 500 — which is exactly the outage a missing migration caused
@@ -3450,7 +3460,7 @@ async function storedImageIds(env: Env, businessId: number) {
     //
     // The upload and serve paths deliberately do NOT do this: they are user-initiated, and a
     // silent failure there would look like the upload worked.
-    return new Set<number>();
+    return new Map<number, string>();
   }
 }
 
@@ -3458,12 +3468,12 @@ async function storedImageIds(env: Env, businessId: number) {
 async function storedServiceImageIds(env: Env, businessId: number) {
   try {
     const rows = await env.DB
-      .prepare("SELECT service_id FROM crm_service_images WHERE business_id = ?")
+      .prepare("SELECT service_id, updated_at FROM crm_service_images WHERE business_id = ?")
       .bind(businessId)
-      .all<{ service_id: number }>();
-    return new Set((rows.results ?? []).map((r) => Number(r.service_id)));
+      .all<{ service_id: number; updated_at: string }>();
+    return new Map((rows.results ?? []).map((r) => [Number(r.service_id), String(r.updated_at ?? "")]));
   } catch {
-    return new Set<number>();
+    return new Map<number, string>();
   }
 }
 

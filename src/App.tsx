@@ -472,19 +472,22 @@ export default function App() {
       if (target.kind === 'staff') await apiUploadStaffPhoto(target.staffId, shrunk);
       else if (target.kind === 'service') await apiUploadServicePhoto(target.serviceId, shrunk);
       else await apiUploadBusinessPhoto(shrunk);
-      notify();
+      // Reload FIRST, then confirm. The payload carries the new photoVersion, so by the time
+      // the toast appears the picture on screen is already the one just uploaded — announcing
+      // success while the old image is still showing is how it looked broken.
       await reload();
+      notify(t.set.photoUploaded);
     } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
 
   async function doDeleteServicePhoto(serviceId: number) {
-    try { await apiDeleteServicePhoto(serviceId); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+    try { await apiDeleteServicePhoto(serviceId); await reload(); notify(t.set.photoDeleted); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
   async function doDeleteStaffPhoto(staffId: number) {
-    try { await apiDeleteStaffPhoto(staffId); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+    try { await apiDeleteStaffPhoto(staffId); await reload(); notify(t.set.photoDeleted); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
   async function doDeletePhoto() {
-    try { await apiDeleteBusinessPhoto(); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+    try { await apiDeleteBusinessPhoto(); await reload(); notify(t.set.photoDeleted); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
 
   // ---- boot / auth screens ----

@@ -572,37 +572,63 @@ function StaffPhoto({
   onUpload,
   onRemove,
   removeLabel,
+  uploadLabel,
+  replaceLabel,
 }: {
   employee: EmployeeRow;
   version: string;
   onUpload: (() => void) | null;
   onRemove: (() => void) | null;
   removeLabel: string;
+  uploadLabel: string;
+  replaceLabel: string;
 }) {
   const SIZE = 54;
+  // The row's own timestamp when there is one, so replacing a photo busts the cache exactly.
+  // `generatedAt` is the fallback for a photo that lives in Telegram rather than crm_images.
+  const cacheKey = employee.photoVersion ?? version;
   return (
     <div style={{ position: 'relative', width: SIZE, height: SIZE, flex: 'none' }}>
-      {employee.hasPhoto ? (
-        <img
-          src={`/api/staff/${employee.id}/photo?v=${encodeURIComponent(version)}`}
-          alt={employee.name}
-          style={{ width: SIZE, height: SIZE, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : (
-        <Avatar name={employee.name} color={avatarColor(employee.name)} size={SIZE} />
-      )}
+      {/* The whole circle is the upload target, not just the little badge — same gesture as
+          the service tile, so there is one thing to learn in the product rather than two. */}
+      <button
+        onClick={onUpload ?? undefined}
+        disabled={!onUpload}
+        title={onUpload ? (employee.hasPhoto ? replaceLabel : uploadLabel) : undefined}
+        className={onUpload ? 'crm-photo-tile' : undefined}
+        style={{
+          width: SIZE, height: SIZE, borderRadius: '50%', overflow: 'hidden', position: 'relative',
+          display: 'block', padding: 0, border: 'none', background: 'transparent',
+          cursor: onUpload ? 'pointer' : 'default',
+        }}
+      >
+        {employee.hasPhoto ? (
+          <img
+            src={`/api/staff/${employee.id}/photo?v=${encodeURIComponent(cacheKey)}`}
+            alt={employee.name}
+            style={{ width: SIZE, height: SIZE, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <Avatar name={employee.name} color={avatarColor(employee.name)} size={SIZE} />
+        )}
+        {onUpload && (
+          <span className="crm-photo-tile-hover" style={{ borderRadius: '50%' }}>
+            <Ic name="camera" size={18} stroke={2} />
+          </span>
+        )}
+      </button>
 
       {onUpload && (
         <button
           onClick={onUpload}
-          title={removeLabel}
+          title={employee.hasPhoto ? replaceLabel : uploadLabel}
           style={{
             position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: '50%',
             background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center',
             border: '2px solid var(--panel)',
           }}
         >
-          <Ic name="arrowUp" size={11} stroke={3} />
+          <Ic name="camera" size={11} stroke={2.4} />
         </button>
       )}
       {onRemove && (
@@ -678,6 +704,8 @@ export function Staff() {
                   onUpload={role === 'owner' ? () => uploadStaffPhoto(p.id) : null}
                   onRemove={role === 'owner' && p.hasPhoto ? () => deleteStaffPhoto(p.id) : null}
                   removeLabel={s.photoRemove}
+                  uploadLabel={s.photoUpload}
+                  replaceLabel={s.photoReplaceStaff}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16.5, fontWeight: 800 }}>{p.name}</div>
@@ -802,7 +830,7 @@ export function Services() {
                 style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', overflow: 'hidden', cursor: 'pointer', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
               >
                 {x.hasPhoto
-                  ? <img src={`/api/services/${x.id}/photo`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ? <img src={`/api/services/${x.id}/photo?v=${encodeURIComponent(x.photoVersion ?? '')}`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   : <Ic name="scissors" size={18} stroke={2} />}
 
                 <span className="crm-photo-tile-hover">

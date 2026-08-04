@@ -188,6 +188,8 @@ export interface EmployeeRow {
   phone: string | null;
   /** Whether GET /api/staff/<id>/photo will return an image. */
   hasPhoto: boolean;
+  /** When it was last written, for cache-busting the image URL. Null for a Telegram-only photo. */
+  photoVersion: string | null;
   linkedServices: string[];
   totalLinkedServices: number;
   weeklySlotCount: number;
@@ -224,6 +226,8 @@ export interface ServiceCatalogItem {
   isActive: boolean;
   /** A flag, not an id: the bytes come from /api/services/<id>/photo. Same shape as staff. */
   hasPhoto: boolean;
+  /** When the picture was last written. Put in the image URL so a replacement is a new URL. */
+  photoVersion: string | null;
   linkedStaffIds: number[];
   linkedStaffNames: string[];
   bookingsCount: number;

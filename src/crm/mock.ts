@@ -181,6 +181,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       phone: `+9989012345${String(60 + i).slice(-2)}`,
       // The demo has no uploaded photos, so the cards fall back to initials.
       hasPhoto: false,
+      photoVersion: null,
       linkedServices: SERVICES.slice(0, 3).map((sv) => SERV_NAME[lang][sv.key]),
       totalLinkedServices: 3 + (i % 3),
       weeklySlotCount: 24 + i * 4,
@@ -208,6 +209,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       duration: sv.dur,
       isActive: true,
       hasPhoto: false,
+      photoVersion: null,
       linkedStaffIds: linked.map((s) => s.id),
       linkedStaffNames: linked.map((s) => s.name),
       bookingsCount: sv.bookings,

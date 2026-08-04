@@ -13,28 +13,27 @@ import { CountryFlag } from '../shared/CountryFlag';
 
 /* ---------------- Logo ---------------- */
 /**
- * The easyQ mark. `on` is the surface it sits on, not a theme: the sidebar and the login
+ * The easyQ wordmark. `on` is the surface it sits on, not a theme: the sidebar and the login
  * hero are navy whatever the Appearance toggle says, while a panel follows the toggle.
  *
- * The glyph stroke was a hardcoded `#1A2406` — the dark end of the default lime — so on a
- * branded CRM it drew a dark green magnifier inside, say, a red tile. It now takes the same
- * ink the rest of the sidebar uses, which is derived to be readable on whatever fills it.
+ * No icon tile. There used to be a rounded square with a magnifier in it, which read as a
+ * search box rather than a logo and appeared nowhere else — the landing site has always been
+ * the wordmark alone. One mark across the platform beats two that disagree.
  */
 export function CRMLogo({ on = 'dark' }: { on?: 'dark' | 'light' }) {
   const dark = on === 'dark';
-  const tile = dark ? 'var(--accent-nav)' : 'var(--accent)';
-  const glyph = dark ? 'var(--accent-nav-ink)' : 'var(--accent-ink)';
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-      <span style={{ width: 32, height: 32, borderRadius: 9, background: tile, display: 'grid', placeItems: 'center', flex: 'none' }}>
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-          <circle cx="11" cy="11" r="7" stroke={glyph} strokeWidth="2.4" />
-          <path d="M15.5 15.5 L20 20" stroke={glyph} strokeWidth="2.6" strokeLinecap="round" />
-        </svg>
-      </span>
-      <span style={{ fontWeight: 800, fontSize: 20, letterSpacing: '-.03em', color: dark ? '#fff' : 'var(--ink)' }}>
-        easy<span style={{ color: dark ? 'var(--accent-nav)' : 'var(--accent-deep)' }}>Q</span>
-      </span>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        fontWeight: 800,
+        fontSize: 20,
+        letterSpacing: '-.03em',
+        color: dark ? '#fff' : 'var(--ink)',
+      }}
+    >
+      easy<span style={{ color: dark ? 'var(--accent-nav)' : 'var(--accent-deep)' }}>Q</span>
     </span>
   );
 }

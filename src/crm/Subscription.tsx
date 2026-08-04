@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import type { SubscriptionInfo } from '../types';
-import { useCRM } from './i18n';
+import { CRM_LANGS, useCRM } from './i18n';
 import { Ic } from './icons';
 import { CRMLogo } from './ui';
 
@@ -21,7 +22,42 @@ import { CRMLogo } from './ui';
  * nowhere — would be worse than saying so.
  */
 
-const CONTACT_URL = 'https://t.me/easyqueue_business_bot';
+/**
+ * The person who actually turns a plan on, not a bot.
+ *
+ * A bot cannot activate a subscription — somebody has to take payment and run the UPDATE — so
+ * sending owners to one would be sending them to a dead end with a friendly interface.
+ */
+const MANAGER_USERNAME = 'easyq_manager';
+const MANAGER_URL = `https://t.me/${MANAGER_USERNAME}`;
+
+/**
+ * The message the owner arrives with.
+ *
+ * Telegram has NO way to prefill text when opening a person's DM — `?text=` works for bots and
+ * for the share sheet, and is ignored for a user. So the text is copied to the clipboard and
+ * the screen says to paste it. Clunky, and still better than the owner typing "hi" and the
+ * manager having to ask which business, which plan and how many staff.
+ */
+function requestText(planLabel: string, price: number, bizName: string, staffCount: number) {
+  return [
+    'Здравствуйте! Хочу подключить подписку EasyQ.',
+    '',
+    `Бизнес: ${bizName}`,
+    `Сотрудников: ${staffCount || '—'}`,
+    `Тариф: ${planLabel} — ${new Intl.NumberFormat('ru-RU').format(price)} so'm/мес`,
+  ].join('\n');
+}
+
+/** Best-effort copy. An owner on an old browser still gets the chat, just without the text. */
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function money(value: number) {
   return `${new Intl.NumberFormat('ru-RU').format(value)} so'm`;
@@ -95,17 +131,28 @@ function PlanCard({
   );
 }
 
-export function PlanGrid({ subscription }: { subscription: SubscriptionInfo }) {
-  const pick = (planId: string) => {
-    // No gateway to send them to, so this opens the conversation that actually activates a
-    // plan. The chosen tier rides along so nobody has to be asked which one they meant.
-    window.open(`${CONTACT_URL}?start=plan_${planId}`, '_blank', 'noopener');
+export function PlanGrid({
+  subscription,
+  onPicked,
+}: {
+  subscription: SubscriptionInfo;
+  onPicked?: (copied: boolean) => void;
+}) {
+  const { t, bizName } = useCRM();
+
+  const pick = async (plan: SubscriptionInfo['plans'][number]) => {
+    const label = `${t.sub.upTo} ${plan.maxStaff} ${t.sub.staffWord}`;
+    const copied = await copyText(requestText(label, plan.price, bizName, subscription.staffCount));
+    // Opened after the copy, not before: a new tab steals focus, and a clipboard write from a
+    // background document is refused by every browser that implements the permission properly.
+    window.open(MANAGER_URL, '_blank', 'noopener');
+    onPicked?.(copied);
   };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
       {subscription.plans.map((plan) => (
-        <PlanCard key={plan.id} plan={plan} onPick={() => pick(plan.id)} />
+        <PlanCard key={plan.id} plan={plan} onPick={() => void pick(plan)} />
       ))}
     </div>
   );
@@ -113,13 +160,37 @@ export function PlanGrid({ subscription }: { subscription: SubscriptionInfo }) {
 
 /** The full-screen state. Replaces the CRM entirely once the subscription has lapsed. */
 export function SubscriptionExpired({ subscription }: { subscription: SubscriptionInfo }) {
-  const { t } = useCRM();
+  const { t, lang, setLang } = useCRM();
+  const [copied, setCopied] = useState<boolean | null>(null);
   const lapsedFor = subscription.daysLeft === null ? null : Math.abs(subscription.daysLeft);
 
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '32px 20px', background: 'var(--bg)' }}>
       <div style={{ width: '100%', maxWidth: 880 }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 26 }}><CRMLogo on="light" /></div>
+        {/* This screen replaces the whole CRM, and the language switcher lives in the shell it
+            replaced — so an owner who reads Uzbek was stuck on whichever language happened to
+            be set, on the one screen asking them to spend money. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 26, flexWrap: 'wrap' }}>
+          <CRMLogo on="light" />
+          <span style={{ display: 'inline-flex', gap: 2, background: 'var(--panel-2)', borderRadius: 999, padding: 3 }}>
+            {CRM_LANGS.map((L) => {
+              const on = lang === L.code;
+              return (
+                <button
+                  key={L.code}
+                  onClick={() => setLang(L.code)}
+                  style={{
+                    fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 999, cursor: 'pointer',
+                    color: on ? 'var(--accent-ink)' : 'var(--ink-3)',
+                    background: on ? 'var(--accent)' : 'transparent',
+                  }}
+                >
+                  {L.label}
+                </button>
+              );
+            })}
+          </span>
+        </div>
 
         <div style={{ textAlign: 'center', marginBottom: 26 }}>
           <span
@@ -139,7 +210,15 @@ export function SubscriptionExpired({ subscription }: { subscription: Subscripti
           </p>
         </div>
 
-        <PlanGrid subscription={subscription} />
+        <PlanGrid subscription={subscription} onPicked={setCopied} />
+
+        {/* Shown only after they pick, because before that there is nothing to paste. Says
+            which of the two things happened: the clipboard is a permission, not a guarantee. */}
+        {copied !== null && (
+          <p style={{ textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: 'var(--accent-deep)', marginTop: 18, lineHeight: 1.6 }}>
+            {copied ? t.sub.pasteInChat : t.sub.tellManager}
+          </p>
+        )}
 
         <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 22, lineHeight: 1.6 }}>
           {/* Told up front, because a shop panicking about lost bookings is the whole reason
@@ -177,7 +256,7 @@ export function SubscriptionBanner({ subscription }: { subscription: Subscriptio
           : t.sub.planEndsIn(subscription.daysLeft)}
       </span>
       <a
-        href={`${CONTACT_URL}?start=plan_${subscription.plans.find((p) => p.recommended)?.id ?? ''}`}
+        href={MANAGER_URL}
         target="_blank"
         rel="noopener"
         style={{ marginLeft: 'auto', color: 'inherit', textDecoration: 'underline', fontWeight: 800 }}

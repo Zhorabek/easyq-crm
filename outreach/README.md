@@ -15,31 +15,31 @@ does not have. So this lives in the repo for one clone, but runs on your machine
 
 ## Setup, once
 
-```bash
-npm install
-```
-
 Get an `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org) → *API
 development tools*. They identify the app, not the account.
 
+Then, **from the repo root** — these install `outreach/`'s dependencies themselves, so there is
+no separate `npm install` step and nothing to remember:
+
 ```bash
-npm run login
+npm run bot:login
 ```
 
 Asks for the account's phone, the code Telegram sends, and the two-step password if there is
-one. Everything is typed by you, locally.
+one. Everything is typed by you, locally, into your own terminal. Nobody else — no script, no
+assistant, no log — sees any of it.
 
 **`session.txt` is the login.** Anyone holding it is signed in as the account — no code, no
 password, nothing to reset. Gitignored. If it escapes: Telegram → Settings → Devices →
 terminate.
 
-`npm run login` also writes `outreach/.env` with the api_id/api_hash, so later runs need no
-setup. Also gitignored.
+It also writes `outreach/.env` with the api_id/api_hash, so later runs need no setup. Also
+gitignored.
 
 ## Check it before trusting it
 
 ```bash
-npm run bot -- --check
+npm run bot:check
 ```
 
 Connects, confirms it can write to Saved Messages, and creates the folders. **Sends nothing to
@@ -53,11 +53,22 @@ halfway through a send.
 npm run bot
 ```
 
-Leave it running. It reconnects on its own; it does nothing until you tell it to.
+Leave it running. It reconnects on its own; it does nothing until you tell it to. A healthy
+start prints who it signed in as, how many contacts are on file, and `Watching Saved Messages`.
+
+`npm run bot:debug` prints every raw update and every message event, unfiltered — which is how
+you tell "Telegram is not delivering" apart from "the handler ignored it".
+
+**It runs on this machine, not on a server.** Close the terminal, sleep the laptop or lose the
+network for long enough and it stops; `state.json` means restarting resumes rather than starting
+over, but nothing sends and no reply gets answered while it is down. If it needs to be up
+overnight, it needs a machine that stays awake.
 
 ## Driving it from Saved Messages
 
-Put your list in a Saved Message — one per line, `@name`, `name` or a `t.me/` link:
+There is **no `/add`**. The list is an ordinary Saved Message — one per line, `@name`, `name` or
+a `t.me/` link — and you reply to that message with a command. That way the list is a thing you
+can edit, re-read and re-send, rather than hidden state inside the bot:
 
 ```
 @barber_house_tashkent
@@ -106,6 +117,11 @@ read the account's entire vocabulary in one sitting. Edit the FAQ there.
 
 It never improvises. If it is not confident, a person answers.
 
+**The prices in that file are a second copy.** `src/shared/plans.ts` is the other, and it is the
+one the product charges on. If a tier changes, change both — a message quoting 299 000 while the
+expired-subscription screen asks for something else is the shop's first impression of being
+billed.
+
 ## Folders
 
 Chats are moved into `EQ Waiting`, `EQ Answered` and `EQ Blocked` as their status changes, so
@@ -147,7 +163,7 @@ because that would message everybody again.
 ## Tests
 
 ```bash
-npm test
+npm --prefix outreach test
 ```
 
 Covers every decision about who gets messaged and what gets said — username extraction,
@@ -181,7 +197,6 @@ chat whose id is your own, which no other conversation can produce.
 
 ## Files
 
-
 | | |
 | --- | --- |
 | `bot.mjs` | the whole thing |
@@ -190,5 +205,12 @@ chat whose id is your own, which no other conversation can produce.
 | `lib/parse.mjs` | usernames and commands out of text |
 | `lib/state.mjs` | the ledger |
 | `lib/folders.mjs` | folder moves, best-effort |
+| `login.mjs` | the one-time sign-in |
+| `test.mjs` | the 114 checks |
 | `session.txt` | the account login — gitignored |
+| `.env` | api_id / api_hash — gitignored |
 | `state.json` | who has been contacted — gitignored |
+
+Those last three are gitignored in [`outreach/.gitignore`](.gitignore) and **must stay that
+way**: `easyq-crm` is a public repository, and `session.txt` is not a password that can be
+reset — anyone holding it is signed in as the account.

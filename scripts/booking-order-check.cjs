@@ -4,13 +4,28 @@
 // customer tapped and never looked at the flow, so past the first tap every shop behaved like
 // service_first. These assertions are about the ORDER a customer walks, per flow and per entry.
 
-const { register } = require('node:module');
-const { pathToFileURL } = require('node:url');
-try {
-  register('tsx/esm', pathToFileURL('./'));
-} catch {
-  /* tsx registered another way below */
-}
+// This one IMPORTS the real functions rather than reading the source, because the thing being
+// asserted is an order computed at runtime, not a string that appears in a file.
+//
+// Node strips the types out of a `.ts` file on its own now, so `tsx` is not needed — but its
+// ESM resolver still demands a file extension, and `bookingUrl.ts` imports `./bookingFlow`
+// the way TypeScript writes it, with none. That mismatch is what made this script the only one
+// of the six that crashed instead of running. One resolve hook, rather than putting `.ts`
+// extensions through the app's own imports to satisfy a checker.
+const { registerHooks } = require('node:module');
+const { existsSync } = require('node:fs');
+const { dirname, resolve: resolvePath } = require('node:path');
+const { fileURLToPath, pathToFileURL } = require('node:url');
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith('.') && !/\.[cm]?[jt]s$/.test(specifier) && context.parentURL) {
+      const candidate = resolvePath(dirname(fileURLToPath(context.parentURL)), `${specifier}.ts`);
+      if (existsSync(candidate)) return { url: pathToFileURL(candidate).href, shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 let pass = 0;
 let fail = 0;

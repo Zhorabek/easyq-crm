@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-08-03. Everything below is either not started or waiting on someone.
+Last updated 2026-08-04. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -15,43 +15,21 @@ Nothing here can be done from the repo.
       down. Every update logs `WEBHOOK IS UNAUTHENTICATED` until you finish. Steps and the
       reasoning are in each bot's README under *Telegram Webhook*; do it for
       `easyqueue-business-bot` and `easyqueue-client-bot`, with a different secret each.
-- [ ] **Apply `migrations/2026-08-03-rate-limit.sql`. Until this is done, there is no rate
-      limiting.** Same shape of problem: the limiter fails open so that pushing to `main`
-      cannot deploy ahead of the SQL, which means it does nothing until the table exists.
-      Every limited request logs `RATE LIMITING IS OFF` until then.
 
-      ```
-      npm run db:migrate:remote:rate-limit
-      ```
-
-      Then confirm it took, per the migration rule below:
-
-      ```sql
-      SELECT name FROM sqlite_master WHERE type='table' AND name='rate_limit';
-      ```
+      **Order matters.** Call `setWebhook` with the new `secret_token` FIRST, then
+      `wrangler secret put TELEGRAM_WEBHOOK_SECRET`. The other way round rejects every real
+      update in the gap between the two.
 - [ ] **Rotate `@easyqueue_business_bot`'s token.** It was pasted in plaintext in a chat on
       2026-07-28 and must be treated as compromised. `/revoke` with
       [@BotFather](https://t.me/BotFather). Logos no longer depend on it, but the two bots do.
       It has never been in the source tree; if it is set as a Worker secret, replace that too.
-- [ ] **Assign specialists to services on `barber777`.** `Beard cut`, `Beard cut for babies`
-      and `haircut` have nobody assigned, so they are **not offered on the booking page** —
-      only `test 123` is bookable. This is intended behaviour, not a bug: there is nobody to
-      give those services to. The services table flags them in amber. Services → the service →
-      pick who performs it.
-- [ ] **Check `barber777`'s booking order.** It is currently `service_only`, so customers
-      never see a specialist and one is assigned for them. If that was a test, change it on
-      Branding → Booking order.
-- [ ] **Delete two test bookings** on `barber.easyq.uz`, both Thu 30 Jul:
-      `11:00 — TEST - please delete` and `09:00 — Outage probe`. They hold real slots.
+- [ ] **Clear the E2E test data out of `barber777`.** Left behind by the 2026-08-04 run-through
+      and visible to anyone opening that shop's CRM: client `Mijoz Sinov`, a pending booking on
+      5 Aug 10:00, a confirmed booking today 17:30, a 1 so'm payment on the cash desk, and an
+      edited business description. `jora` was merged into `Sardor Testov` by phone — that one is
+      the phone-keyed merge working, not damage.
 - [ ] **Delete one orphaned row:** `DELETE FROM users WHERE id = 1604;` — left behind when
       the `zz-probe-not-real` business was removed.
-- [ ] **Try a staff login end to end.** Open a staff member → *CRM access* → grant Specialist,
-      then sign in with the issued credentials in a private window. Confirm they see only
-      their own day, only their own clients, no money, and no other staff. Confirm they CAN
-      book onto their own schedule and that the specialist field is fixed to them. This is the
-      one path that cannot be tested without a login.
-- [ ] **Give `barber777` a roster.** Staff exist but weekly slots are thin, so the booking
-      page can read "No free times". Jadval → the staff member → set hours.
 
 ---
 
@@ -63,33 +41,65 @@ Nothing here can be done from the repo.
       agree, or submit either always fails or shows pointless friction. Nothing else needs
       changing; the module, table, endpoint, field and strings are all still in place.
 
-      While it is off, `POST /api/signup` is unauthenticated and writes a `users` row and a
-      `businesses` row per call, with nothing in between. The per-phone and per-IP limits
-      cover bookings and feedback, not signup. **If it gets abused before the captcha comes
-      back**, the quickest stopgaps are an IP rate limit on the endpoint, or a Cloudflare
-      WAF rate-limiting rule on `/api/signup` — that one needs no deploy at all.
+      While it is off, `POST /api/signup` writes a `users` row and a `businesses` row per
+      call. It is no longer unauthenticated-and-unbounded — `LIMITS.signup` caps it at 5 per
+      IP per hour since 2026-08-03 — but a captcha is the thing that distinguishes a person
+      from a script, and a rate limit only slows one down. A Cloudflare WAF rule on
+      `/api/signup` is the stopgap that needs no deploy at all.
 
 ---
 
-## Security — reviewed 2026-08-03, mostly closed
+## Security — reviewed 2026-08-03 and again 2026-08-04
 
-A full pass over auth, permissions, SQL, CORS, uploads and both bots. What it found and what
-is left.
+Two full passes over auth, permissions, SQL, CORS, uploads, headers and both bots. What they
+found, and what is left.
 
-**Closed.** Bot webhooks now require Telegram's `secret_token` — they previously accepted any
-POST from anyone, which was a sign-up verification bypass, not merely spam, because
+**Closed on 2026-08-03.** Bot webhooks now require Telegram's `secret_token` — they previously
+accepted any POST from anyone, which was a sign-up verification bypass, not merely spam, because
 `contactBelongsToSender` compares two fields a forger controls. Rate limiting now exists at all
-(`src/server/rateLimit.ts`) and covers login, sign-up, feedback, subdomain checks, public
-bookings and verification starts. Money redaction moved onto `payment:write` rather than the
-role name. `isScopedToOwnBookings` fails closed. Session HMACs are compared timing-safely,
-PBKDF2 is at 600k, and an unknown username burns a decoy hash so timing no longer answers
-"does this account exist".
+(`src/server/rateLimit.ts`). Money redaction moved onto `payment:write` rather than the role
+name. `isScopedToOwnBookings` fails closed. Session HMACs are compared timing-safely, and an
+unknown username burns a decoy hash so timing no longer answers "does this account exist".
 
-**Verified clean, so nobody re-checks it:** no SQL injection anywhere (both dynamic `IN` lists
-build placeholders from the array length and bind the values); wildcard CORS is safe because no
-endpoint sets `Allow-Credentials` and the cookie is `SameSite=Lax`; tenant binding, per-request
-staff re-reads and `session_version` eviction all hold; the upload hardening matches what the
-README claims; no secrets in the git history of the two public repos.
+**Closed on 2026-08-04:**
+
+- **A second login door had no throttle.** `/api/auth/login` was rate limited and
+  `/api/auth/session-login` was not, so the limit only decided which URL an attacker would use.
+  Both now take `loginPerIp` and `loginPerUser`, and both burn a decoy hash on an unknown
+  username. `scripts/security-check.cjs` now enumerates every block that verifies a password
+  and asserts the throttle on each, so a third door cannot ship without one.
+- **Plaintext temp passwords are gone.** `crm_temp_password` held a readable password for every
+  business and every staff member indefinitely — read access to the database was login access
+  to every account, and both bots bind the same D1. Replaced by
+  `crm_temp_password_pending`, one bit: the password is shown once at the moment it is
+  generated and never stored. `migrations/2026-08-04-temp-password-flag.sql`, applied.
+- **The cash desk leaked to specialists.** `paymentsToday` was added to the payload that
+  morning and not to the `payment:write` gate, so a specialist received the amount, method and
+  customer name of every payment the shop took that day. The check now derives the field list
+  from the payload itself rather than from a hand-written list, which is what would have caught
+  it.
+- **Image uploads are bounded.** `LIMITS.imageUpload`, 40 per hour, keyed **per business** — an
+  authenticated owner could otherwise replace a logo in a loop and burn D1 writes 512 KB at a
+  time.
+- **Security headers on every response.** `withSecurityHeaders` wraps the router's output rather
+  than being applied per route, so a new route cannot ship without them: `nosniff`,
+  `strict-origin-when-cross-origin`, `base-uri 'self'`, and `frame-ancestors` /
+  `form-action` as allowlists.
+
+  `form-action` is an allowlist and **not `'self'`** — that is not a weaker policy, it is the
+  only correct one. The login flow posts credentials cross-origin to
+  `<slug>.easyq.uz/api/auth/session-login` so the tenant host sets its own cookie, and
+  `'self'` silently blocked it: no redirect, and a login page that appeared to do nothing.
+  A CSP that forbids something the app does is a broken feature, not a stricter policy.
+
+**Verified clean, so nobody re-checks it:** no SQL injection anywhere — `scripts/sql-bind-check.cjs`
+walks all 94 prepare/bind pairs and the only interpolations are generated placeholder lists and
+the two image-store table constants; wildcard CORS is safe because no endpoint sets
+`Allow-Credentials` and the cookie is `SameSite=Lax`; tenant binding, per-request staff re-reads
+and `session_version` eviction all hold; the upload hardening matches what the README claims; no
+secrets in the git history of the two public repos; `outreach/session.txt`, `outreach/.env` and
+`outreach/state.json` are gitignored and untracked, which matters because this repo is public
+and that session string **is** the Telegram login.
 
 Still open:
 
@@ -97,71 +107,27 @@ Still open:
       `worker.ts` and `shared/slug.ts` respectively. They overlap but neither derives from
       the other, so drift means somebody claims a slug that can never route to them.
       Derive the host set from `RESERVED_SLUGS`, or assert one is a subset of the other.
-- [ ] **Image uploads have no rate limit.** `POST /api/business/photo` and
-      `POST /api/staff/<id>/photo` need `business:write` / `staff:write`, so only an
-      authenticated owner can reach them — but an owner can replace a logo in a loop and
-      each call writes a 512 KB row. Bounded by `INSERT OR REPLACE` on a unique key, so it
-      cannot grow the table; it can still burn D1 writes. The limiter now exists, so this is
-      one call to `requireUnderRateLimit` whenever it is judged worth the write.
-- [ ] **`crm_temp_password` is stored in plaintext** and persists until the person first
-      changes their password — which may be never. It is cleared on change and on revoke, and
-      the owner has to be able to read it out to the staff member, so the alternative is
-      showing it once at issue and never again. Worth deciding: both bots bind the same D1.
+- [ ] **`/api/telegram/verify-webhook` is dead code.** Nothing calls it since verification moved
+      to the shared D1 on 2026-07-30. It is kept only until someone confirms that; delete it,
+      along with `VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET`.
 
----
+### PBKDF2 is at 100k, and cannot go higher
 
-## Phone numbers — any country, SHIPPED 2026-08-01
+Worth writing down because it looks like a number somebody forgot to raise. It was set to 600k
+(the OWASP figure) and **Cloudflare refuses it** — the Workers runtime caps PBKDF2 iterations,
+and every login 500s above the ceiling. 100k is the most that runs. See the note on
+`PBKDF2_ITERATIONS` in `src/server/auth.ts`; raising it needs a different KDF, not a bigger
+constant.
 
-`src/shared/phone.ts` runs on `libphonenumber-js`, and every input on the platform now takes
-any country and works out which one from the prefix: `+998` → 🇺🇿, `+7` → 🇷🇺 or 🇰🇿, `+1` → 🇺🇸.
-Three inputs share the behaviour — `PhoneInput` (`src/crm/ui.tsx`), `PhoneField`
-(`src/booking/BookingApp.tsx`), `SUPhoneInput` (`easyq-landing/src/components/Signup.tsx`).
-
-Three things worth not re-litigating:
-
-- **No dropdown.** The country is inferred, never picked first. A picker in front of the field
-  is a step for everybody to serve the minority who are not local.
-- **No flag until the prefix decides.** `+7` is Russia *and* Kazakhstan; the library commits
-  only once a digit separates them (Kazakh mobiles start 6 or 7, Russian ones 9). Until then
-  the field shows a globe. Showing one of the two would be a guess presented as a fact.
-- **`+998 ` is the placeholder, not the value.** As a hardcoded prefix it would have to be
-  deleted before anyone could type another country's code — which is the exact bug being fixed.
-
-Caret position is restored by **digit count**, not character index, or it drifts a place every
-time a reformat moves a space. That logic is duplicated in all three inputs; if a fourth
-appears, extract it.
-
-`SUPhoneInput` was dead for a while — the landing's phone step became pure contact-sharing and
-nothing typed a number any more. It is back in use: the step now asks for the number first.
-
-### Flags are drawn, not emoji — `src/shared/CountryFlag.tsx`
-
-The first version used `String.fromCodePoint` over regional-indicator letters, which gives a
-flag for any country in one line and no assets. **Windows does not render flag emoji at all** —
-every version through 11 draws the two letters in a box — so most desktop visitors saw "UZ" in
-a rectangle where the design said flag, looking like a broken glyph. Android and iOS do render
-them, which is exactly what makes it easy to ship without noticing.
-
-So the fourteen countries in `PHONE_COUNTRIES` are drawn as inline SVG, and **everything else
-falls back to the globe** — the same one shown while a prefix is still ambiguous. That is not a
-gap to fill: there are ~250 flags and no honest way to inline them all. Emblem-heavy ones (the
-Kazakh eagle, the Korean trigrams, the American stars) are simplified to what reads at 18px.
-
-Same rule now applies across both sites: **no emoji in UI chrome.** Ticks, stars and the icons
-that were in the broadcast-template labels are SVG or gone. Emoji inside Telegram messages stay
-— that is Telegram's own medium, and a bot message cannot hold an SVG.
+That is also why login is rate limited **before** the hash rather than after: those iterations
+are the cost being defended.
 
 ---
 
 ## Product / polish
 
-- [ ] **KPI card labels are hardcoded Russian in the worker.** `getCrmPayload` builds
-      `label: "Записи на сегодня"` and similar, and the UI renders them verbatim — so an
-      Uzbek or English owner reads Russian on their dashboard. This is the third instance
-      of that pattern; the booking links and staff roles were fixed the same way, by
-      returning an i18n KEY instead of copy. Harder here because the hints interpolate
-      values ("3 уже пришли", "12 сотрудников · 5 услуг"), so it needs parameterised
-      strings rather than a straight key swap.
+- [ ] **Today / Tomorrow labels on the booking page's quick-pick pills.** They show only a time,
+      so a pill on a specialist card does not say which day it belongs to.
 - [ ] **Removing the easyQ footer wordmark** from the public booking page. Deliberately
       not built: whether a business can white-label is a pricing decision. The plumbing is
       one boolean if you decide it belongs in a tier. Note the CRM sidebar and the booking
@@ -171,6 +137,11 @@ that were in the broadcast-template labels are SVG or gone. Emoji inside Telegra
       smarter is a scheduling policy, and a shop that turned the step off has said it does
       not care who by. If load-balancing is wanted it is a real feature: it needs to consider
       shifts and existing bookings, not just pick from a list.
+- [ ] **The tour and the Guide are two descriptions of the same product.** `TOUR_STEPS` in
+      `src/crm/Tour.tsx` and `TOPICS` in `src/crm/Help.tsx` both enumerate the screens, both
+      filter by role, and both have their own check script. That is fine while they say
+      different things — the tour is nine steps of orientation, the Guide is twelve topics of
+      detail — but if one grows into the other, merge them.
 
 ---
 
@@ -190,7 +161,8 @@ Documented so nobody re-discovers them as defects.
   is no server-side session list to enumerate.
 - **A service with no specialist assigned is not bookable.** It is dropped from the public
   page rather than offered to the whole team. The old fallback meant one specialist assigned
-  to one service appeared on every service in the shop.
+  to one service appeared on every service in the shop. The services table flags those rows
+  in amber so an owner can see why one vanished.
 - **Image uploads are not virus-scanned.** No engine inspects a genuine PNG for a payload,
   and a Worker has none to call. What is guaranteed instead: byte-level format sniffing, SVG
   refused, a browser-side decode/re-encode that means stored bytes are the browser's own
@@ -213,95 +185,15 @@ Documented so nobody re-discovers them as defects.
 - **A specialist's client rows carry no money.** `spentTotal` is 0 and `favoriteStaff` is
   "—" by design, so the Customers screen swaps those two columns for last visit and
   upcoming when a specialist is signed in.
-
----
-
-## Telegram signup verification — SHIPPED 2026-07-30
-
-The `1111` code is gone. A visitor opens a deep link into **@easyqueue_business_bot**, presses
-Start and taps "share my number"; Telegram vouches for the number and the bot writes it to
-`signup_verification`. There is no code to send, intercept or mistype.
-
-The long-standing blocker — a bot has one webhook and this one's already points at
-`easyqueue-business-bot` — turned out to be the wrong problem to solve. All three Workers bind
-the same D1, so the bot writes the row directly and the CRM reads it: no second bot, no webhook
-to repoint, no HTTP between services, no shared secret.
-
-Handler: `easyqueue-business-bot/src/handlers/signup.handler.ts`. That repo now deploys from CI
-like this one.
-
-**Signup records the real `telegram_id`.** Web signups used to get a synthetic negative id, so
-the business existed for the CRM and not for the bots — the same root cause as the logo upload
-that silently failed for months. An existing `users` row for that account is reused, since the
-column is UNIQUE.
-
-`VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET` are no longer read by the
-verification flow, and `/api/telegram/verify-webhook` is dead code kept only until someone
-confirms nothing else calls it.
-
-### The step asks for the number first — 2026-08-01
-
-It used to go straight to "open the bot", and on success it rendered a confirmation card and
-**stopped**: an auto-advance was supposed to move to the business step 900ms later, but
-`setState('done')` re-ran the polling effect, whose cleanup set the `stop` flag before the timer
-fired. So it never advanced. Every web signup dead-ended on a green tick. Now there is an
-explicit **Continue registration** button, which cannot silently fail the same way and lets the
-visitor actually read what was confirmed.
-
-The step also asks for the number before sending anyone to Telegram, and the nonce is not issued
-until then — it lives 15 minutes, and starting that clock while somebody is still typing spent it
-on nothing.
-
-**The bot's confirmation carries a link back.** "Go back to the website" assumed they still had
-the tab, remembered the site, and were on the same device — usually none of that holds, because
-they just opened Telegram on a phone. The confirmation now has a "continue registration" button
-pointing at `easyq.uz/signup?v=<nonce>`, and the nonce is what makes it RESUME instead of
-restart: the page polls with it and lands straight on the confirmed step. Safe in a URL — the
-nonce is single-use, 15-minute, and holding it is already what authorises seeing the number.
-
-Reading that parameter is done in a **pure** `useState` initializer, with the strip in an
-effect. Doing both in the initializer looked tidier and silently broke the link: StrictMode
-invokes initializers twice, so the first call cleared the URL and the second read nothing.
-
-- [ ] **The typed number is not enforced against the confirmed one.** They are compared in the
-      browser and a mismatch is explained, but nothing rejects it, because the confirmed number
-      is the one that gets used either way — this is messaging, not a control. Enforcing it
-      properly means a `claimed_phone` column, `/api/verify/start` storing it, and
-      `easyqueue-business-bot` refusing to mark a row verified when the shared contact differs.
-      Worth doing only if you want "you must sign up with the number you typed" to be a rule;
-      note it would strand anyone whose Telegram lives on a second SIM.
-
----
-
-## Booking widget — partly built
-
-Rebuilt against the Altegio reference. A hub of full screens rather than one scrolling form,
-and the step ORDER follows whichever row the customer tapped:
-
-  from "choose specialist"   ->  specialist, services, time
-  from "choose date & time"  ->  time, services, specialist
-  from "choose services"     ->  services, specialist, time
-
-Working: multi-service baskets with a running total, availability sized to the whole basket,
-the selection mirrored in the URL (`?m12&s3&s7&d202607311430`) and rebuilt on load, category
-chips and search, the two-tab specialist step, month calendar, times grouped by part of day.
-
-**Not built yet** — none of it blocked, all of it visible to a customer:
-
-- [ ] **Auto-select the nearest available day** on the date step, and disable months with no
-      availability. Today it opens on the current month with nothing chosen.
-- [ ] **Today / Tomorrow labels** on the quick-pick pills. They currently show only a time, so
-      a pill on a specialist card does not say which day it belongs to.
-- [ ] **Ratings and review counts on specialist cards.** The schema is applied; nothing
-      collects, moderates or reads reviews yet. See the section below.
-- [x] ~~**The CRM read side for multi-service.**~~ Done 2026-08-03. `booking_services` had zero
-      read sites — the lines were written and never looked at, so a two-service booking showed
-      as "Haircut +1" everywhere and the second service was invisible to the person who had to
-      perform it. The booking detail now itemises every line with its own price and duration;
-      compact rows keep a summary but DERIVE it via `serviceSummary`, so the count is right
-      whether the row came from the booking page, a bot, or predates multi-service. A booking
-      with no lines falls back to a single line built from the `bookings` columns, which is
-      what both bots still write.
+- **The subscription has no payment gateway.** Choosing a plan opens a Telegram chat with a
+  prefilled message; a person activates it with one `UPDATE`. Building billing before anyone
+  has paid for a second month is building the wrong thing.
+- **The notification bell caps at 50 pending bookings.** A shop that has ignored confirmations
+  for a year should not have that year's backlog serialised into every payload.
+- **The guided tour and the Guide carry no screenshots.** Every screenshot taken before
+  2026-08-04 would now be showing a product that does not exist, and nothing fails when a
+  picture goes stale — it renders perfectly and lies. Each Guide topic carries a button to the
+  live screen instead.
 
 ---
 
@@ -324,13 +216,176 @@ own repos.
 
 ---
 
+## Booking widget — the remaining gap is reviews
+
+Rebuilt against the Altegio reference. A hub of full screens rather than one scrolling form,
+and the step ORDER follows both the owner's `booking_flow` setting and whichever row the
+customer tapped:
+
+```
+from "choose specialist"   ->  specialist, then the owner's order
+from "choose date & time"  ->  time, then the owner's order
+from "choose services"     ->  services, then the owner's order
+```
+
+`scripts/booking-order-check.cjs` asserts that, per flow and per entry point, because the
+setting used to reorder the menu rows and nothing else — past the first tap every shop behaved
+like `service_first`.
+
+Working: multi-service baskets with a running total, availability sized to the whole basket,
+the selection mirrored in the URL (`?m12&s3&s7&d202607311430`) and rebuilt on load, category
+chips and search, the two-tab specialist step, month calendar, times grouped by part of day.
+
+- [ ] **Ratings and review counts on specialist cards.** The schema is applied; nothing
+      collects, moderates or reads reviews yet. See the section above.
+- [x] ~~**Auto-select the nearest available day.**~~ Done 2026-08-04. The picker opened on
+      today and, when today was full, said "no free time — try another day", leaving the
+      customer to hunt by tapping dates one at a time. `GET /api/public/available-days` returns
+      which of the next N days (clamped to 30) have room, computed with **the same
+      `getPublicSlots`** the slot list uses, so "this day has room" cannot disagree with what
+      the day then offers. Empty days are dimmed rather than hidden.
+- [x] ~~**The CRM read side for multi-service.**~~ Done 2026-08-03. `booking_services` had zero
+      read sites — the lines were written and never looked at, so a two-service booking showed
+      as "Haircut +1" everywhere and the second service was invisible to the person who had to
+      perform it. The booking detail now itemises every line with its own price and duration;
+      compact rows keep a summary but DERIVE it via `serviceSummary`, so the count is right
+      whether the row came from the booking page, a bot, or predates multi-service. A booking
+      with no lines falls back to a single line built from the `bookings` columns, which is
+      what both bots still write.
+
+---
+
+## Shipped, kept for the reasoning
+
+### Subscriptions — 2026-08-04
+
+Thirty days free from signup, then four tiers by team size. Three decisions worth not
+re-litigating:
+
+- **It fails open.** No `plan_expires_at`, or a date that will not parse, counts as active.
+  Locking a paying shop out of its own calendar over a missing migration is worse than a free
+  week.
+- **Expiry blocks the CRM and nothing else.** The booking page and both bots keep working. The
+  shop owes money; their customers do not, and a customer who cannot book books elsewhere —
+  which costs the shop the money being asked for.
+- **Never recommend below the featured tier.** `recommendPlan` floors at `p5` (299k) rather
+  than picking the cheapest that fits, so a one-chair shop is offered the tier the business
+  wants to sell rather than the 175k one. `src/shared/plans.ts` holds the prices and the rule;
+  they are written down in exactly one other place, `outreach/lib/messages.mjs`, and the two
+  must agree.
+
+The request itself is a **prefilled Telegram draft** — `t.me/<manager>?text=<message>`, which is
+documented for user links, not only bots — written in the owner's own language and naming their
+plan, price, business and team size. The price is grouped `ru-RU` in all three languages so it
+matches the card they just tapped.
+
+### The guided tour and the Guide — 2026-08-04
+
+Both are **role-aware**, and that is the whole point: the old tour told a specialist to add
+services on a screen with no nav item, and promised access rights to people who cannot grant
+them. Every tour step and every Guide topic declares the screen it is about; anything whose
+screen the reader cannot open is not rendered, and steps that survive get different copy per
+role (`copyKeyFor`). `scripts/tour-check.cjs` and `scripts/help-check.cjs` assert that for all
+three roles — a specialist sees 6 of 9 tour steps and 5 of 12 Guide topics.
+
+The Guide sits **below the working screens, next to Settings**: dashboard through Branding are
+the shop's daily work, the manual is not.
+
+### Phone numbers — any country, 2026-08-01
+
+`src/shared/phone.ts` runs on `libphonenumber-js`, and every input on the platform takes any
+country and works out which one from the prefix: `+998` → 🇺🇿, `+7` → 🇷🇺 or 🇰🇿, `+1` → 🇺🇸.
+Three inputs share the behaviour — `PhoneInput` (`src/crm/ui.tsx`), `PhoneField`
+(`src/booking/BookingApp.tsx`), `SUPhoneInput` (`easyq-landing/src/components/Signup.tsx`).
+
+- **No dropdown.** The country is inferred, never picked first. A picker in front of the field
+  is a step for everybody to serve the minority who are not local.
+- **No flag until the prefix decides.** `+7` is Russia *and* Kazakhstan; the library commits
+  only once a digit separates them (Kazakh mobiles start 6 or 7, Russian ones 9). Until then
+  the field shows a globe. Showing one of the two would be a guess presented as a fact.
+- **`+998 ` is seeded on focus, not hardcoded.** As a fixed prefix it would have to be deleted
+  before anyone could type another country's code. As a placeholder alone it was worse: an
+  empty field looked seeded, so people typed nine digits into nothing and a local number was
+  parsed as a foreign one. Focus writes the real value; the field is still empty until then.
+
+Caret position is restored by **digit count**, not character index, or it drifts a place every
+time a reformat moves a space. That logic is duplicated in all three inputs; if a fourth
+appears, extract it.
+
+**Flags are drawn, not emoji** — `src/shared/CountryFlag.tsx`. The first version used
+`String.fromCodePoint` over regional-indicator letters, which gives a flag for any country in
+one line and no assets. **Windows does not render flag emoji at all** — every version through 11
+draws the two letters in a box — so most desktop visitors saw "UZ" in a rectangle where the
+design said flag. Android and iOS do render them, which is exactly what makes it easy to ship
+without noticing. So the fourteen countries in `PHONE_COUNTRIES` are inline SVG and everything
+else falls back to the globe; there are ~250 flags and no honest way to inline them all.
+
+Same rule across both sites: **no emoji in UI chrome.** Emoji inside Telegram messages stay —
+that is Telegram's own medium, and a bot message cannot hold an SVG.
+
+### Telegram signup verification — 2026-07-30
+
+The `1111` code is gone. A visitor opens a deep link into **@easyqueue_business_bot**, presses
+Start and taps "share my number"; Telegram vouches for the number and the bot writes it to
+`signup_verification`. There is no code to send, intercept or mistype.
+
+The long-standing blocker — a bot has one webhook and this one's already points at
+`easyqueue-business-bot` — turned out to be the wrong problem to solve. All three Workers bind
+the same D1, so the bot writes the row directly and the CRM reads it: no second bot, no webhook
+to repoint, no HTTP between services, no shared secret.
+
+**Signup records the real `telegram_id`.** Web signups used to get a synthetic negative id, so
+the business existed for the CRM and not for the bots — the same root cause as the logo upload
+that silently failed for months.
+
+The step asks for the number **before** sending anyone to Telegram, and the nonce is not issued
+until then — it lives 15 minutes, and starting that clock while somebody is still typing spent
+it on nothing. The bot's confirmation carries a link back to `easyq.uz/signup?v=<nonce>`, and
+the nonce is what makes it RESUME instead of restart. Safe in a URL: single-use, 15-minute, and
+holding it is already what authorises seeing the number. Reading that parameter is done in a
+**pure** `useState` initializer with the strip in an effect — doing both in the initializer
+looked tidier and silently broke the link, because StrictMode invokes initializers twice.
+
+- [ ] **The typed number is not enforced against the confirmed one.** They are compared in the
+      browser and a mismatch is explained, but nothing rejects it, because the confirmed number
+      is the one that gets used either way — this is messaging, not a control. Enforcing it
+      properly means a `claimed_phone` column, `/api/verify/start` storing it, and
+      `easyqueue-business-bot` refusing to mark a row verified when the shared contact differs.
+      Worth doing only if you want "you must sign up with the number you typed" to be a rule;
+      note it would strand anyone whose Telegram lives on a second SIM.
+
+---
+
 ## Working on this repo
 
 ### Deploying
 
-Push to `main` → GitHub Actions builds and deploys the Worker. CI runs `tsc --noEmit` before
-building; `vite build` alone strips types without resolving them, so a type error used to
-deploy green.
+Push to `main` → **Cloudflare's own Git integration** builds and deploys the Worker. Not GitHub
+Actions; the Actions workflow is a typecheck gate that deploys nothing. Worth knowing, because
+it went red for days without stopping a single deploy.
+
+CI and `npm run deploy` both run `tsc --noEmit` first. `vite build` alone strips types without
+resolving them, which is how a file calling twelve names it never imported once deployed green.
+
+### The check scripts
+
+Six of them, plain Node, no test runner and no dependencies:
+
+```bash
+node scripts/security-check.cjs
+```
+
+`security-check` (66), `sql-bind-check` (94), `tour-check` (111), `help-check` (147),
+`booking-order-check` (44), `deeplink-check` (22). Every one exists because something in it
+broke once. They assert against the **source**, and two of them had to be taught to strip
+comments first — the comment explaining a fix contains the string the check was looking for,
+so the check passed on the explanation rather than the code.
+
+`sql-bind-check` is the one that earns its keep: a prepare/bind arity mismatch is invisible to
+TypeScript, and replacing a `?` with a literal while leaving the bind argument in place is
+exactly the kind of edit that gets made at speed.
+
+`outreach/` has its own suite — `npm --prefix outreach test`, 114 checks.
 
 ### Migrations — the rule that matters
 
@@ -355,10 +410,8 @@ Where a deployed endpoint already touches the column, probe production instead �
 login is the best single check, because it queries `businesses` and then falls through to
 `staff`:
 
-```
-curl -X POST https://barber.easyq.uz/api/auth/login \
-  -H 'content-type: application/json' \
-  -d '{"username":"probe","password":"x"}'
+```bash
+curl -X POST https://barber.easyq.uz/api/auth/login -H 'content-type: application/json' -d '{"username":"probe","password":"x"}'
 ```
 
 `401` with JSON means the schema is fine. `500` with `no such column` means stop.
@@ -379,6 +432,10 @@ This is not theoretical. On 2026-07-30 a watcher on `/api/public/business` saw t
 payload shape twice, then the OLD shape again, twice, before it settled. One check would
 have reported success three separate times while the rollout was still in progress.
 
+And pick a discriminator the **framework** cannot produce either: grepping the built bundle
+for `createPortal` proved nothing, because `react-dom` exports it whether or not anything
+calls it.
+
 ### Types are not evidence either
 
 `serveStoredImage` annotated a D1 blob column as `ArrayBuffer`. D1 returns a blob as an
@@ -388,15 +445,18 @@ see (a DB driver, `JSON.parse`, a request body), the type is a comment. Narrow i
 
 ### Local development
 
-`npm ci` fails on the dev machine with `ERR_SSL_CIPHER_OPERATION_FAILED`, so there is no
-local `node_modules` and `wrangler` cannot run locally. Consequences:
+`npm ci` fails on the dev machine with `ERR_SSL_CIPHER_OPERATION_FAILED`, so **`wrangler`
+cannot run locally**. Consequences:
 
 - Migrations are applied through the **Cloudflare dashboard D1 console**: dash.cloudflare.com
-  → Storage & Databases → D1 SQL Database → `easyqueue_db` → Console.
+  → Storage & Databases → D1 SQL Database → `easyqueue_db` → Console. The `db:migrate:*` npm
+  scripts are there for a machine where wrangler works; they are not the path being used.
 - Typechecking borrows TypeScript from a sibling repo plus a stub for
   `@cloudflare/workers-types`. It covers all of `src`, but `react-dom/client` does not
   resolve — that one error is expected locally and does not appear in CI.
 - There is no local build or dev server, so **CI is the first real build** of any change.
+- The check scripts run on plain Node with no install, which is why they are `.cjs` and
+  dependency-free.
 
 ---
 
@@ -419,3 +479,11 @@ All in `migrations/`.
 | `2026-07-31-service-category.sql` | `services.category` | yes |
 | `2026-07-31-booking-services.sql` | `booking_services` table + backfill | yes |
 | `2026-07-31-reviews.sql` | extends the EXISTING `reviews` table; `bookings.review_token` | yes |
+| `2026-08-03-rate-limit.sql` | `rate_limit` table + window index | yes — 2026-08-04 |
+| `2026-08-04-subscriptions.sql` | `businesses.plan`, `plan_started_at`, `plan_expires_at` + index | yes |
+| `2026-08-04-service-images.sql` | `crm_service_images` table + index | yes |
+| `2026-08-04-temp-password-flag.sql` | `crm_temp_password_pending` on `businesses` and `staff`; nulls the plaintext | yes |
+
+`2026-08-03-rate-limit.sql` was confirmed live by burst-probing `/api/subdomain/check` in
+production and watching it turn 429 — the limiter fails open, so "no error" and "no limiter"
+look identical from the outside and the table's existence had to be proved, not assumed.

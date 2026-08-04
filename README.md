@@ -13,27 +13,63 @@ One Worker serves three things:
 
 Signing in on `crm.easyq.uz` redirects to the business's own subdomain, because the session
 cookie is host-only — see `submitToTenantHost` in `src/App.tsx` for why that is a form POST
-and not a `fetch`.
+and not a `fetch`, and the CSP note below for what that costs.
 
 ## What the CRM does
 
 - Daily booking calendar by employee, week and month views
 - Today overview and live reservation list
+- A notification bell over **every booking still awaiting confirmation, today onwards** — not
+  just the day being browsed, because a booking taken overnight for next Tuesday is exactly the
+  thing somebody needs telling about. Capped at 50
 - Take a booking by hand, picking an existing client or typing a new one
 - Employees with role, phone, photo, revenue, load, linked services and weekly shifts
 - Which clients belong to a given employee, and their visits with that person
-- Service catalogue with create/edit/archive and employee binding
+- Service catalogue with create/edit/archive, employee binding and a picture per service
 - Client book with visit history and spend, keyed on phone so repeat visits merge
 - Cash desk and analytics from the shared `payments` ledger
 - Staff logins with three permission levels, enforced server-side
 - Branding: logo, booking-page colours, and what the booking page asks for first
-- Share links and a printable QR for the public booking page
+- Share links and a printable QR for the public booking page, with a copy button on each
+- An in-product **Guide**, and a guided tour, both role-aware
+
+Everything the CRM shows is built by one function, `getCrmPayload`, and then narrowed per role
+by `redactPayloadFor`. Both are in `src/worker.ts`.
+
+**The dashboard and the cash desk both count on the server.** Two bugs came out of doing it
+elsewhere: KPI labels were built as Russian prose in the Worker and rendered verbatim, so an
+Uzbek owner read Russian on their own dashboard (the payload now carries a `labelKey` and
+`hintValues` instead of copy); and the cash desk built its breakdown client-side out of the
+day's bookings, so money taken today against a booking scheduled next week vanished from the
+list while still counting in the total above it. It now sends the payment rows, filtered on
+**when the money was taken**, which is the same basis as the headline figure.
+
+## The Guide, and the tour
+
+Two things, both **role-aware**, both without screenshots.
+
+`src/crm/Help.tsx` is the manual: twelve topics, each declaring the screen it explains, each
+with a button that opens that screen. `src/crm/Tour.tsx` is nine steps of first-run
+orientation. A topic or step whose screen the reader cannot open is **not rendered**, and steps
+that survive get different copy per role — the previous tour told a specialist to add services
+on a screen with no nav item and promised access rights to people who cannot grant them.
+
+**No screenshots, deliberately.** In one working day the booking link moved screens, Settings
+lost two sections, the light/dark toggle went away and the tour was rebuilt. Every screenshot
+taken that morning would now be showing a product that does not exist — and nothing would fail:
+an out-of-date picture renders perfectly. A button to the live screen is right by construction.
+
+The Guide sits **below the working screens, beside Settings**. Dashboard through Branding are
+the shop's daily work; the manual is not.
 
 ## Subscriptions
 
 Every new business gets **30 days free**, set at signup from the date in the shop's timezone.
 After that the CRM stops and offers the four plans — 175k / 299k / 499k / 799k so'm a month, by
-team size — with the smallest one that actually **covers their team** marked as recommended.
+team size.
+
+**Never below the featured tier.** `recommendPlan` floors at `p5` (299k) rather than picking the
+cheapest tier that fits, so a one-chair shop is offered the plan the business wants to sell.
 `src/shared/plans.ts` holds the prices and the rule; they are written down in exactly one other
 place, `outreach/lib/messages.mjs`, and the two must agree.
 
@@ -45,28 +81,62 @@ books somewhere else — which costs the shop the money being asked for.
 counts as active, and so does one whose date will not parse. Locking a paying shop out of its
 own calendar over a missing migration or a bad string is a worse failure than a free week.
 
-**There is no payment gateway.** Choosing a plan opens a Telegram conversation; somebody
-activates it by hand:
+**There is no payment gateway.** Choosing a plan opens a Telegram chat with the request already
+written — `t.me/<manager>?text=<message>`, which Telegram documents for **user** links and not
+only for bots. The message is in the owner's own language and names their plan, price, business
+and team size; the price is grouped `ru-RU` in all three languages so it matches the card they
+just tapped. Somebody then activates it by hand:
 
 ```sql
 UPDATE businesses SET plan = 'p5', plan_started_at = date('now'), plan_expires_at = date('now', '+30 day') WHERE slug = 'their-slug';
 ```
 
-## Rate limiting
+## Security
+
+### Rate limiting
 
 `src/server/rateLimit.ts`, counters in the `rate_limit` table. Fixed windows, keyed on
 `CF-Connecting-IP` — which the edge overwrites on every request, so unlike `X-Forwarded-For` the
 caller cannot choose their own bucket.
 
-Applied to login (per IP *and* per username, so a distributed attempt on one account still
-fills a bucket), sign-up, feedback, subdomain checks, public bookings and verification starts.
+Applied to login, sign-up, feedback, subdomain checks, public bookings, verification starts and
+image uploads.
+
+**Both login doors, not one.** `/api/auth/login` was limited and `/api/auth/session-login` was
+not, so the limit only decided which URL an attacker would use. Both are now limited per IP
+*and* per username, so a distributed attempt on one account still fills a bucket, and both burn
+a decoy hash on an unknown username so timing does not answer "does this account exist".
+`scripts/security-check.cjs` enumerates every block that verifies a password and asserts the
+throttle on each.
+
 Login is counted **before** the password hash, because those PBKDF2 iterations are the cost
 being defended — unlimited login attempts were a way for a stranger to spend the account's CPU.
-(100k, which is Cloudflare's ceiling; see the note on PBKDF2_ITERATIONS in `server/auth.ts`.)
+100k iterations, which is Cloudflare's ceiling: 600k is the OWASP figure and the Workers runtime
+refuses it outright. See the note on `PBKDF2_ITERATIONS` in `src/server/auth.ts`.
+
+Image uploads are limited **per business**, not per IP: they are authenticated, so the thing
+being bounded is an owner replacing a logo in a loop, 512 KB of D1 write at a time.
 
 **It fails open, and it does nothing until the migration is applied.** A limiter that 500s takes
 down the endpoint it protects, and pushing to `main` deploys before anyone can run SQL. Until
-`migrations/2026-08-03-rate-limit.sql` has run, every call logs `RATE LIMITING IS OFF`.
+`migrations/2026-08-03-rate-limit.sql` has run, every call logs `RATE LIMITING IS OFF` — which
+means "no error" and "no limiter" look identical from outside, so prove it rather than assuming
+it (burst `/api/subdomain/check` and watch for a 429).
+
+### Headers
+
+`withSecurityHeaders` wraps the router's output rather than being applied per route, so a new
+route cannot ship without them: `nosniff`, `strict-origin-when-cross-origin`, `base-uri 'self'`,
+and `frame-ancestors` / `form-action` as **allowlists**.
+
+Neither is `'self'`, and that is not laziness:
+
+- `frame-ancestors` has to keep the landing site's demo iframe working, so it lists `'self'`
+  plus the tenant roots.
+- `form-action 'self'` **broke login**. The login form posts credentials cross-origin to
+  `<slug>.easyq.uz/api/auth/session-login` so the tenant host sets its own cookie; `'self'`
+  blocked it silently — no redirect, and a page that appeared to do nothing. A CSP that forbids
+  something the app does is a broken feature, not a stricter policy.
 
 ### Roles
 
@@ -92,6 +162,22 @@ capabilities, not role names** — a new role therefore starts restricted rather
 privileged. A specialist's client book is rebuilt from their own bookings alone, so a
 colleague's takings and visit frequency cannot ride along on a shared client's row.
 
+The failure mode to watch for is a **new field, not a new role**: `paymentsToday` was added to
+the payload one morning and not to the `payment:write` gate, and specialists received the
+amount, method and customer name of every payment the shop took that day. The check now derives
+the field list from the payload rather than from a hand-written list.
+
+### Credentials are never stored in the clear
+
+A generated password is shown **once**, at the moment it is generated, and never stored. All the
+database keeps is `crm_temp_password_pending`, the one bit the UI needs: is this account still
+on a password we issued. If it is lost, generating another is one tap.
+
+Before 2026-08-04, `crm_temp_password` held the readable password for every business and every
+staff member indefinitely — so read access to the database was login access to every account,
+and both bots bind the same D1. The hash beside it was always the real credential; that column
+was a spare key under the mat.
+
 ## Branding
 
 Its own sidebar screen, owner-only. Three parts:
@@ -105,12 +191,9 @@ in `src/shared/brand.ts`. The text/background pair must clear WCAG AA (4.5:1) or
 refused — the settings screen and the Worker call the same function, so the disabled button
 and the 400 cannot disagree.
 
-The **booking page** takes all twelve tokens. The **CRM takes the accent only**, because the
-surface tokens are what the light/dark toggle switches, and an inline style on the root
-element beats a stylesheet — writing `--bg` there would leave the toggle visibly doing
-nothing. Appearance owns the surfaces, branding owns the accent. The sidebar gets its own
-accent derived against the navy, or a business with a dark brand would have an invisible
-active nav item. See `src/crm/brand-shell.ts`.
+The **booking page** takes all twelve tokens. The **CRM takes the accent only.** The sidebar
+gets its own accent derived against the navy, or a business with a dark brand would have an
+invisible active nav item. See `src/crm/brand-shell.ts`.
 
 **Booking order** (`businesses.booking_flow`) — what a customer is asked for first:
 
@@ -118,6 +201,7 @@ active nav item. See `src/crm/brand-shell.ts`.
 | --- | --- |
 | `service_first` | service, then specialist. The default, and what `NULL` means |
 | `staff_first` | specialist, then service, with services narrowed to that person |
+| `time_first` | date and time, then service, then specialist |
 | `service_only` | service only; the specialist is assigned and never shown |
 
 A service with **no specialist assigned is not offered at all** — there is nobody to give it
@@ -126,25 +210,50 @@ to. The services table flags those in amber so the owner can see why one vanishe
 ## The booking page
 
 A hub of full screens rather than one scrolling form. The customer starts from whichever of
-specialist / date / services they already know, and the order of what follows depends on that
-entry — one fixed order cannot serve all three, and asking for a specialist first when
-somebody began by picking Thursday at six is how a booking flow starts feeling like paperwork.
+specialist / date / services they already know, and the order of what follows depends on **both**
+that entry and the owner's `booking_flow` — one fixed order cannot serve all three, and asking
+for a specialist first when somebody began by picking Thursday at six is how a booking flow
+starts feeling like paperwork.
+
+The setting used to reorder the menu rows and nothing else: past the first tap every shop
+behaved like `service_first`. `scripts/booking-order-check.cjs` now asserts the walked order for
+every flow × entry pair.
+
+**It opens on a day that has room.** `GET /api/public/available-days` returns which of the next
+N days (clamped to 30) have availability, computed with the same `getPublicSlots` the slot list
+uses — so "this day has room" cannot disagree with what the day then offers. One request rather
+than the browser probing each date, which on a phone would be fourteen round trips re-reading
+the same rows. Empty days are dimmed, not hidden.
 
 A booking may hold several services, capped at two hours in total, and availability reserves
 the SUM of their durations. The whole selection lives in the URL —
 `?m12&s3&s7&d202607311430` — so a refresh, the back button, or a link forwarded to whoever is
 paying all resume the same booking. See `src/shared/bookingUrl.ts` and `src/shared/basket.ts`.
 
-The step order, and what is still missing, is in [TODO.md](TODO.md).
+Empty states say **which choice is missing** rather than "no times available", because the
+second reads as the shop being full when the real cause is that nothing has been picked yet.
+
+## Telegram links
+
+A shop's share panel offers three links, and the client-bot one carries the shop:
+
+```
+https://t.me/easyqueue_client_bot?start=<slug>
+```
+
+Without the payload, a shop handing out `t.me/easyqueue_client_bot` was sending its own
+customers into a directory of every business on the platform, competitors included. The payload
+falls back to `b<id>` for a business with no slug. `scripts/deeplink-check.cjs` asserts every
+link is built this way.
 
 ## Image uploads
 
 Logos, specialist photos and service pictures share one path, in `src/shared/imageFile.ts`.
-Logos and staff live in `crm_images`; services have their own table because that one is keyed
-`PRIMARY KEY (business_id, staff_id)` and SQLite cannot alter a primary key — service 14 and
-staff 14 both exist, so one column could not hold both. The storage function takes the table
-as an argument rather than being copied, since the byte validation is the part that must
-never drift between them.
+Logos and staff live in `crm_images`; services have their own table (`crm_service_images`)
+because that first one is keyed `PRIMARY KEY (business_id, staff_id)` and SQLite cannot alter a
+primary key — service 14 and staff 14 both exist, so one column could not hold both. The storage
+function takes the table as an argument rather than being copied, since the byte validation is
+the part that must never drift between them.
 
 - Accepted formats are decided by the file's **leading bytes**, never its name or
   `Content-Type` — both of those are chosen by whoever is uploading. PNG, JPEG and WebP.
@@ -156,6 +265,11 @@ never drift between them.
   carries no authority — the Worker repeats every check on bytes it read itself.
 - Responses carry a `Content-Type` from our own allowlist plus `X-Content-Type-Options:
   nosniff`, which is what keeps anything that did reach storage inert.
+- Rate limited per business, 40 an hour.
+
+There is **no virus scanning**, and there cannot be inside a Worker — no engine inspects a
+genuine PNG for a payload, and a Worker has none to call. The four guarantees above are what
+stands in its place. Real scanning needs an external service.
 
 **Bytes are stored base64, in a column declared `BLOB`.** Not an accident and not worth
 "optimising": D1 accepts only `ArrayBuffer` for a blob bind — a `Uint8Array` is an
@@ -172,7 +286,8 @@ npm install
 
 ## Local env
 
-Copy `.dev.vars.example` to `.dev.vars`:
+Create `.dev.vars` (gitignored, and there is no committed example — `.dev.vars.*` is ignored
+too, so one could not be checked in):
 
 ```bash
 APP_TIMEZONE=Asia/Tashkent
@@ -211,9 +326,35 @@ Against the real shared D1:
 npm run dev:worker:remote
 ```
 
-Deploy — push to `main`. **Cloudflare's own Git integration builds and deploys**, not GitHub
-Actions; the Actions workflow is a typecheck gate that deploys nothing. Worth knowing, because
-it went red for days without stopping a single deploy. To deploy by hand:
+## Checks
+
+Six scripts, plain Node, no test runner and no dependencies — which is why they are `.cjs` and
+run with no install on a machine where `npm ci` fails:
+
+```bash
+node scripts/security-check.cjs
+```
+
+| Script | Asserts |
+| --- | --- |
+| `security-check.cjs` | every login door is throttled, every authed route states a capability, money is redacted, headers are set, no plaintext passwords |
+| `sql-bind-check.cjs` | every `prepare`/`bind` pair agrees on arity — invisible to TypeScript |
+| `tour-check.cjs` | the tour's steps and copy, per role |
+| `help-check.cjs` | every Guide topic points at a screen that exists and the reader can open |
+| `booking-order-check.cjs` | the order a customer walks, per flow and per entry point |
+| `deeplink-check.cjs` | every Telegram link carries the shop |
+
+They assert against the **source**, and two of them had to be taught to strip comments first —
+the comment explaining a fix contains the string the check is looking for, so it passed on the
+explanation rather than the code.
+
+`outreach/` has its own suite: `npm --prefix outreach test`.
+
+## Deploy
+
+Push to `main`. **Cloudflare's own Git integration builds and deploys**, not GitHub Actions;
+the Actions workflow is a typecheck gate that deploys nothing. Worth knowing, because it went
+red for days without stopping a single deploy. To deploy by hand:
 
 ```bash
 npm run deploy
@@ -222,87 +363,20 @@ npm run deploy
 Both run `tsc --noEmit` first. `vite build` alone strips types without resolving them, which
 is how a file calling twelve names it never imported once deployed green.
 
-## Local D1 setup
+## Database
 
-```bash
-npm run db:init:local
-```
+Migrations live in `migrations/`, one file per change, each with the reasoning at the top.
+`package.json` has a `db:migrate:local:*` and mostly a `db:migrate:remote:*` script per file —
+but `wrangler` does not run on the dev machine, so **production migrations are applied through
+the Cloudflare dashboard D1 console** (Storage & Databases → D1 → `easyqueue_db` → Console).
 
-Then, in order — each adds columns or tables the CRM needs and the bot repo's own migrations
-do not create:
+A fresh local database is `npm run db:init:local` followed by each `db:migrate:local:*` in
+filename order.
 
-```bash
-npm run db:migrate:local
-```
-
-```bash
-npm run db:migrate:local:payments
-```
-
-```bash
-npm run db:migrate:local:crm
-```
-
-```bash
-npm run db:migrate:local:booking-phone
-```
-
-```bash
-npm run db:migrate:local:staff-role
-```
-
-```bash
-npm run db:migrate:local:staff-access
-```
-
-```bash
-npm run db:migrate:local:session-version
-```
-
-```bash
-npm run db:migrate:local:brand
-```
-
-```bash
-npm run db:migrate:local:brand-theme
-```
-
-```bash
-npm run db:migrate:local:booking-flow
-```
-
-```bash
-npm run db:migrate:local:images
-```
-
-```bash
-npm run db:migrate:local:service-category
-```
-
-```bash
-npm run db:migrate:local:booking-services
-```
-
-```bash
-npm run db:migrate:local:reviews
-```
-
-```bash
-npm run db:migrate:local:rate-limit
-```
-
-```bash
-npm run db:migrate:local:subscriptions
-```
-
-```bash
-npm run db:migrate:local:service-images
-```
-
-Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migration rule in
-[TODO.md](TODO.md) before running one against production** — migrate first, deploy second,
-and verify the column exists rather than trusting the console's report. Doing it the other
-way round cost a login outage.
+**Read the migration rule in [TODO.md](TODO.md) before running one against production** —
+migrate first, deploy second, run new statements one at a time, and verify the column exists
+rather than trusting the console's report. Doing it the other way round cost a login outage.
+The full applied-to-production table is in TODO.md.
 
 ## Phone verification
 
@@ -320,6 +394,21 @@ using the other one.
 The handler lives in `easyqueue-business-bot/src/handlers/signup.handler.ts` — in that repo,
 not this one, because a bot has exactly one webhook and that bot's already points there.
 
+## Outreach
+
+`outreach/` runs the project's **own Telegram account** to send the intro to a list of
+businesses, answer the easy replies and sort the chats into folders — driven entirely from
+Saved Messages. It is in this repo for one clone but runs on your machine, not in the Worker:
+MTProto needs a long-lived socket, and a Bot API bot physically cannot start a conversation.
+
+```bash
+npm run bot:check
+```
+
+See [outreach/README.md](outreach/README.md). Its session file, `.env` and contact ledger are
+gitignored and must stay that way — **this repository is public**, and that session string is
+the account login.
+
 ## Notes
 
 - The CRM reads the same D1 schema as the bots, and shares `businesses`, `staff`, `services`,
@@ -333,13 +422,16 @@ not this one, because a bot has exactly one webhook and that bot's already point
 - Every phone field takes **any country**, and infers which one from the prefix rather than
   offering a dropdown first: `+998` shows a 🇺🇿, `+7` a 🇷🇺 or 🇰🇿, `+1` a 🇺🇸. No flag until the
   prefix is unambiguous — `+7` alone is both Russia and Kazakhstan, so a globe stands in until
-  the digit that separates them arrives. The empty field is seeded with `+998 ` by its
-  **placeholder only**, so the common case types nine digits and nobody has to delete anything
-  to type another country's code. Caret position is restored by digit count, not character
-  index, or it drifts a place every time reformatting moves a space.
+  the digit that separates them arrives. The empty field is **seeded with `+998 ` on focus**;
+  as a placeholder alone it looked seeded when it was not, and people typed nine digits into an
+  empty field. Caret position is restored by digit count, not character index, or it drifts a
+  place every time reformatting moves a space.
 - Availability has one definition — `src/shared/availability.ts`, shared by the owner's
   calendar and the public booking API. Do not fork it.
 - Money is UZS. A **price** of 0 prints nothing, because it means nobody set one; a **total**
   of 0 prints `0`, because the day really did take zero. `fmtPrice` vs `fmtSom`.
+- Tooltips render through a **portal**, positioned `fixed`, and clamp themselves to the
+  viewport. Inline they were clipped by whichever card or modal they sat in — the tooltip was
+  correct and invisible.
 - The bots can still double-book, and a bot booking will not merge with a web booking by the
   same person. Both need changes in the bot repo — see *Known limits* in [TODO.md](TODO.md).

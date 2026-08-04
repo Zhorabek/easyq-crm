@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { Avatar, Badge, Field, FooterBtns, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
+import { Avatar, Badge, Field, FooterBtns, InfoTip, Modal, PhoneInput, Segmented, SelectInput, StatusBadge, TextInput } from './ui';
 import { avatarColor, fmtPrice, fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { formatPhone, isValidPhone, toStoragePhone } from '../shared/phone';
@@ -101,7 +101,10 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
         ].map((s, i) => (
           <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 11, padding: '12px 10px', textAlign: 'center' }}>
             <div className="tnum" style={{ fontSize: 15, fontWeight: 800 }}>{s[0]}</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s[1]}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {s[1]}
+              <InfoTip text={[f.tipPrice, f.tipPaid, f.tipOwed][i]} />
+            </div>
           </div>
         ))}
       </div>
@@ -113,20 +116,31 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
         ))}
       </div>
       <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>{f.txns}</div>
+        {/* A heading and a sentence, not three bare dropdowns.
+            "Kirim / Naqd / 0" is a set of category names, and a category name only helps
+            somebody who already knows the category. These owners are barbers, not accountants:
+            what they need to read is "the customer paid — write it down here". */}
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+          {f.recordTitle}
+          <InfoTip text={f.recordTip} />
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600, marginBottom: 10, lineHeight: 1.45 }}>{f.recordSub}</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 120 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-3)', marginBottom: 4 }}>{f.flowLabel}</div>
             <SelectInput value={flow} onChange={(e) => setFlow(e.target.value as 'in' | 'out')}>
-              <option value="in">{f.incoming}</option>
-              <option value="out">{f.refund}</option>
+              <option value="in">{f.flowIn}</option>
+              <option value="out">{f.flowOut}</option>
             </SelectInput>
           </div>
           <div style={{ flex: 1, minWidth: 120 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-3)', marginBottom: 4 }}>{f.methodLabel}</div>
             <SelectInput value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
               {(['cash', 'card', 'transfer', 'other'] as const).map((mm) => <option key={mm} value={mm}>{methodLabel[mm]}</option>)}
             </SelectInput>
           </div>
         </div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-3)', marginBottom: 4 }}>{f.amountLabel}</div>
         <div style={{ display: 'flex', gap: 8 }}>
           {/* The currency sits INSIDE the field, against the digits being typed. A label above
               the row is read once and then ignored; this is next to the number itself. */}

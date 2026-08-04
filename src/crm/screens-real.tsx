@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { Avatar, Badge, Donut, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
+import { Avatar, Badge, Donut, InfoTip, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
 import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, serviceSummary, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
@@ -47,7 +47,10 @@ export function Dashboard() {
             </span>
             <div className="tnum" style={{ marginTop: 14, fontSize: 24, fontWeight: 800, letterSpacing: '-.03em', whiteSpace: 'nowrap' }}>{k.value}</div>
             {/* Translated here, from a key. The Worker sends no prose — see KpiCard. */}
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{t.dash.live[k.labelKey]}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center' }}>
+              {t.dash.live[k.labelKey]}
+              <InfoTip text={t.dash.live[`${k.labelKey}Tip`]} />
+            </div>
             {(() => {
               const hint = t.dash.live[`${k.labelKey}Hint`];
               const text = typeof hint === 'function' ? hint(...(k.hintValues ?? [])) : hint;

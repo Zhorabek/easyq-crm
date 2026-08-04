@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
@@ -419,3 +420,63 @@ export function SetRow({ title, desc, children, first }: { title: string; desc?:
 }
 
 export const iconBtn: CSSProperties = { width: 38, height: 38, borderRadius: 11, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', display: 'grid', placeItems: 'center' };
+
+/**
+ * A "?" next to a heading that explains what the thing below it is for.
+ *
+ * These owners are barbers and salon managers, not people who have used a CRM before. Words
+ * that read as obvious to whoever built the screen — "Kirim", "Yuklama", "Qarz qoldi" — are
+ * category names, not explanations, and a category name only helps somebody who already knows
+ * the category. The payment box was the clearest case: three controls, no sentence anywhere
+ * saying "this is where you record that the customer paid".
+ *
+ * Click, not hover. Half these people are on a phone, where hover does not exist, and a tip
+ * that only appears to mouse users is a tip that is missing exactly when someone is standing at
+ * a counter with a customer waiting.
+ */
+export function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle', marginLeft: 6 }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((prev: boolean) => !prev); }}
+        aria-label={text}
+        aria-expanded={open}
+        style={{
+          width: 16, height: 16, borderRadius: '50%', display: 'grid', placeItems: 'center',
+          fontSize: 10.5, fontWeight: 800, lineHeight: 1, cursor: 'pointer',
+          background: open ? 'var(--accent)' : 'var(--panel-2)',
+          color: open ? 'var(--accent-ink)' : 'var(--ink-3)',
+          border: '1px solid var(--line-2)',
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute', top: 22, left: -8, zIndex: 70, width: 230,
+            background: 'var(--ink)', color: 'var(--panel)', borderRadius: 10,
+            padding: '9px 11px', fontSize: 12, fontWeight: 600, lineHeight: 1.45,
+            boxShadow: 'var(--shadow-lg)', textAlign: 'left', whiteSpace: 'normal',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}

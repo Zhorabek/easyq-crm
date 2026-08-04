@@ -94,7 +94,11 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
         {/* Price can be unset; the two payment figures are real totals and 0 is meaningful. */}
-        {[[fmtPrice(booking.price) ?? '—', t.serv.colPrice], [fmtSom(booking.payment.net), f.incoming], [fmtSom(Math.max(booking.payment.remaining, 0)), t.an.outstanding]].map((s, i) => (
+        {[
+          [fmtPrice(booking.price) ?? '—', t.serv.colPrice],
+          [`${fmtSom(booking.payment.net)} ${f.currency}`, f.incoming],
+          [`${fmtSom(Math.max(booking.payment.remaining, 0))} ${f.currency}`, t.an.outstanding],
+        ].map((s, i) => (
           <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 11, padding: '12px 10px', textAlign: 'center' }}>
             <div className="tnum" style={{ fontSize: 15, fontWeight: 800 }}>{s[0]}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s[1]}</div>
@@ -124,12 +128,17 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <TextInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" inputMode="decimal" style={{ flex: 1 }} />
+          {/* The currency sits INSIDE the field, against the digits being typed. A label above
+              the row is read once and then ignored; this is next to the number itself. */}
+          <div style={{ position: 'relative', flex: 1 }}>
+            <TextInput value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" inputMode="decimal" style={{ width: '100%', paddingRight: 52 }} />
+            <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12.5, fontWeight: 700, color: 'var(--ink-3)', pointerEvents: 'none' }}>{f.currency}</span>
+          </div>
           <button
             onClick={() => { const v = Number(amount); if (Number.isFinite(v) && v > 0) onPay({ amount: v, method, flow }); }}
             style={{ flex: 'none', padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 7 }}
           >
-            <Ic name="check" size={16} stroke={2.4} />{m.booking.submit}
+            <Ic name="check" size={16} stroke={2.4} />{f.addPayment}
           </button>
         </div>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -138,7 +147,7 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
               <Badge color={p.flow === 'in' ? 'var(--accent-deep)' : 'var(--rose)'} tint={p.flow === 'in' ? 'var(--accent-tint)' : 'var(--rose-t)'}>{p.flow === 'in' ? f.incoming : f.refund}</Badge>
               <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>{methodLabel[p.method]}</span>
-              <span className="tnum" style={{ marginLeft: 'auto', fontWeight: 800 }}>{fmtSom(p.amount)}</span>
+              <span className="tnum" style={{ marginLeft: 'auto', fontWeight: 800 }}>{fmtSom(p.amount)} {f.currency}</span>
             </div>
           ))}
         </div>

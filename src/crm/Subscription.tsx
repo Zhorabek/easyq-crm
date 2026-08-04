@@ -32,6 +32,21 @@ const MANAGER_USERNAME = 'easyq_manager';
 const MANAGER_URL = `https://t.me/${MANAGER_USERNAME}`;
 
 /**
+ * Telegram's share sheet, which is the ONLY way to hand it a written message.
+ *
+ * `https://t.me/<user>?text=` is ignored — that parameter works for bots and for this share
+ * URL, never for a person's chat. So the choice is: land directly in the manager's DM with an
+ * empty box, or land in a chat picker with the message already typed. The second is what an
+ * owner wants, because the alternative is them writing "hi" and being asked three questions.
+ *
+ * The cost is one tap to pick @easyq_manager from the list. The clipboard copy still happens
+ * alongside, so somebody who closes the picker can paste instead.
+ */
+function shareUrl(message: string) {
+  return `https://t.me/share/url?url=${encodeURIComponent(MANAGER_URL)}&text=${encodeURIComponent(message)}`;
+}
+
+/**
  * The message the owner arrives with.
  *
  * Telegram has NO way to prefill text when opening a person's DM — `?text=` works for bots and
@@ -142,10 +157,13 @@ export function PlanGrid({
 
   const pick = async (plan: SubscriptionInfo['plans'][number]) => {
     const label = `${t.sub.upTo} ${plan.maxStaff} ${t.sub.staffWord}`;
-    const copied = await copyText(requestText(label, plan.price, bizName, subscription.staffCount));
-    // Opened after the copy, not before: a new tab steals focus, and a clipboard write from a
-    // background document is refused by every browser that implements the permission properly.
-    window.open(MANAGER_URL, '_blank', 'noopener');
+    const message = requestText(label, plan.price, bizName, subscription.staffCount);
+
+    // Copied FIRST: a clipboard write from a document that has just lost focus to a new tab is
+    // refused by browsers that implement the permission properly. This is the fallback for
+    // anyone who dismisses the picker.
+    const copied = await copyText(message);
+    window.open(shareUrl(message), '_blank', 'noopener');
     onPicked?.(copied);
   };
 
@@ -165,31 +183,35 @@ export function SubscriptionExpired({ subscription }: { subscription: Subscripti
   const lapsedFor = subscription.daysLeft === null ? null : Math.abs(subscription.daysLeft);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '32px 20px', background: 'var(--bg)' }}>
+    <div style={{ position: 'relative', minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '32px 20px', background: 'var(--bg)' }}>
+      {/* Top right, out of the way.
+          This screen replaces the whole CRM, and the language switcher lives in the shell it
+          replaced — so an owner who reads Uzbek was stuck on whichever language happened to be
+          set, on the one screen asking them to spend money. It sat beside the logo first, which
+          made a centred lockup into a lopsided one; the corner is where a utility control
+          belongs and where every other product puts it. */}
+      <div style={{ position: 'absolute', top: 18, right: 20, display: 'inline-flex', gap: 2, background: 'var(--panel-2)', borderRadius: 999, padding: 3 }}>
+        {CRM_LANGS.map((L) => {
+          const on = lang === L.code;
+          return (
+            <button
+              key={L.code}
+              onClick={() => setLang(L.code)}
+              style={{
+                fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 999, cursor: 'pointer',
+                color: on ? 'var(--accent-ink)' : 'var(--ink-3)',
+                background: on ? 'var(--accent)' : 'transparent',
+              }}
+            >
+              {L.label}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ width: '100%', maxWidth: 880 }}>
-        {/* This screen replaces the whole CRM, and the language switcher lives in the shell it
-            replaced — so an owner who reads Uzbek was stuck on whichever language happened to
-            be set, on the one screen asking them to spend money. */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 26, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 26 }}>
           <CRMLogo on="light" />
-          <span style={{ display: 'inline-flex', gap: 2, background: 'var(--panel-2)', borderRadius: 999, padding: 3 }}>
-            {CRM_LANGS.map((L) => {
-              const on = lang === L.code;
-              return (
-                <button
-                  key={L.code}
-                  onClick={() => setLang(L.code)}
-                  style={{
-                    fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 999, cursor: 'pointer',
-                    color: on ? 'var(--accent-ink)' : 'var(--ink-3)',
-                    background: on ? 'var(--accent)' : 'transparent',
-                  }}
-                >
-                  {L.label}
-                </button>
-              );
-            })}
-          </span>
         </div>
 
         <div style={{ textAlign: 'center', marginBottom: 26 }}>

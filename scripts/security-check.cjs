@@ -157,6 +157,15 @@ for (const f of payloadFields) {
   check(`payload field "${f}" is inside the money gate`, moneyGate.includes(`${f}: []`));
 }
 
+// The per-staff service breakdown is a transport field: it exists so a master's donut can be
+// scoped, and it must leave the payload for EVERY role, not just the one that consumes it.
+check('services carry a per-staff breakdown server-side', /bookingsCountByStaff: serviceBookings\.reduce/.test(worker));
+check('a master reads their own count from it', /bookingsCountByStaff\?\.\[String\(mine\)\] \?\? 0/.test(worker));
+check('the breakdown is stripped for every role', /bookingsCountByStaff: _dropped, \.\.\.service/.test(worker));
+// Stripped OUTSIDE the scoped branch, or a role added later keeps it.
+const scopedBranch = (worker.match(/if \(isScopedToOwnBookings\(actor\.role\)[\s\S]*?\n  \}/) || [''])[0];
+check('the strip is not inside the specialist-only branch', !scopedBranch.includes('_dropped'));
+
 /* ------------------------------------------------------------- headers */
 
 check('every response goes through withSecurityHeaders',

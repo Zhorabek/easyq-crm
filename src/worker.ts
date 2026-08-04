@@ -2537,6 +2537,15 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       linkedStaffIds: staffIdsByService.get(service.id) ?? [],
       linkedStaffNames: staffNamesByService.get(service.id) ?? [],
       bookingsCount: serviceBookings.length,
+      // Per-staff counts, used ONLY to scope this number for a master and stripped before the
+      // payload leaves redactPayloadFor. Their dashboard donut was showing the whole shop's
+      // mix — no customer data, but it told somebody scoped to their own book how much work
+      // everyone else was doing.
+      bookingsCountByStaff: serviceBookings.reduce<Record<string, number>>((acc, booking) => {
+        const key = String(booking.staff_id ?? 0);
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {}),
       upcomingBookings: serviceBookings.filter(
         (booking) =>
           booking.status !== "cancelled" && booking.datetime >= `${selectedDate} 00:00:00`
@@ -2920,6 +2929,11 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         bookings: visible.calendar.bookings.filter((card) => isMine(card.staffId)),
       },
       employees: visible.employees.filter((employee) => employee.id === mine),
+      // "Bookings by service" becomes THEIR bookings by service.
+      services: visible.services.map((service) => ({
+        ...service,
+        bookingsCount: service.bookingsCountByStaff?.[String(mine)] ?? 0,
+      })),
       // Specialists get the PUBLIC links — the shop's booking page and the client bot.
       //
       // These were withheld on the theory that sharing was the owner's job. In a barbershop it
@@ -2979,6 +2993,14 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
       })),
     };
   }
+
+  // The per-staff breakdown is transport, not content: it exists so the branch above can scope
+  // one number, and every role loses it here. Unconditional, so it cannot leak by a role being
+  // added later and missing the branch that consumes it.
+  visible = {
+    ...visible,
+    services: visible.services.map(({ bookingsCountByStaff: _dropped, ...service }) => service),
+  };
 
   // Who can sign in, under what username, and who still holds a temporary password is
   // only the business of whoever can change those things.

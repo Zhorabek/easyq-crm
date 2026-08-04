@@ -261,6 +261,13 @@ export interface ServiceCatalogItem {
   linkedStaffIds: number[];
   linkedStaffNames: string[];
   bookingsCount: number;
+  /**
+   * Per-staff counts behind `bookingsCount`, keyed by staff id.
+   *
+   * Transport only — redactPayloadFor uses it to scope `bookingsCount` for a master and then
+   * removes it from every response, so the client never sees this field.
+   */
+  bookingsCountByStaff?: Record<string, number>;
   upcomingBookings: number;
   completedRevenue: number;
 }

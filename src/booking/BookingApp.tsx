@@ -126,6 +126,17 @@ function PhoneField({ value, onChange }: { value: string; onChange: (v: string) 
         autoComplete="tel"
         value={text}
         placeholder={defaultDialPrefix() + nationalPlaceholder()}
+        // Seed the country code the moment the field is touched.
+        //
+        // Without this the box starts empty, and an Uzbek customer typing their number the way
+        // they say it out loud — 90 111 22 33 — hands the formatter bare digits. It reads the
+        // leading 90 as TURKEY's calling code, shows a Turkish flag, and marks the field
+        // invalid, so somebody who typed their own number correctly cannot submit the form.
+        //
+        // defaultDialPrefix() exists for exactly this and its own comment says so ("what to
+        // seed an empty field with"); nothing ever called it as a value. It stays deletable —
+        // a foreign customer selects all and types their own +code.
+        onFocus={() => { if (!text) onChange(defaultDialPrefix()); }}
         onChange={(e) => {
           const caret = e.target.selectionStart ?? e.target.value.length;
           caretRef.current = e.target.value.slice(0, caret).replace(/\D/g, '').length;

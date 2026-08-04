@@ -12,6 +12,7 @@ export const CI: Record<string, string> = {
   search: 'M21 21l-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z',
   bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
   plus: 'M12 5v14M5 12h14',
+  camera: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2ZM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
   chevL: 'M15 18l-6-6 6-6',
   chevR: 'M9 18l6-6-6-6',
   chevD: 'M6 9l6 6 6-6',

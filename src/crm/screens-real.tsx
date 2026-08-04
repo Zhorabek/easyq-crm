@@ -790,17 +790,28 @@ export function Services() {
         {payload.services.map((x, i) => (
           <div key={x.id} className="crm-serv-row" style={{ display: 'grid', gridTemplateColumns: '2.4fr 1.2fr 1fr 1.1fr 1.2fr', gap: 12, alignItems: 'center', padding: '15px 22px', borderTop: i ? '1px solid var(--line)' : 'none', opacity: x.isActive ? 1 : 0.6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              {/* The tile doubles as the picture and the upload button: click to replace,
-                  which is the same gesture as the staff photo, so there is one thing to learn.
-                  A service with no picture keeps the coloured scissors tile it always had. */}
+              {/* The tile is the picture AND the upload button, which only works if it LOOKS
+                  like a button. The first version was a bare tile and you had to already know
+                  it was clickable — an invisible affordance is the same as no affordance.
+                  So: a camera badge always sits in the corner, and hovering covers the tile
+                  with a camera over a scrim. Both say "this takes a picture" before you click. */}
               <button
                 onClick={() => uploadServicePhoto(x.id)}
-                title={sv.photoHint}
-                style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', overflow: 'hidden', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
+                title={x.hasPhoto ? sv.photoReplace : sv.photoHint}
+                className="crm-photo-tile"
+                style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', overflow: 'hidden', cursor: 'pointer', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
               >
                 {x.hasPhoto
                   ? <img src={`/api/services/${x.id}/photo`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   : <Ic name="scissors" size={18} stroke={2} />}
+
+                <span className="crm-photo-tile-hover">
+                  <Ic name="camera" size={15} stroke={2} />
+                </span>
+
+                <span className="crm-photo-tile-badge">
+                  <Ic name={x.hasPhoto ? 'camera' : 'plus'} size={9} stroke={3} />
+                </span>
               </button>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>

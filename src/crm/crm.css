@@ -653,3 +653,45 @@ a {
     overflow: visible !important;
   }
 }
+
+/* ---------------- Photo tiles that look uploadable ----------------
+   A tile that is secretly a button is a tile nobody clicks. These two make the gesture
+   visible: a badge that is always there, and a hover state that covers the image. Used by
+   the service list; the same classes suit any other "click the picture to change it" spot. */
+.crm-photo-tile-badge {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  /* Cut out of the tile rather than floating on it, so it reads as attached at any size. */
+  box-shadow: 0 0 0 2px var(--panel);
+  pointer-events: none;
+}
+
+.crm-photo-tile-hover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+  pointer-events: none;
+}
+
+.crm-photo-tile:hover .crm-photo-tile-hover,
+.crm-photo-tile:focus-visible .crm-photo-tile-hover {
+  opacity: 1;
+}
+
+/* Touch has no hover, so the badge is the only signal there — keep it prominent. */
+@media (hover: none) {
+  .crm-photo-tile-badge { width: 17px; height: 17px; }
+}

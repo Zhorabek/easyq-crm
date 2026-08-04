@@ -235,7 +235,7 @@ export function StaffEditModal({
         <>
           <button onClick={onDelete} style={{ flex: 'none', padding: '11px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700, color: 'var(--rose)', background: 'var(--rose-t)' }}>{t.staff.delete}</button>
           <button onClick={submit} disabled={!valid} style={{ flex: 1, padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--accent-ink)', background: valid ? 'var(--accent)' : 'var(--panel-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-            <Ic name="check" size={17} stroke={2.4} />{m.saved}
+            <Ic name="check" size={17} stroke={2.4} />{m.save}
           </button>
         </>
       }
@@ -376,7 +376,7 @@ export function BusinessModal({ initial, onClose, onSave }: { initial: { name: s
   const up = (k: keyof typeof initial, v: string) => setF((p) => ({ ...p, [k]: v }));
   const valid = f.name.trim() && f.address.trim() && isValidPhone(f.phone) && f.schedule.trim();
   return (
-    <Modal title={s.profile} sub={s.profileSub} icon="settings" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} disabled={!valid} onSubmit={() => onSave({ ...f, phone: toStoragePhone(f.phone) ?? f.phone, description: f.description.trim() || null })} />}>
+    <Modal title={s.profile} sub={s.profileSub} icon="settings" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.save} disabled={!valid} onSubmit={() => onSave({ ...f, phone: toStoragePhone(f.phone) ?? f.phone, description: f.description.trim() || null })} />}>
       <Field label={s.bizName}><TextInput value={f.name} onChange={(e) => up('name', e.target.value)} autoFocus /></Field>
       <div style={{ display: 'flex', gap: 12 }}>
         <Field label={s.category} half>
@@ -790,7 +790,7 @@ export function SlotEditorModal({
   });
 
   return (
-    <Modal title={employee.name} sub={st.schedule} icon="calendar" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.saved} onSubmit={save} />}>
+    <Modal title={employee.name} sub={st.schedule} icon="calendar" onClose={onClose} footer={<FooterBtns onClose={onClose} submitLabel={m.save} onSubmit={save} />}>
       <Segmented value={mode} onChange={(v) => setMode(v as 'slots' | 'breaks')} options={[{ v: 'slots', l: t.cal.addSlot }, { v: 'breaks', l: t.cal.break }]} />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

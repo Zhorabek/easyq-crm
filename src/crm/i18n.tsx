@@ -647,7 +647,7 @@ export const CRM_M: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Veb', walkin: 'Tashrif', phone: 'Telefon' },
     cats: { hair: 'Soch', beard: 'Soqol' },
     roles: { barber: 'Sartarosh', stylist: 'Stilist' },
-    saved: 'Saqlandi',
+    save: 'Saqlash', saved: 'Saqlandi',
   },
   ru: {
     cancel: 'Отмена',
@@ -661,7 +661,7 @@ export const CRM_M: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Сайт', walkin: 'Визит', phone: 'Телефон' },
     cats: { hair: 'Волосы', beard: 'Борода' },
     roles: { barber: 'Барбер', stylist: 'Стилист' },
-    saved: 'Сохранено',
+    save: 'Сохранить', saved: 'Сохранено',
   },
   en: {
     cancel: 'Cancel',
@@ -675,7 +675,7 @@ export const CRM_M: Record<Lang, any> = {
     via: { telegram: 'Telegram', web: 'Web', walkin: 'Walk-in', phone: 'Phone' },
     cats: { hair: 'Hair', beard: 'Beard' },
     roles: { barber: 'Barber', stylist: 'Stylist' },
-    saved: 'Saved',
+    save: 'Save', saved: 'Saved',
   },
 };
 

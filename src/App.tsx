@@ -9,6 +9,8 @@ import {
   deleteBusinessPhoto as apiDeleteBusinessPhoto,
   uploadStaffPhoto as apiUploadStaffPhoto,
   deleteStaffPhoto as apiDeleteStaffPhoto,
+  uploadServicePhoto as apiUploadServicePhoto,
+  deleteServicePhoto as apiDeleteServicePhoto,
   deleteEmployee,
   grantStaffAccess,
   revokeStaffAccess,
@@ -42,6 +44,7 @@ import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type 
 import { DataCtx, type DataValue } from './crm/data';
 import { Ic } from './crm/icons';
 import { CRMLogo, Toast } from './crm/ui';
+import { SubscriptionBanner, SubscriptionExpired } from './crm/Subscription';
 import { Tour } from './crm/Tour';
 import { Sidebar, Topbar } from './crm/shell';
 import { useBrandAccent } from './crm/brand-shell';
@@ -185,7 +188,9 @@ export default function App() {
   // Which upload the open file dialog belongs to. One <input type="file"> is reused for the
   // logo and every specialist, because a dialog is modal — only one can be open — and a ref
   // per staff member would be an input per row for a control used once in a while.
-  const photoTarget = useRef<{ kind: 'logo' } | { kind: 'staff'; staffId: number }>({ kind: 'logo' });
+  const photoTarget = useRef<
+    { kind: 'logo' } | { kind: 'staff'; staffId: number } | { kind: 'service'; serviceId: number }
+  >({ kind: 'logo' });
 
   const t = CRM_T[lang] || CRM_T.uz;
 
@@ -465,12 +470,16 @@ export default function App() {
     const target = photoTarget.current;
     try {
       if (target.kind === 'staff') await apiUploadStaffPhoto(target.staffId, shrunk);
+      else if (target.kind === 'service') await apiUploadServicePhoto(target.serviceId, shrunk);
       else await apiUploadBusinessPhoto(shrunk);
       notify();
       await reload();
     } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
 
+  async function doDeleteServicePhoto(serviceId: number) {
+    try { await apiDeleteServicePhoto(serviceId); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
+  }
   async function doDeleteStaffPhoto(staffId: number) {
     try { await apiDeleteStaffPhoto(staffId); notify(); await reload(); } catch (err) { notify(err instanceof Error ? err.message : 'Error'); }
   }
@@ -641,8 +650,24 @@ export default function App() {
     deleteBusinessPhoto: () => void doDeletePhoto(),
     uploadStaffPhoto: (staffId) => { photoTarget.current = { kind: 'staff', staffId }; photoInputRef.current?.click(); },
     deleteStaffPhoto: (staffId) => void doDeleteStaffPhoto(staffId),
+    uploadServicePhoto: (serviceId) => { photoTarget.current = { kind: 'service', serviceId }; photoInputRef.current?.click(); },
+    deleteServicePhoto: (serviceId) => void doDeleteServicePhoto(serviceId),
   };
 
+
+  // A lapsed subscription replaces the CRM entirely rather than disabling parts of it. Half a
+  // product with buttons that do nothing is worse than a clear stop with a way to fix it.
+  //
+  // It deliberately does NOT touch the public booking page or the bots: the shop owes money,
+  // their customers do not, and a customer who cannot book books somewhere else — which costs
+  // the shop the very money being asked for.
+  if (payload && !payload.subscription.active) {
+    return (
+      <CRMCtx.Provider value={crmValue}>
+        <SubscriptionExpired subscription={payload.subscription} />
+      </CRMCtx.Provider>
+    );
+  }
 
   return (
     <CRMCtx.Provider value={crmValue}>
@@ -651,6 +676,7 @@ export default function App() {
           {navOpen && <div className="crm-nav-scrim" onClick={() => setNavOpen(false)} />}
           <Sidebar active={effActive} setActive={setActive} navOpen={navOpen} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {payload && <SubscriptionBanner subscription={payload.subscription} />}
             <Topbar title={meta.title} sub={meta.sub} onMenu={() => setNavOpen(true)} action={meta.action ? { label: meta.action.label, onClick: meta.action.run } : null} />
             <main style={{ flex: 1, minWidth: 0 }}>
               {loading && !payload ? (

@@ -58,6 +58,30 @@ export interface AuthSession {
 }
 
 /** One staff member's CRM access, for the owner's Team & access screen. */
+/** One tier on the plan picker. */
+export interface PlanOption {
+  id: string;
+  maxStaff: number;
+  price: number;
+  featured: boolean;
+  /** False when the team is already bigger than this tier allows. */
+  fitsTeam: boolean;
+  /** The one suggested for this shop's team size. */
+  recommended: boolean;
+}
+
+export interface SubscriptionInfo {
+  plan: string;
+  active: boolean;
+  onTrial: boolean;
+  expiresAt: string | null;
+  /** Negative once lapsed, null when there is no expiry recorded. */
+  daysLeft: number | null;
+  /** How many staff the recommendation was based on. */
+  staffCount: number;
+  plans: PlanOption[];
+}
+
 export interface StaffAccessRow {
   staffId: number;
   name: string;
@@ -198,6 +222,8 @@ export interface ServiceCatalogItem {
   price: number;
   duration: number;
   isActive: boolean;
+  /** A flag, not an id: the bytes come from /api/services/<id>/photo. Same shape as staff. */
+  hasPhoto: boolean;
   linkedStaffIds: number[];
   linkedStaffNames: string[];
   bookingsCount: number;
@@ -362,6 +388,14 @@ export interface CrmPayload {
    * gated on the capability rather than on a role name.
    */
   staffAccess: StaffAccessRow[];
+  /**
+   * The shop's subscription, as of today in the shop's own timezone.
+   *
+   * Sent to every role, unredacted: a specialist who cannot open the calendar needs to be told
+   * why, and "the shop has not paid" is not a secret from the people who work there. Only the
+   * owner is offered the plan picker.
+   */
+  subscription: SubscriptionInfo;
 }
 
 export interface UpdateBookingStatusInput {

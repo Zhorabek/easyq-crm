@@ -45,7 +45,11 @@
     "preflight": "npm run typecheck && npm run build",
     "preview": "vite preview",
     "deploy": "npm run typecheck && npm run build && wrangler deploy",
-    "bot:debug": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run bot -- --debug"
+    "bot:debug": "npm --prefix outreach install --silent --no-audit --no-fund && npm --prefix outreach run bot -- --debug",
+    "db:migrate:local:subscriptions": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-08-04-subscriptions.sql",
+    "db:migrate:remote:subscriptions": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-08-04-subscriptions.sql",
+    "db:migrate:local:service-images": "wrangler d1 execute easyqueue_db --local --file=./migrations/2026-08-04-service-images.sql",
+    "db:migrate:remote:service-images": "wrangler d1 execute easyqueue_db --remote --file=./migrations/2026-08-04-service-images.sql"
   },
   "dependencies": {
     "libphonenumber-js": "^1.13.10",

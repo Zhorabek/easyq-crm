@@ -186,6 +186,8 @@ export default function EmbedApp() {
     deleteBusinessPhoto: noop,
     uploadStaffPhoto: noop,
     deleteStaffPhoto: noop,
+    uploadServicePhoto: noop,
+    deleteServicePhoto: noop,
   };
 
   return (

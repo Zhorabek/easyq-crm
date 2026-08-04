@@ -39,6 +39,8 @@ export type DataValue = {
   /** Pick a photo for one specialist. Opens the same file dialog the logo uses. */
   uploadStaffPhoto: (staffId: number) => void;
   deleteStaffPhoto: (staffId: number) => void;
+  uploadServicePhoto: (serviceId: number) => void;
+  deleteServicePhoto: (serviceId: number) => void;
 };
 
 export const DataCtx = createContext<DataValue | null>(null);

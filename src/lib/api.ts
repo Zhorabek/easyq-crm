@@ -152,6 +152,21 @@ export function deleteBusinessPhoto() {
 }
 
 /** A photo for one specialist. Same validation and storage as the business logo. */
+/** Same shape as the staff photo, against the service table. See the migration for why two. */
+export function uploadServicePhoto(serviceId: number, file: File) {
+  const formData = new FormData();
+  formData.set("photo", file);
+
+  return request<{ ok: true }>(`/api/services/${serviceId}/photo`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function deleteServicePhoto(serviceId: number) {
+  return request<{ ok: true }>(`/api/services/${serviceId}/photo`, { method: "DELETE" });
+}
+
 export function uploadStaffPhoto(staffId: number, file: File) {
   const formData = new FormData();
   formData.set("photo", file);

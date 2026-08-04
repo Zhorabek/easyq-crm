@@ -1,6 +1,7 @@
 import { CRM_T, type Lang } from './i18n';
 import { addDays } from '../lib/date';
 import { toStoragePhone } from '../shared/phone';
+import { PAID_PLANS, planCoversStaff, recommendPlan } from '../shared/plans';
 import type {
   BookingStatus,
   CalendarBookingCard,
@@ -206,6 +207,7 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       price: money(sv.price),
       duration: sv.dur,
       isActive: true,
+      hasPhoto: false,
       linkedStaffIds: linked.map((s) => s.id),
       linkedStaffNames: linked.map((s) => s.name),
       bookingsCount: sv.bookings,
@@ -317,6 +319,23 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },
       { id: 'business-admin', titleKey: 'ownerBot', url: 'https://t.me/easyqueue_business_bot', kind: 'admin' },
     ],
+    // Demo data sits mid-trial, so exploring the mock does not land on the plan screen.
+    subscription: {
+      plan: 'trial',
+      active: true,
+      onTrial: true,
+      expiresAt: null,
+      daysLeft: 18,
+      staffCount: employees.length,
+      plans: PAID_PLANS.map((plan) => ({
+        id: plan.id,
+        maxStaff: plan.maxStaff,
+        price: plan.price,
+        featured: plan.featured,
+        fitsTeam: planCoversStaff(plan, employees.length),
+        recommended: plan.id === recommendPlan(employees.length).id,
+      })),
+    },
     staffAccess: employees.map((e, i) => ({
       staffId: e.id,
       name: e.name,

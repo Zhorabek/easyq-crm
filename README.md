@@ -29,6 +29,29 @@ and not a `fetch`.
 - Branding: logo, booking-page colours, and what the booking page asks for first
 - Share links and a printable QR for the public booking page
 
+## Subscriptions
+
+Every new business gets **30 days free**, set at signup from the date in the shop's timezone.
+After that the CRM stops and offers the four plans — 175k / 299k / 499k / 799k so'm a month, by
+team size — with the smallest one that actually **covers their team** marked as recommended.
+`src/shared/plans.ts` holds the prices and the rule; they are written down in exactly one other
+place, `outreach/lib/messages.mjs`, and the two must agree.
+
+**What expiry blocks:** the CRM, and only the CRM. The public booking page and both Telegram
+bots keep working. The shop owes money; their customers do not, and a customer who cannot book
+books somewhere else — which costs the shop the money being asked for.
+
+**It fails open.** A business with no `plan_expires_at` — every row predating this feature —
+counts as active, and so does one whose date will not parse. Locking a paying shop out of its
+own calendar over a missing migration or a bad string is a worse failure than a free week.
+
+**There is no payment gateway.** Choosing a plan opens a Telegram conversation; somebody
+activates it by hand:
+
+```sql
+UPDATE businesses SET plan = 'p5', plan_started_at = date('now'), plan_expires_at = date('now', '+30 day') WHERE slug = 'their-slug';
+```
+
 ## Rate limiting
 
 `src/server/rateLimit.ts`, counters in the `rate_limit` table. Fixed windows, keyed on
@@ -37,8 +60,9 @@ caller cannot choose their own bucket.
 
 Applied to login (per IP *and* per username, so a distributed attempt on one account still
 fills a bucket), sign-up, feedback, subdomain checks, public bookings and verification starts.
-Login is counted **before** the password hash, because the 600k PBKDF2 iterations are the cost
+Login is counted **before** the password hash, because those PBKDF2 iterations are the cost
 being defended — unlimited login attempts were a way for a stranger to spend the account's CPU.
+(100k, which is Cloudflare's ceiling; see the note on PBKDF2_ITERATIONS in `server/auth.ts`.)
 
 **It fails open, and it does nothing until the migration is applied.** A limiter that 500s takes
 down the endpoint it protects, and pushing to `main` deploys before anyone can run SQL. Until
@@ -115,7 +139,12 @@ The step order, and what is still missing, is in [TODO.md](TODO.md).
 
 ## Image uploads
 
-Logos and specialist photos share one path, in `src/shared/imageFile.ts` and `crm_images`.
+Logos, specialist photos and service pictures share one path, in `src/shared/imageFile.ts`.
+Logos and staff live in `crm_images`; services have their own table because that one is keyed
+`PRIMARY KEY (business_id, staff_id)` and SQLite cannot alter a primary key — service 14 and
+staff 14 both exist, so one column could not hold both. The storage function takes the table
+as an argument rather than being copied, since the byte validation is the part that must
+never drift between them.
 
 - Accepted formats are decided by the file's **leading bytes**, never its name or
   `Content-Type` — both of those are chosen by whoever is uploading. PNG, JPEG and WebP.
@@ -260,6 +289,14 @@ npm run db:migrate:local:reviews
 
 ```bash
 npm run db:migrate:local:rate-limit
+```
+
+```bash
+npm run db:migrate:local:subscriptions
+```
+
+```bash
+npm run db:migrate:local:service-images
 ```
 
 Every `db:migrate:local:*` has a `db:migrate:remote:*` twin. **Read the migration rule in

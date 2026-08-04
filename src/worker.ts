@@ -48,6 +48,15 @@ import { clientIp, consumeRateLimit, LIMITS, type RateLimitRule } from "./server
 import { slugProblem, type SlugProblem } from "./shared/slug";
 import { toStoragePhone } from "./shared/phone";
 import { normalizeBrandColor, normalizeBrandTheme, parseBrandTheme, serializeBrandTheme } from "./shared/brand";
+import {
+  addDays,
+  PAID_PLANS,
+  planById,
+  planCoversStaff,
+  readSubscription,
+  recommendPlan,
+  TRIAL_DAYS,
+} from "./shared/plans";
 import { openShiftSlots } from "./shared/availability";
 import { buildBasket, legacyServiceName, requestedServiceIds } from "./shared/basket";
 import { writeBasketLines } from "./server/publicBooking";
@@ -117,6 +126,9 @@ type BusinessRow = {
   brand_color: string | null;
   brand_theme: string | null;
   booking_flow: string | null;
+  plan: string | null;
+  plan_started_at: string | null;
+  plan_expires_at: string | null;
 };
 
 type LoginRow = {
@@ -303,7 +315,10 @@ async function getBusinessById(db: D1Database, businessId: number) {
            slug,
            session_version,
            brand_color,
-           brand_theme
+           brand_theme,
+           plan,
+           plan_started_at,
+           plan_expires_at
          FROM businesses
          WHERE id = ?
          LIMIT 1`
@@ -1731,14 +1746,32 @@ async function signupBusiness(env: Env, request: Request) {
     return json({ error: "Could not create the account. Please try again." }, { status: 500, headers: SIGNUP_CORS });
   }
 
+  const signupToday = getTodayIso(env.APP_TIMEZONE || "UTC");
+
   // The slug is claimed in the INSERT, not in the credentials UPDATE below, so the
   // partial unique index rejects a concurrent duplicate atomically. Losing that race
   // after the row exists would leave an orphaned business.
   let insertBiz;
   try {
     insertBiz = await env.DB
-      .prepare("INSERT INTO businesses (user_id, name, type, address, phone, schedule, slug) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(userId, name, type, address, storedPhone, "09:00 - 19:00", slug)
+      // The free month starts the day they sign up, in the shop's timezone rather than UTC -
+      // a trial that begins at 5am local because the server said midnight is off by a day for
+      // anyone who signs up in the evening.
+      .prepare(
+        `INSERT INTO businesses (user_id, name, type, address, phone, schedule, slug, plan, plan_started_at, plan_expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'trial', ?, ?)`
+      )
+      .bind(
+        userId,
+        name,
+        type,
+        address,
+        storedPhone,
+        "09:00 - 19:00",
+        slug,
+        signupToday,
+        addDays(signupToday, TRIAL_DAYS)
+      )
       .run();
   } catch (error) {
     // Someone claimed this slug between the check above and here. Undo both writes so
@@ -2087,6 +2120,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   // photo or fall back to initials?", and pulling the bytes into every payload would put a
   // logo and a photo per specialist on the wire on every poll.
   const imageIds = await storedImageIds(env, business.id);
+  const serviceImageIds = await storedServiceImageIds(env, business.id);
 
   const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes, bookingServicesRes] =
     await Promise.all([
@@ -2453,6 +2487,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       price: Number(service.price || 0),
       duration: Number(service.duration || 0),
       isActive: Number(service.is_active) === 1,
+      hasPhoto: serviceImageIds.has(service.id),
       linkedStaffIds: staffIdsByService.get(service.id) ?? [],
       linkedStaffNames: staffNamesByService.get(service.id) ?? [],
       bookingsCount: serviceBookings.length,
@@ -2681,6 +2716,32 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       totalCancelledVisits: bookings.filter((booking) => booking.status === "cancelled").length,
     },
     bookingLinks,
+    // The subscription, resolved against TODAY IN THE SHOP'S TIMEZONE. Using UTC would end a
+    // trial at five in the morning local, which is a strange time to lock somebody out.
+    //
+    // The recommendation is computed here rather than in the browser so the plan the owner is
+    // shown is the plan the server would accept — one place to be right about team size.
+    subscription: (() => {
+      const state = readSubscription(business, getTodayIso(env.APP_TIMEZONE || "UTC"));
+      const staffCount = staff.length;
+      const suggested = recommendPlan(staffCount);
+      return {
+        plan: state.plan,
+        active: state.active,
+        onTrial: state.onTrial,
+        expiresAt: state.expiresAt,
+        daysLeft: state.daysLeft,
+        staffCount,
+        plans: PAID_PLANS.map((plan) => ({
+          id: plan.id,
+          maxStaff: plan.maxStaff,
+          price: plan.price,
+          featured: plan.featured,
+          fitsTeam: planCoversStaff(plan, staffCount),
+          recommended: plan.id === suggested.id,
+        })),
+      };
+    })(),
     // Login state per staff member, for the owner's Team & access screen. Redacted for
     // everyone else in redactPayloadFor — who can sign in is not a specialist's business.
     staffAccess: staff.map((person) => ({
@@ -3270,8 +3331,20 @@ function storedToBytes(value: unknown): Uint8Array | null {
   return null;
 }
 
-/** Validate, then store. Shared by the logo and specialist photos so there is one way in. */
-async function storeImage(env: Env, businessId: number, staffId: number, photo: unknown) {
+/**
+ * Where an image lives: which table, and which column identifies its owner.
+ *
+ * Services need their own table because crm_images is keyed (business_id, staff_id) and SQLite
+ * cannot alter a primary key — service 14 and staff 14 both exist, so they would overwrite each
+ * other. Parameterising beats a second copy of the byte validation, which is the part that must
+ * never drift between the two.
+ */
+type ImageStore = { table: string; ownerColumn: string };
+const STAFF_IMAGES: ImageStore = { table: "crm_images", ownerColumn: "staff_id" };
+const SERVICE_IMAGES: ImageStore = { table: "crm_service_images", ownerColumn: "service_id" };
+
+/** Validate, then store. Shared by the logo, specialist photos and service pictures. */
+async function storeImage(env: Env, businessId: number, staffId: number, photo: unknown, store: ImageStore = STAFF_IMAGES) {
   if (!(photo instanceof File)) {
     return json({ error: "Photo file is required" }, { status: 400 });
   }
@@ -3307,7 +3380,7 @@ async function storeImage(env: Env, businessId: number, staffId: number, photo: 
 
   await env.DB
     .prepare(
-      `INSERT OR REPLACE INTO crm_images (business_id, staff_id, content_type, bytes, updated_at)
+      `INSERT OR REPLACE INTO ${store.table} (business_id, ${store.ownerColumn}, content_type, bytes, updated_at)
        VALUES (?, ?, ?, ?, datetime('now'))`
     )
     .bind(businessId, staffId, check.kind, bytesToBase64(bytes))
@@ -3319,9 +3392,9 @@ async function storeImage(env: Env, businessId: number, staffId: number, photo: 
 /** 512 KB stored. A 512px logo is a small fraction of this; D1's own blob ceiling is 2 MB. */
 const MAX_STORED_IMAGE_BYTES = 512 * 1024;
 
-async function deleteImage(env: Env, businessId: number, staffId: number) {
+async function deleteImage(env: Env, businessId: number, staffId: number, store: ImageStore = STAFF_IMAGES) {
   await env.DB
-    .prepare("DELETE FROM crm_images WHERE business_id = ? AND staff_id = ?")
+    .prepare(`DELETE FROM ${store.table} WHERE business_id = ? AND ${store.ownerColumn} = ?`)
     .bind(businessId, staffId)
     .run();
   return json({ ok: true });
@@ -3334,9 +3407,9 @@ async function deleteImage(env: Env, businessId: number, staffId: number) {
  * through safeImageContentType anyway so the header can only ever be one of three values.
  * `nosniff` is what keeps a bad row inert rather than executable in a visitor's browser.
  */
-async function serveStoredImage(env: Env, businessId: number, staffId: number) {
+async function serveStoredImage(env: Env, businessId: number, staffId: number, store: ImageStore = STAFF_IMAGES) {
   const row = await env.DB
-    .prepare("SELECT content_type, bytes FROM crm_images WHERE business_id = ? AND staff_id = ? LIMIT 1")
+    .prepare(`SELECT content_type, bytes FROM ${store.table} WHERE business_id = ? AND ${store.ownerColumn} = ? LIMIT 1`)
     .bind(businessId, staffId)
     // `unknown`, not ArrayBuffer: claiming a type here is what hid the bug. What D1 returns
     // depends on how the row was written, so storedToBytes decides instead of the annotation.
@@ -3381,6 +3454,19 @@ async function storedImageIds(env: Env, businessId: number) {
   }
 }
 
+/** Which services have a picture. Same swallow-on-missing-table reasoning as above. */
+async function storedServiceImageIds(env: Env, businessId: number) {
+  try {
+    const rows = await env.DB
+      .prepare("SELECT service_id FROM crm_service_images WHERE business_id = ?")
+      .bind(businessId)
+      .all<{ service_id: number }>();
+    return new Set((rows.results ?? []).map((r) => Number(r.service_id)));
+  } catch {
+    return new Set<number>();
+  }
+}
+
 async function uploadBusinessPhoto(env: Env, business: BusinessRow, request: Request) {
   const formData = await request.formData();
   return await storeImage(env, business.id, LOGO_STAFF_ID, formData.get("photo"));
@@ -3405,6 +3491,33 @@ async function uploadStaffPhoto(env: Env, business: BusinessRow, staffId: number
 
 async function deleteStaffPhoto(env: Env, business: BusinessRow, staffId: number) {
   return await deleteImage(env, business.id, staffId);
+}
+
+/**
+ * Service pictures. Same validation, same storage rules, different table.
+ *
+ * The service is looked up scoped to the business FIRST, so an id from another shop cannot be
+ * used to write into their row — the same check the staff path makes.
+ */
+async function uploadServicePhoto(env: Env, business: BusinessRow, serviceId: number, request: Request) {
+  const service = await env.DB
+    .prepare("SELECT id FROM services WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(serviceId, business.id)
+    .first<{ id: number }>();
+  if (!service) return json({ error: "Service not found", code: "invalid_service" }, { status: 404 });
+
+  const formData = await request.formData();
+  return await storeImage(env, business.id, serviceId, formData.get("photo"), SERVICE_IMAGES);
+}
+
+async function deleteServicePhoto(env: Env, business: BusinessRow, serviceId: number) {
+  return await deleteImage(env, business.id, serviceId, SERVICE_IMAGES);
+}
+
+async function proxyServicePhoto(env: Env, businessId: number, serviceId: number) {
+  if (!Number.isFinite(serviceId) || serviceId <= 0) return new Response("Not found", { status: 404 });
+  const stored = await serveStoredImage(env, businessId, serviceId, SERVICE_IMAGES);
+  return stored ?? new Response("Not found", { status: 404 });
 }
 
 /**
@@ -3998,6 +4111,24 @@ export default {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "crm:read");
         return await proxyStaffPhoto(env, actor.business.id, Number(url.pathname.split("/")[3]));
+      }
+
+      if (/^\/api\/services\/\d+\/photo$/.test(url.pathname) && request.method === "POST") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "service:write");
+        return await uploadServicePhoto(env, actor.business, Number(url.pathname.split("/")[3]), request);
+      }
+
+      if (/^\/api\/services\/\d+\/photo$/.test(url.pathname) && request.method === "DELETE") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "service:write");
+        return await deleteServicePhoto(env, actor.business, Number(url.pathname.split("/")[3]));
+      }
+
+      if (/^\/api\/services\/\d+\/photo$/.test(url.pathname) && request.method === "GET") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "crm:read");
+        return await proxyServicePhoto(env, actor.business.id, Number(url.pathname.split("/")[3]));
       }
 
       if (url.pathname === "/api/business/photo" && request.method === "GET") {

@@ -777,7 +777,7 @@ const btnGhost = { flex: 1, fontSize: 13, fontWeight: 800, padding: '9px', borde
 /* ============ SERVICES ============ */
 export function Services() {
   const { t } = useCRM();
-  const { payload, openServiceEditor, toggleServiceActive } = useData();
+  const { payload, openServiceEditor, toggleServiceActive, uploadServicePhoto, deleteServicePhoto } = useData();
   if (!payload) return null;
   const sv = t.serv;
   return (
@@ -790,7 +790,18 @@ export function Services() {
         {payload.services.map((x, i) => (
           <div key={x.id} className="crm-serv-row" style={{ display: 'grid', gridTemplateColumns: '2.4fr 1.2fr 1fr 1.1fr 1.2fr', gap: 12, alignItems: 'center', padding: '15px 22px', borderTop: i ? '1px solid var(--line)' : 'none', opacity: x.isActive ? 1 : 0.6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <span style={{ width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center', flex: 'none' }}><Ic name="scissors" size={18} stroke={2} /></span>
+              {/* The tile doubles as the picture and the upload button: click to replace,
+                  which is the same gesture as the staff photo, so there is one thing to learn.
+                  A service with no picture keeps the coloured scissors tile it always had. */}
+              <button
+                onClick={() => uploadServicePhoto(x.id)}
+                title={sv.photoHint}
+                style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', overflow: 'hidden', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
+              >
+                {x.hasPhoto
+                  ? <img src={`/api/services/${x.id}/photo`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <Ic name="scissors" size={18} stroke={2} />}
+              </button>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</span>
                 {x.category && <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--ink-3)' }}>{x.category}</span>}
@@ -817,6 +828,11 @@ export function Services() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
               <span className="tnum" style={{ fontSize: 14, fontWeight: 800 }}>{x.bookingsCount}</span>
+              {x.hasPhoto && (
+                <button onClick={() => deleteServicePhoto(x.id)} title={sv.photoRemove} style={{ color: 'var(--ink-3)' }}>
+                  <Ic name="trash" size={16} stroke={2} />
+                </button>
+              )}
               <button onClick={() => openServiceEditor(x)} title={sv.edit} style={{ color: 'var(--ink-3)' }}><Ic name="dots" size={18} /></button>
               <Switch on={x.isActive} onChange={() => toggleServiceActive(x)} />
             </div>

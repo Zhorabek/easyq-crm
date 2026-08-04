@@ -1,6 +1,6 @@
 import { type FC, useEffect, useMemo, useRef, useState } from 'react';
 import './crm/crm.css';
-import { CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role, type Theme } from './crm/i18n';
+import { CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role } from './crm/i18n';
 import { DataCtx, type DataValue } from './crm/data';
 import { Toast } from './crm/ui';
 import { Sidebar, Topbar } from './crm/shell';
@@ -14,7 +14,7 @@ import type { CrmPayload } from './types';
  * Public, no-auth demo of the CRM, rendered when the SPA is loaded with `?embed=1`
  * (used inside an <iframe> on the marketing landing page). It renders the real
  * data-backed screens against a static mock payload — no auth, no API calls — and
- * accepts live screen/lang/theme changes from the parent via postMessage.
+ * accepts live screen/lang changes from the parent via postMessage.
  */
 
 const SCREEN_COMPONENTS: Record<string, FC> = {
@@ -56,7 +56,6 @@ function readParam(name: string, fallback: string): string {
 
 export default function EmbedApp() {
   const [lang, setLang] = useState<Lang>(() => readParam('lang', 'uz') as Lang);
-  const [theme, setTheme] = useState<Theme>(() => (readParam('theme', 'light') === 'dark' ? 'dark' : 'light'));
   const [active, setActive] = useState<string>(() => readParam('screen', 'calendar'));
   const [role, setRole] = useState<Role>('owner');
   const [branch, setBranch] = useState(-1);
@@ -68,7 +67,6 @@ export default function EmbedApp() {
   const t = CRM_T[lang] || CRM_T.uz;
   const payload = useMemo(() => buildMockPayload(selectedDate, lang), [selectedDate, lang]);
 
-  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   // names are localized, so a language change invalidates the cached days
   useEffect(() => { setDayCache({}); }, [lang]);
@@ -78,14 +76,15 @@ export default function EmbedApp() {
     return () => window.clearTimeout(tm);
   }, [toast]);
 
-  // accept live screen/lang/theme from the landing page
+  // accept live screen/lang from the landing page
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const d = (e.data || {}) as { easyqcrm?: boolean; screen?: string; lang?: Lang; theme?: Theme };
+      // `theme` is still accepted and ignored: the landing sends it, and an older deploy of
+      // that page will keep sending it after this one ships.
+      const d = (e.data || {}) as { easyqcrm?: boolean; screen?: string; lang?: Lang };
       if (!d.easyqcrm) return;
       if (d.screen) setActive(d.screen);
       if (d.lang) setLang(d.lang);
-      if (d.theme) setTheme(d.theme);
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
@@ -145,8 +144,6 @@ export default function EmbedApp() {
     demo: true,
     startTour: () => {},
     setLang,
-    theme,
-    setTheme,
     branch,
     setBranch,
     role,

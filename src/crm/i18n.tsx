@@ -1,7 +1,6 @@
 import { createContext, useContext } from 'react';
 
 export type Lang = 'uz' | 'ru' | 'en';
-export type Theme = 'light' | 'dark';
 /** Mirrors ActorRole in src/server/permissions.ts. One vocabulary end to end. */
 export type Role = 'owner' | 'manager' | 'specialist';
 
@@ -96,7 +95,7 @@ export const CRM_T: Record<Lang, any> = {
       tgReminders: 'Telegram eslatmalari', tgRemindersD: 'Mijozlarga avtomatik eslatma yuboriladi',
       remindBefore: 'Eslatma vaqti', newBookingAlert: 'Yangi navbat bildirishnomasi', newBookingAlertD: 'Yangi navbat tushganda xabar olasiz',
       reviewReq: 'Sharh so‘rovi', reviewReqD: 'Tashrifdan keyin baho so‘raladi',
-      appearance: 'Ko‘rinish', appearanceSub: 'Til va mavzu', language: 'Til', theme: 'Mavzu', light: 'Yorug‘', dark: 'Tungi',
+      appearance: 'Ko‘rinish', appearanceSub: 'Interfeys tili', language: 'Til',
       save: 'Saqlash', saved: 'Sozlamalar saqlandi', photoUploaded: 'Rasm yuklandi', photoDeleted: 'Rasm o‘chirildi', logout: 'Hisobdan chiqish', closed: 'Yopiq', hoursPerWeek: 'soat/hafta',
       mins: ['15 daqiqa', '30 daqiqa', '1 soat', '2 soat', '1 kun oldin'],
       credentials: 'CRM kirish', credentialsSub: 'Login va parolni yangilang', username: 'Login', currentPassword: 'Joriy parol', newPassword: 'Yangi parol', confirmPassword: 'Parolni takrorlang', credentialsSave: 'Kirishni saqlash', tempPassword: 'Vaqtinchalik parol ishlatilmoqda',
@@ -134,7 +133,7 @@ export const CRM_T: Record<Lang, any> = {
         branding: { title: 'Brend va navbat sahifasi', body: 'Logotip va firma rangini tanlang, navbat havolangiz va QR-kodni shu yerdan oling.' },
         settings: { title: 'Sozlamalar', body: 'Ish vaqti, bildirishnomalar va CRM login-parolingiz shu yerda.' },
         settingsWithLink: { title: 'Sozlamalar', body: 'Navbat havolangiz va QR-kod, ish vaqti hamda CRM login-parolingiz shu yerda.' },
-        topbar: { title: 'Til, mavzu va yordam', body: 'Tilni almashtiring, tungi rejimni yoqing va bu qo‘llanmani «?» tugmasi orqali qayta oching.' },
+        topbar: { title: 'Til va yordam', body: 'Interfeys tilini almashtiring va bu qo‘llanmani «?» tugmasi orqali qayta oching.' },
         finish: { title: 'Tayyor!', body: 'Boshlash uchun birinchi xizmatingizni qo‘shing.' },
         finishNoServices: { title: 'Tayyor!', body: 'Sizga yozilgan navbatlar «Jadval» bo‘limida ko‘rinadi.' },
       },
@@ -224,7 +223,7 @@ export const CRM_T: Record<Lang, any> = {
       tgReminders: 'Напоминания в Telegram', tgRemindersD: 'Клиентам уходят автоматические напоминания',
       remindBefore: 'Время напоминания', newBookingAlert: 'Уведомление о новой записи', newBookingAlertD: 'Вы получаете сообщение при новой записи',
       reviewReq: 'Запрос отзыва', reviewReqD: 'После визита запрашивается оценка',
-      appearance: 'Внешний вид', appearanceSub: 'Язык и тема', language: 'Язык', theme: 'Тема', light: 'Светлая', dark: 'Тёмная',
+      appearance: 'Внешний вид', appearanceSub: 'Язык интерфейса', language: 'Язык',
       save: 'Сохранить', saved: 'Настройки сохранены', photoUploaded: 'Фото загружено', photoDeleted: 'Фото удалено', logout: 'Выйти из аккаунта', closed: 'Закрыто', hoursPerWeek: 'ч/неделю',
       mins: ['15 минут', '30 минут', '1 час', '2 часа', 'за 1 день'],
       credentials: 'Доступ в CRM', credentialsSub: 'Обновите логин и пароль', username: 'Логин', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Повторите пароль', credentialsSave: 'Сохранить доступ', tempPassword: 'Используется временный пароль',
@@ -262,7 +261,7 @@ export const CRM_T: Record<Lang, any> = {
         branding: { title: 'Бренд и страница записи', body: 'Логотип и фирменный цвет, а также ссылка на запись и QR-код — всё здесь.' },
         settings: { title: 'Настройки', body: 'Часы работы, уведомления и ваш логин с паролем от CRM.' },
         settingsWithLink: { title: 'Настройки', body: 'Ссылка на запись и QR-код, часы работы и ваш логин с паролем от CRM.' },
-        topbar: { title: 'Язык, тема и помощь', body: 'Смените язык, включите тёмную тему и откройте это руководство кнопкой «?».' },
+        topbar: { title: 'Язык и помощь', body: 'Смените язык интерфейса и откройте это руководство кнопкой «?».' },
         finish: { title: 'Готово!', body: 'Начните с добавления первой услуги.' },
         finishNoServices: { title: 'Готово!', body: 'Записи к вам появятся в разделе «Расписание».' },
       },
@@ -352,7 +351,7 @@ export const CRM_T: Record<Lang, any> = {
       tgReminders: 'Telegram reminders', tgRemindersD: 'Automatic reminders are sent to customers',
       remindBefore: 'Remind before', newBookingAlert: 'New booking alert', newBookingAlertD: 'You get a message on every new booking',
       reviewReq: 'Review request', reviewReqD: 'Ask for a rating after the visit',
-      appearance: 'Appearance', appearanceSub: 'Language & theme', language: 'Language', theme: 'Theme', light: 'Light', dark: 'Dark',
+      appearance: 'Appearance', appearanceSub: 'Interface language', language: 'Language',
       save: 'Save changes', saved: 'Settings saved', photoUploaded: 'Photo uploaded', photoDeleted: 'Photo removed', logout: 'Log out', closed: 'Closed', hoursPerWeek: 'h/week',
       mins: ['15 minutes', '30 minutes', '1 hour', '2 hours', '1 day before'],
       credentials: 'CRM access', credentialsSub: 'Update your login and password', username: 'Username', currentPassword: 'Current password', newPassword: 'New password', confirmPassword: 'Repeat password', credentialsSave: 'Save access', tempPassword: 'A temporary password is in use',
@@ -390,7 +389,7 @@ export const CRM_T: Record<Lang, any> = {
         branding: { title: 'Brand & booking page', body: 'Your logo and brand colour, plus your booking link and QR code.' },
         settings: { title: 'Settings', body: 'Opening hours, notifications, and your CRM username and password.' },
         settingsWithLink: { title: 'Settings', body: 'Your booking link and QR code, opening hours, and your CRM login.' },
-        topbar: { title: 'Language, theme & help', body: 'Switch language, turn on dark mode, and reopen this guide anytime with the “?” button.' },
+        topbar: { title: 'Language & help', body: 'Switch the interface language, and reopen this guide anytime with the “?” button.' },
         finish: { title: 'All set!', body: 'Start by adding your first service.' },
         finishNoServices: { title: 'All set!', body: 'Bookings made with you show up on your Schedule.' },
       },
@@ -459,8 +458,6 @@ export type CRMContextValue = {
   /** true only in the public landing embed (?embed=1) — gates all demo/mock UI. */
   demo: boolean;
   setLang: (l: Lang) => void;
-  theme: Theme;
-  setTheme: (th: Theme) => void;
   openModal: (type: string, extra?: Record<string, any>) => void;
   notify: (msg?: string) => void;
   branch: number;

@@ -1247,7 +1247,7 @@ function BrandPreview({ tokens, name, schedule, serviceLabel, bookLabel }: {
 }
 
 export function Settings() {
-  const { t, lang, setLang, theme, setTheme, role, isTemporaryPassword } = useCRM();
+  const { t, lang, setLang, role, isTemporaryPassword } = useCRM();
   const { payload, openBusinessEditor, openCredentialsEditor, openPasswordEditor } = useData();
   const [sec, setSec] = useState('profile');
   if (!payload) return null;
@@ -1333,14 +1333,6 @@ export function Settings() {
                       const labels = { uz: 'O‘z', ru: 'Рус', en: 'Eng' };
                       const on = code === lang;
                       return <button key={code} onClick={() => setLang(code)} style={{ fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent' }}>{labels[code]}</button>;
-                    })}
-                  </div>
-                </SetRow>
-                <SetRow title={s.theme}>
-                  <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 999, padding: 3, gap: 2 }}>
-                    {([['light', s.light, 'sun'], ['dark', s.dark, 'moon']] as const).map(([k, l, ic]) => {
-                      const on = theme === k;
-                      return <button key={k} onClick={() => setTheme(k as any)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, color: on ? 'var(--accent-ink)' : 'var(--ink-3)', background: on ? 'var(--accent)' : 'transparent' }}><Ic name={ic} size={14} stroke={2} />{l}</button>;
                     })}
                   </div>
                 </SetRow>

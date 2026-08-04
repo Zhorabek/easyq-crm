@@ -45,31 +45,6 @@
   --font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
 }
-[data-theme='dark'] {
-  --bg: #0a0f1a;
-  --panel: #121a2b;
-  --panel-2: #0f1726;
-  --sidebar: #0c1320;
-  --sidebar-2: #080d17;
-  --on-sidebar: #e8edf4;
-  --on-sidebar-2: #7c8ba2;
-  --ink: #eaf0f7;
-  --ink-2: #aebcd0;
-  --ink-3: #6e7e96;
-  --line: #1e2a40;
-  --line-2: #27344e;
-  --accent-deep: #a7ce46;
-  --accent-tint: #1c2a1b;
-  --blue-t: #152741;
-  --violet-t: #241b3d;
-  --amber-t: #352711;
-  --rose-t: #3a1620;
-  --teal-t: #102e2c;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 24px 50px -22px rgba(0, 0, 0, 0.7);
-}
-
 * {
   box-sizing: border-box;
 }

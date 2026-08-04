@@ -40,7 +40,7 @@ import type {
   ServiceCatalogItem,
 } from './types';
 import './crm/crm.css';
-import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role, type Theme } from './crm/i18n';
+import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role } from './crm/i18n';
 import { DataCtx, type DataValue } from './crm/data';
 import { Ic } from './crm/icons';
 import { CRMLogo, Toast } from './crm/ui';
@@ -152,7 +152,6 @@ export default function App() {
 
   // ---- ui prefs ----
   const [lang, setLangState] = useState<Lang>(() => lsGet('easyq_crm_lang', 'uz') as Lang);
-  const [theme, setThemeState] = useState<Theme>(() => (lsGet('easyq_crm_theme', 'light') === 'dark' ? 'dark' : 'light'));
   const [active, setActiveState] = useState<string>(() => lsGet('easyq_crm_screen', 'dashboard'));
   const [branch, setBranchState] = useState<number>(() => parseInt(lsGet('easyq_crm_branch', '-1'), 10));
   const [navOpen, setNavOpen] = useState(false);
@@ -194,10 +193,9 @@ export default function App() {
 
   const t = CRM_T[lang] || CRM_T.uz;
 
-  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
   // The business's accent, on the CRM itself and not only the booking page. Accent only —
-  // see brand-shell.ts for why the surfaces stay with the Appearance toggle.
-  useBrandAccent(payload?.business.brandTheme?.accent ?? payload?.business.brandColor, theme);
+  // see brand-shell.ts for why the CRM keeps its own surfaces.
+  useBrandAccent(payload?.business.brandTheme?.accent ?? payload?.business.brandColor);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => {
@@ -231,7 +229,6 @@ export default function App() {
   }, [payload, tourKey]);
 
   function setLang(c: Lang) { setLangState(c); try { localStorage.setItem('easyq_crm_lang', c); } catch {} }
-  function setTheme(th: Theme) { setThemeState(th); try { localStorage.setItem('easyq_crm_theme', th); } catch {} }
   function setActive(s: string) { setActiveState(s); try { localStorage.setItem('easyq_crm_screen', s); } catch {} setNavOpen(false); }
   function setBranch(b: number) { setBranchState(b); try { localStorage.setItem('easyq_crm_branch', String(b)); } catch {} }
   function setSelectedDate(d: string) { setSelectedDateState(d); }
@@ -632,7 +629,7 @@ export default function App() {
   const crmValue: CRMContextValue = {
     lang, t, m: CRM_M[lang], bizName, bizType, demo: false,
     // null when nothing is uploaded, so the sidebar falls back to the name's initial.
-    logoVersion: payload?.business.photoFileId ? payload.generatedAt : null, setLang, theme, setTheme, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
+    logoVersion: payload?.business.photoFileId ? payload.generatedAt : null, setLang, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),

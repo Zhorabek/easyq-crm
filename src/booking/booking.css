@@ -4,7 +4,7 @@
  * one product, but none of its layout — the CRM is a dense admin shell and this is a
  * single-column form people fill in on a phone, usually one-handed.
  *
- * Deliberately light-only: crm.css switches on [data-theme='dark'], and nothing here sets
+ * Deliberately light-only, like the CRM: the only theming here is the business's own brand,
  * that attribute, so the tokens stay on their light values. A client has no theme toggle
  * and no stored preference to honour. */
 

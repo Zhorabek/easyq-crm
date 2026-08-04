@@ -302,7 +302,7 @@ function NotifBell() {
 }
 
 export function Topbar({ title, sub, action, onMenu, extra }: { title: string; sub?: string | null; action?: { label: string; onClick: () => void } | null; onMenu: () => void; extra?: React.ReactNode }) {
-  const { t, lang, setLang, theme, setTheme, demo, startTour } = useCRM();
+  const { t, lang, setLang, demo, startTour } = useCRM();
   return (
     <header className="crm-topbar" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '20px 28px', borderBottom: '1px solid var(--line)', background: 'var(--panel)', position: 'sticky', top: 0, zIndex: 20 }}>
       <button className="crm-burger" onClick={onMenu} style={{ display: 'none', width: 40, height: 40, borderRadius: 11, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', placeItems: 'center', flex: 'none' }}>
@@ -335,9 +335,6 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
             );
           })}
         </div>
-        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="crm-iconbtn" style={iconBtn as CSSProperties}>
-          <Ic name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
-        </button>
         <NotifBell />
         {action && (
           <button onClick={action.onClick} className="crm-addbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, padding: '10px 16px', borderRadius: 11, whiteSpace: 'nowrap', boxShadow: '0 6px 16px -8px color-mix(in srgb, var(--accent) 60%, transparent)', flex: 'none' }}>

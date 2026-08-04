@@ -85,7 +85,7 @@ for (const v of variants) {
 // its rule here and the resolution checks below fail loudly rather than quietly agreeing.
 function copyKeyFor(stepKey, role, allowed) {
   if (stepKey === 'staff' && role !== 'owner') return 'staffNoAccess';
-  if (stepKey === 'settings' && role === 'manager') return 'settingsWithLink';
+  if (stepKey === 'settings' && role !== 'owner') return 'settingsWithLink';
   if (stepKey === 'finish' && allowed && !allowed.includes('services')) return 'finishNoServices';
   return stepKey;
 }
@@ -105,8 +105,18 @@ check('specialist is NOT told to add a service', !resolved.specialist.includes('
 // The manager has no Branding step, so their Settings step is the only place the booking link
 // can be named. Without it their tour never mentions the link they spend all day sending.
 check('manager is told where the booking link is', resolved.manager.includes('settingsWithLink'));
+check('specialist is told where the booking link is', resolved.specialist.includes('settingsWithLink'));
 check('owner keeps the plain Settings copy', resolved.owner.includes('settings'));
-check('specialist keeps the plain Settings copy', resolved.specialist.includes('settings'));
+// `check` takes (label, condition) — a third argument is silently ignored, so this has to be a
+// boolean. Written as a comparison it would have passed on the truthy string alone.
+check('only the owner reads the plain Settings copy',
+  Object.entries(resolved).filter(([, keys]) => keys.includes('settings')).map(([r]) => r).join() === 'owner');
+// The server side of the same promise: specialists must actually RECEIVE links, or their tour
+// points at an empty section.
+const workerSrc = require('fs').readFileSync('src/worker.ts', 'utf8');
+check('specialists are no longer sent an empty link list', !/bookingLinks: \[\],/.test(workerSrc));
+check('specialists get the public links', /bookingLinks: visible\.bookingLinks\.filter/.test(workerSrc));
+check('the admin link is filtered by kind, not by id', /item\.kind === "public"/.test(workerSrc));
 check('booking section is gated on lacking Branding, not a role name',
   /role !== 'owner' && \(payload\.bookingLinks\?\.length \?\? 0\) > 0/.test(
     require('fs').readFileSync('src/crm/screens-real.tsx', 'utf8')));

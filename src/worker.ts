@@ -2858,8 +2858,20 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         bookings: visible.calendar.bookings.filter((card) => isMine(card.staffId)),
       },
       employees: visible.employees.filter((employee) => employee.id === mine),
-      // Sharing links are the owner's to hand out.
-      bookingLinks: [],
+      // Specialists get the PUBLIC links — the shop's booking page and the client bot.
+      //
+      // These were withheld on the theory that sharing was the owner's job. In a barbershop it
+      // is not: the master standing in front of the customer is the one who gets asked "how do
+      // I book you next time", and the answer was a link only their boss could see.
+      //
+      // There is nothing to protect here anyway — the booking page is a public URL that anyone
+      // with the address can open, and the QR code is printed on the counter.
+      //
+      // The ADMIN link is still withheld, and this filters on `kind` rather than listing ids so
+      // a future admin link is excluded by default rather than by somebody remembering to. That
+      // bot is where a business is configured; it authorises by telegram_id and would tell a
+      // specialist nothing, but it is not theirs and does not belong in their CRM.
+      bookingLinks: visible.bookingLinks.filter((item) => item.kind === "public"),
     };
   }
 

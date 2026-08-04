@@ -1,5 +1,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import type { ReservationItem } from '../types';
 import { Ic } from './icons';
+import { useData } from './data';
 import { CRM_LANGS, type Role, useCRM } from './i18n';
 import { Avatar, CRMLogo, iconBtn } from './ui';
 
@@ -254,14 +256,43 @@ const NOTIF_META: Record<string, { icon: string; c: string; t: string }> = {
   payment: { icon: 'wallet', c: 'var(--blue)', t: 'var(--blue-t)' },
 };
 
+/**
+ * The bell, fed from the day's bookings.
+ *
+ * It used to be `demo ? sampleItems : []` — a control that could never show anything to a real
+ * business, permanently reading "no new notifications". Nothing pushed to it and no payload
+ * carried notifications; it was a decoration in the top bar of every shop using the product.
+ *
+ * There is no notifications table to build, and inventing one is not the point: what an owner
+ * actually wants the bell for is "is there anything waiting for me". That is already in the
+ * payload — bookings still PENDING are the ones needing a decision, and a badge counting them
+ * is worth more than a feed of things that already happened.
+ *
+ * Clicking one opens that booking, so the bell is a way into the work rather than a list to
+ * read. Read state is per session and deliberately not persisted: a pending booking is not
+ * "read", it is unhandled, and it leaves the list by being confirmed.
+ */
 function NotifBell() {
   const { t, demo } = useCRM();
+  const { payload, openBooking } = useData();
   const n = t.notif;
   const [open, setOpen] = useState(false);
-  // Real businesses start with no notifications; the sample feed is demo-only.
-  const [items, setItems] = useState<any[]>(() => (demo ? n.items.map((x: any) => ({ ...x })) : []));
+  const [dismissed, setDismissed] = useState<Set<number>>(() => new Set());
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { setItems(demo ? n.items.map((x: any) => ({ ...x })) : []); }, [t, demo]);
+
+  const pending = (payload?.reservationsToday ?? []).filter((booking: ReservationItem) => booking.status === 'pending');
+  const items = demo
+    ? (n.items as any[]).map((x: any) => ({ ...x }))
+    : pending.map((booking: ReservationItem) => ({
+        id: booking.id,
+        type: 'booking',
+        title: n.pendingTitle,
+        body: `${booking.clientName} · ${booking.serviceName}`,
+        time: booking.time,
+        unread: !dismissed.has(booking.id),
+        booking,
+      }));
+  const setItems = (_next: any[]) => setDismissed(new Set(pending.map((booking: ReservationItem) => booking.id)));
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -290,7 +321,19 @@ function NotifBell() {
             {items.map((it, i) => {
               const meta = NOTIF_META[it.type] || NOTIF_META.booking;
               return (
-                <div key={i} onClick={() => setItems(items.map((x, j) => (j === i ? { ...x, unread: false } : x)))} style={{ display: 'flex', gap: 12, padding: '13px 16px', borderTop: i ? '1px solid var(--line)' : 'none', background: it.unread ? 'color-mix(in srgb, var(--accent) 6%, var(--panel))' : 'var(--panel)', cursor: 'pointer' }}>
+                <div
+                  key={i}
+                  onClick={() => {
+                    // A pending booking is not something to "read" — it is a decision waiting.
+                    // Open it so the bell is a way into the work rather than a list about it.
+                    if (it.booking) {
+                      setDismissed((prev) => new Set(prev).add(it.booking.id));
+                      setOpen(false);
+                      openBooking(it.booking);
+                      return;
+                    }
+                    setItems(items.map((x: any, j: number) => (j === i ? { ...x, unread: false } : x)));
+                  }} style={{ display: 'flex', gap: 12, padding: '13px 16px', borderTop: i ? '1px solid var(--line)' : 'none', background: it.unread ? 'color-mix(in srgb, var(--accent) 6%, var(--panel))' : 'var(--panel)', cursor: 'pointer' }}>
                   <span style={{ width: 36, height: 36, borderRadius: 10, background: meta.t, color: meta.c, display: 'grid', placeItems: 'center', flex: 'none' }}>
                     <Ic name={meta.icon} size={18} stroke={2} />
                   </span>

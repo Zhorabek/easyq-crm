@@ -17,7 +17,7 @@ export const CRM_T: Record<Lang, any> = {
     search: 'Mijoz, navbat yoki xizmat qidirish…',
     newBooking: 'Yangi navbat',
     notif: {
-      title: 'Bildirishnomalar', markAll: 'Hammasini o‘qilgan deb belgilash', empty: 'Yangi bildirishnoma yo‘q', viewAll: 'Barchasini ko‘rish', justNow: 'hozir', minAgo: 'daq oldin', hAgo: 'soat oldin',
+      title: 'Bildirishnomalar', markAll: 'Hammasini o‘qilgan deb belgilash', empty: 'Yangi bildirishnoma yo‘q', pendingTitle: 'Tasdiqlash kutilmoqda', viewAll: 'Barchasini ko‘rish', justNow: 'hozir', minAgo: 'daq oldin', hAgo: 'soat oldin',
       items: [
         { type: 'booking', title: 'Yangi navbat', body: 'Jasur Aliyev — Soch olish, bugun 15:00', time: '2 daq oldin', unread: true },
         { type: 'cancel', title: 'Navbat bekor qilindi', body: 'Dilnoza Rashidova — 16:30 ni bekor qildi', time: '18 daq oldin', unread: true },
@@ -231,7 +231,7 @@ export const CRM_T: Record<Lang, any> = {
     search: 'Поиск клиента, записи или услуги…',
     newBooking: 'Новая запись',
     notif: {
-      title: 'Уведомления', markAll: 'Отметить все прочитанными', empty: 'Нет новых уведомлений', viewAll: 'Показать все', justNow: 'сейчас', minAgo: 'мин назад', hAgo: 'ч назад',
+      title: 'Уведомления', markAll: 'Отметить все прочитанными', empty: 'Нет новых уведомлений', pendingTitle: 'Ждёт подтверждения', viewAll: 'Показать все', justNow: 'сейчас', minAgo: 'мин назад', hAgo: 'ч назад',
       items: [
         { type: 'booking', title: 'Новая запись', body: 'Жасур Алиев — Стрижка, сегодня 15:00', time: '2 мин назад', unread: true },
         { type: 'cancel', title: 'Запись отменена', body: 'Дильноза Рашидова отменила 16:30', time: '18 мин назад', unread: true },
@@ -444,7 +444,7 @@ export const CRM_T: Record<Lang, any> = {
     search: 'Search customer, booking or service…',
     newBooking: 'New booking',
     notif: {
-      title: 'Notifications', markAll: 'Mark all as read', empty: 'No new notifications', viewAll: 'View all', justNow: 'just now', minAgo: 'min ago', hAgo: 'h ago',
+      title: 'Notifications', markAll: 'Mark all as read', empty: 'No new notifications', pendingTitle: 'Awaiting confirmation', viewAll: 'View all', justNow: 'just now', minAgo: 'min ago', hAgo: 'h ago',
       items: [
         { type: 'booking', title: 'New booking', body: 'Jasur Aliyev — Haircut, today 3:00 PM', time: '2 min ago', unread: true },
         { type: 'cancel', title: 'Booking cancelled', body: 'Dilnoza Rashidova cancelled 4:30 PM', time: '18 min ago', unread: true },

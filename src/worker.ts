@@ -4185,9 +4185,16 @@ export default {
           try {
             const business = await getBusinessById(env.DB, tenant.businessId);
             if (business) {
+              // og:image only when there is one to serve. A card that claims
+              // summary_large_image and then 404s renders as a broken preview, which is worse
+              // than the plain card it would otherwise have shown.
+              const hasLogo =
+                Boolean(business.photo_file_id) ||
+                (await storedImageIds(env, business.id)).has(LOGO_STAFF_ID);
+
               const html = injectBookingMeta(
                 await asset.text(),
-                buildBookingMeta(business, url.origin)
+                buildBookingMeta(business, url.origin, hasLogo)
               );
               const headers = new Headers(asset.headers);
               headers.delete("content-length"); // rewritten body is a different size

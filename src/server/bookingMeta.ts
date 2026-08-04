@@ -88,7 +88,7 @@ const TYPE_LABEL: Record<string, string> = {
  * — type, address, hours — because a card with no description looks like a broken link, and
  * "Барбершоп · Ташкент · 09:00-22:00" is genuinely what somebody deciding whether to tap wants.
  */
-export function buildBookingMeta(business: BusinessLike, origin: string): BookingMeta {
+export function buildBookingMeta(business: BusinessLike, origin: string, hasLogo: boolean): BookingMeta {
   const name = clampText(business.name || "EasyQ", 60);
   const type = TYPE_LABEL[String(business.type ?? "")] ?? "";
 
@@ -105,9 +105,16 @@ export function buildBookingMeta(business: BusinessLike, origin: string): Bookin
     // does not say what tapping it does.
     title: `${name} — онлайн-запись`,
     description,
-    // Absolute, because a relative path in og:image resolves against nothing on the crawler's
-    // side and the card silently loses its picture.
-    imageUrl: business.photo_file_id || business.slug ? `${origin}/api/public/photo` : null,
+    // Only when a logo genuinely exists, and passed IN rather than guessed from the row —
+    // whether there is one lives in crm_images, which this module has no business querying.
+    //
+    // The first version read `photo_file_id || slug ? url : null`, which parses as
+    // `(photo_file_id || slug) ? url : null`. Slug is always set, so every shop advertised an
+    // image and the ones without a logo pointed og:image at a 404 while still claiming
+    // summary_large_image — a broken preview, which is worse than a plain one.
+    //
+    // Absolute URL, because a relative og:image resolves against nothing on the crawler's side.
+    imageUrl: hasLogo ? `${origin}/api/public/photo` : null,
     canonical: `${origin}/booking`,
     siteName: name,
     locale: "ru_RU",

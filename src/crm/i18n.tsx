@@ -154,7 +154,7 @@ export const CRM_T: Record<Lang, any> = {
           'Rasm yuklang: kartochkadagi kamera belgisini bosing.',
           'Xizmatni qaysi xodimlar bajarishini belgilang — aks holda u navbat sahifasida ko‘rinmaydi.',
         ] },
-        staff: { title: 'Xodimlar va kirish huquqi', body: 'Jamoa, ish vaqti va CRM’ga kirish', steps: [
+        staff: { title: 'Xodimlar', body: 'Jamoa va ish vaqti', steps: [
           'Xodim qo‘shing: ismi, telefoni va lavozimi.',
           'Ish vaqtini belgilang — bo‘sh vaqtlar faqat shu oraliqdan chiqadi.',
           'Ta’tilni yoki dam olish kunini shu yerda belgilaysiz.',
@@ -371,7 +371,7 @@ export const CRM_T: Record<Lang, any> = {
           'Загрузите фото: нажмите значок камеры на карточке.',
           'Отметьте исполнителей — без этого услуга не появится на странице записи.',
         ] },
-        staff: { title: 'Сотрудники и доступ', body: 'Команда, часы работы и вход в CRM', steps: [
+        staff: { title: 'Сотрудники', body: 'Команда и часы работы', steps: [
           'Добавьте сотрудника: имя, телефон и должность.',
           'Задайте часы работы — слоты берутся только из них.',
           'Отпуск или выходной отмечается здесь же.',
@@ -588,7 +588,7 @@ export const CRM_T: Record<Lang, any> = {
           'Add a photo: tap the camera badge on the card.',
           'Assign who performs it — without that it never appears on the booking page.',
         ] },
-        staff: { title: 'Staff and access', body: 'Your team, their hours, and CRM logins', steps: [
+        staff: { title: 'Staff', body: 'Your team and their hours', steps: [
           'Add a person: name, phone and job title.',
           'Set their working hours — slots come only from those.',
           'Holidays and days off are marked here too.',

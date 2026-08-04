@@ -626,7 +626,11 @@ function StaffPhoto({
         title={onUpload ? (employee.hasPhoto ? replaceLabel : uploadLabel) : undefined}
         className={onUpload ? 'crm-photo-tile' : undefined}
         style={{
-          width: SIZE, height: SIZE, borderRadius: '50%', overflow: 'hidden', position: 'relative',
+          // No overflow:hidden. The upload badge is deliberately positioned OUTSIDE this box
+          // (right/bottom -2) and a clip here removed a bite from its circle and all of its
+          // white ring on those sides — which is what made the icon look off-centre when it
+          // was pixel-perfect. The photo clips itself instead, via its own border-radius.
+          width: SIZE, height: SIZE, borderRadius: '50%', position: 'relative',
           display: 'block', padding: 0, border: 'none', background: 'transparent',
           cursor: onUpload ? 'pointer' : 'default',
         }}
@@ -856,10 +860,10 @@ export function Services() {
                 onClick={() => uploadServicePhoto(x.id)}
                 title={x.hasPhoto ? sv.photoReplace : sv.photoHint}
                 className="crm-photo-tile"
-                style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', overflow: 'hidden', cursor: 'pointer', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
+                style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', position: 'relative', cursor: 'pointer', background: `color-mix(in srgb, ${colorForId(x.id)} 16%, var(--panel))`, color: colorForId(x.id), display: 'grid', placeItems: 'center' }}
               >
                 {x.hasPhoto
-                  ? <img src={`/api/services/${x.id}/photo?v=${encodeURIComponent(x.photoVersion ?? '')}`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ? <img src={`/api/services/${x.id}/photo?v=${encodeURIComponent(x.photoVersion ?? '')}`} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
                   : <Ic name="scissors" size={18} stroke={2} />}
 
                 <span className="crm-photo-tile-hover">

@@ -141,6 +141,22 @@ check('the pending flag is what drives the warning', /crm_temp_password_pending/
 check('a generated password is still returned to its caller once', /password: tempPassword/.test(codeOnly));
 check('issuing a password sets the flag by literal', /crm_temp_password_pending = 1/.test(codeOnly));
 
+/* ------------------------------------------------- money redaction */
+
+// Every money-bearing field must be emptied for roles without payment:write. `paymentsToday`
+// was added to the payload and not to this gate, so a specialist received the amount, method
+// and customer name of every payment the shop took that day.
+const moneyGate = (worker.match(/if \(!can\(actor\.role, "payment:write"\)\) \{[\s\S]*?\n  \}/) || [''])[0];
+check('a payment:write gate exists', moneyGate.length > 0);
+for (const field of ['kpis: []', 'paymentsToday: []', 'analytics: {', 'dayRevenue: 0']) {
+  check(`money gate clears ${field.replace(/[:{[\]]/g, '').trim()}`, moneyGate.includes(field));
+}
+// The payload declares the field, so the gate must know about it.
+const payloadFields = [...worker.matchAll(/^    (\w+): paymentRowsToday/gm)].map((m) => m[1]);
+for (const f of payloadFields) {
+  check(`payload field "${f}" is inside the money gate`, moneyGate.includes(`${f}: []`));
+}
+
 /* ------------------------------------------------------------- headers */
 
 check('every response goes through withSecurityHeaders',

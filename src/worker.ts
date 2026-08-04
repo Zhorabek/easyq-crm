@@ -2953,6 +2953,13 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
     visible = {
       ...visible,
       kpis: [],
+      // The cash desk's rows. Added the same day as this comment and NOT covered by the gate
+      // they belong under — a specialist's payload came back carrying an amount, a method and
+      // the customer's name for every payment the shop took that day. Caught by reading a real
+      // specialist's payload rather than assuming the new field behaved like its neighbours.
+      //
+      // A new money-shaped field has to be listed here. The gate does not discover them.
+      paymentsToday: [],
       analytics: {
         employeeRevenue: [],
         monthlyRevenue: 0,

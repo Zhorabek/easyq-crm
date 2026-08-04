@@ -128,6 +128,19 @@ for (const route of uploadRoutes) {
     /biz:\$\{actor\.business\.id\}/.test(route.body));
 }
 
+/* -------------------------------------------- plaintext credential storage */
+
+// A generated password is shown once, at the moment it is created, and never stored. All the
+// database keeps is the one bit the UI needs: is this account still on a password we issued.
+// Before this, `crm_temp_password` held a readable password for every business and every staff
+// member indefinitely, so read access to the database was login access to every account.
+// Comments explaining the old column would otherwise trip the check below.
+const codeOnly = worker.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+check('the worker never reads or writes a plaintext temp password', !/crm_temp_password[^_]/.test(codeOnly));
+check('the pending flag is what drives the warning', /crm_temp_password_pending/.test(codeOnly));
+check('a generated password is still returned to its caller once', /password: tempPassword/.test(codeOnly));
+check('issuing a password sets the flag by literal', /crm_temp_password_pending = 1/.test(codeOnly));
+
 /* ------------------------------------------------------------- headers */
 
 check('every response goes through withSecurityHeaders',

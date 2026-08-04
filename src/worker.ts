@@ -122,7 +122,7 @@ type BusinessRow = {
   photo_file_unique_id: string | null;
   crm_username: string | null;
   crm_password_hash: string | null;
-  crm_temp_password: string | null;
+  crm_temp_password_pending: number | null;
   crm_credentials_updated_at: string | null;
   slug: string | null;
   session_version: number;
@@ -139,7 +139,7 @@ type LoginRow = {
   name: string;
   crm_username: string | null;
   crm_password_hash: string | null;
-  crm_temp_password: string | null;
+  crm_temp_password_pending: number | null;
   slug: string | null;
   session_version: number;
 };
@@ -162,7 +162,7 @@ type StaffRow = {
   phone: string | null;
   photo_file_id: string | null;
   crm_username: string | null;
-  crm_temp_password: string | null;
+  crm_temp_password_pending: number | null;
   access_role: string | null;
   access_enabled: number;
 };
@@ -287,7 +287,7 @@ function toAuthSession(business: BusinessRow): AuthSession {
     businessId: business.id,
     businessName: business.name,
     username: business.crm_username ?? "",
-    isTemporaryPassword: Boolean(business.crm_temp_password),
+    isTemporaryPassword: Boolean(Number(business.crm_temp_password_pending)),
     slug: business.slug ?? null,
     role: "owner",
     staffId: null,
@@ -313,7 +313,7 @@ async function getBusinessById(db: D1Database, businessId: number) {
            booking_flow,
            crm_username,
            crm_password_hash,
-           crm_temp_password,
+           crm_temp_password_pending,
            crm_credentials_updated_at,
            slug,
            session_version,
@@ -801,9 +801,9 @@ async function getSessionState(env: Env, request: Request, tenant: TenantContext
   // very next page load instead of when the cookie expires.
   if (session.role !== "owner") {
     const member = await env.DB
-      .prepare("SELECT id, name, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
+      .prepare("SELECT id, name, crm_username, crm_temp_password_pending, access_role, access_enabled FROM staff WHERE id = ? AND business_id = ? LIMIT 1")
       .bind(session.staffId, business.id)
-      .first<{ id: number; name: string; crm_username: string | null; crm_temp_password: string | null; access_role: string | null; access_enabled: number }>();
+      .first<{ id: number; name: string; crm_username: string | null; crm_temp_password_pending: number | null; access_role: string | null; access_enabled: number }>();
 
     if (!member || Number(member.access_enabled) !== 1) {
       return json(
@@ -815,7 +815,7 @@ async function getSessionState(env: Env, request: Request, tenant: TenantContext
     return json({
       ...toAuthSession(business),
       username: member.crm_username ?? "",
-      isTemporaryPassword: Boolean(member.crm_temp_password),
+      isTemporaryPassword: Boolean(Number(member.crm_temp_password_pending)),
       role: staffAccessRole(member.access_role),
       staffId: Number(member.id),
       staffName: member.name,
@@ -848,7 +848,7 @@ async function login(env: Env, request: Request, tenant: TenantContext | null) {
          name,
          crm_username,
          crm_password_hash,
-         crm_temp_password,
+         crm_temp_password_pending,
          slug,
          session_version
        FROM businesses
@@ -908,7 +908,7 @@ type StaffLoginRow = {
   name: string;
   crm_username: string | null;
   crm_password_hash: string | null;
-  crm_temp_password: string | null;
+  crm_temp_password_pending: number | null;
   access_role: string | null;
   access_enabled: number;
   session_version: number;
@@ -935,7 +935,7 @@ async function loginStaff(
 
   const member = await env.DB
     .prepare(
-      `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password,
+      `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password_pending,
               access_role, access_enabled, session_version
        FROM staff WHERE crm_username = ? LIMIT 1`
     )
@@ -976,7 +976,7 @@ async function loginStaff(
         businessId: business.id,
         businessName: business.name,
         username: member.crm_username ?? username,
-        isTemporaryPassword: Boolean(member.crm_temp_password),
+        isTemporaryPassword: Boolean(Number(member.crm_temp_password_pending)),
         slug: business.slug ?? null,
         role,
         staffId: member.id,
@@ -1029,12 +1029,12 @@ async function grantStaffAccess(env: Env, actor: Actor, staffId: number, input: 
   await env.DB
     .prepare(
       `UPDATE staff
-       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, access_role = ?,
+       SET crm_username = ?, crm_password_hash = ?, crm_temp_password_pending = 1, access_role = ?,
            access_enabled = 1, session_version = session_version + 1,
            access_updated_at = datetime('now')
        WHERE id = ? AND business_id = ?`
     )
-    .bind(username, passwordHash, tempPassword, accessRole, staffId, actor.business.id)
+    .bind(username, passwordHash, accessRole, staffId, actor.business.id)
     .run();
 
   return json({ ok: true, username, password: tempPassword, accessRole }, { status: 201 });
@@ -1067,7 +1067,7 @@ async function updateStaffAccessRole(env: Env, actor: Actor, staffId: number, in
 async function revokeStaffAccess(env: Env, actor: Actor, staffId: number) {
   const result = await env.DB
     .prepare(
-      `UPDATE staff SET access_enabled = 0, crm_temp_password = NULL, access_updated_at = datetime('now')
+      `UPDATE staff SET access_enabled = 0, crm_temp_password_pending = 0, access_updated_at = datetime('now')
        WHERE id = ? AND business_id = ?`
     )
     .bind(staffId, actor.business.id)
@@ -1113,7 +1113,7 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
 
   if (username && password) {
     const row = await env.DB
-      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password, slug, session_version FROM businesses WHERE crm_username = ? LIMIT 1")
+      .prepare("SELECT id, name, crm_username, crm_password_hash, crm_temp_password_pending, slug, session_version FROM businesses WHERE crm_username = ? LIMIT 1")
       .bind(username)
       .first<LoginRow>();
     // The tenant check rides along with the credential check: a mismatch falls
@@ -1137,7 +1137,7 @@ async function sessionLogin(env: Env, request: Request, tenant: TenantContext | 
     // `businesses`.
     const member = await env.DB
       .prepare(
-        `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password,
+        `SELECT id, business_id, name, crm_username, crm_password_hash, crm_temp_password_pending,
                 access_role, access_enabled, session_version
          FROM staff WHERE crm_username = ? LIMIT 1`
       )
@@ -1824,9 +1824,9 @@ async function signupBusiness(env: Env, request: Request) {
   const passwordHash = await hashCrmPassword(tempPassword);
   await env.DB
     .prepare(
-      "UPDATE businesses SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?, crm_credentials_updated_at = datetime('now') WHERE id = ?"
+      "UPDATE businesses SET crm_username = ?, crm_password_hash = ?, crm_temp_password_pending = 1, crm_credentials_updated_at = datetime('now') WHERE id = ?"
     )
-    .bind(username, passwordHash, tempPassword, businessId)
+    .bind(username, passwordHash, businessId)
     .run();
 
   return json(
@@ -1937,7 +1937,7 @@ async function changeOwnPassword(
     await env.DB
       .prepare(
         `UPDATE businesses
-         SET crm_password_hash = ?, crm_temp_password = NULL, session_version = session_version + 1,
+         SET crm_password_hash = ?, crm_temp_password_pending = 0, session_version = session_version + 1,
              crm_credentials_updated_at = datetime('now')
          WHERE id = ?`
       )
@@ -1981,7 +1981,7 @@ async function changeOwnPassword(
   await env.DB
     .prepare(
       `UPDATE staff
-       SET crm_password_hash = ?, crm_temp_password = NULL, session_version = session_version + 1,
+       SET crm_password_hash = ?, crm_temp_password_pending = 0, session_version = session_version + 1,
            access_updated_at = datetime('now')
        WHERE id = ? AND business_id = ?`
     )
@@ -2047,7 +2047,10 @@ async function updateBusinessCredentials(env: Env, request: Request, business: B
   }
 
   let nextPasswordHash = business.crm_password_hash;
-  let nextTempPassword: string | null = business.crm_temp_password;
+  // Carries the FLAG forward, not a plaintext password. Setting a password of your own is
+  // exactly what stops it being a temporary one, so this clears; changing only the username
+  // leaves it as it was.
+  let nextTempPending = Number(business.crm_temp_password_pending) ? 1 : 0;
 
   if (newPassword) {
     if (newPassword.length < 8) {
@@ -2055,7 +2058,7 @@ async function updateBusinessCredentials(env: Env, request: Request, business: B
     }
 
     nextPasswordHash = await hashCrmPassword(newPassword);
-    nextTempPassword = null;
+    nextTempPending = 0;
   }
 
   if (username === business.crm_username && !newPassword) {
@@ -2065,12 +2068,12 @@ async function updateBusinessCredentials(env: Env, request: Request, business: B
   await env.DB
     .prepare(
       `UPDATE businesses
-       SET crm_username = ?, crm_password_hash = ?, crm_temp_password = ?,
+       SET crm_username = ?, crm_password_hash = ?, crm_temp_password_pending = ?,
            session_version = session_version + CASE WHEN ? THEN 1 ELSE 0 END,
            crm_credentials_updated_at = datetime('now')
        WHERE id = ?`
     )
-    .bind(username, nextPasswordHash, nextTempPassword, newPassword ? 1 : 0, business.id)
+    .bind(username, nextPasswordHash, nextTempPending, newPassword ? 1 : 0, business.id)
     .run();
 
   const refreshed = await getBusinessById(env.DB, business.id);
@@ -2155,7 +2158,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       .bind(business.id)
       .all<ServiceRow>(),
     env.DB
-      .prepare("SELECT id, business_id, name, role, phone, photo_file_id, crm_username, crm_temp_password, access_role, access_enabled FROM staff WHERE business_id = ? ORDER BY name ASC")
+      .prepare("SELECT id, business_id, name, role, phone, photo_file_id, crm_username, crm_temp_password_pending, access_role, access_enabled FROM staff WHERE business_id = ? ORDER BY name ASC")
       .bind(business.id)
       .all<StaffRow>(),
     env.DB
@@ -2715,7 +2718,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       // must keep the page it already had.
       bookingFlow: normalizeBookingFlow(business.booking_flow),
       crmUsername: business.crm_username,
-      crmHasTemporaryPassword: Boolean(business.crm_temp_password),
+      crmHasTemporaryPassword: Boolean(Number(business.crm_temp_password_pending)),
       brandColor: business.brand_color,
       brandTheme: parseBrandTheme(business.brand_theme),
     },
@@ -2780,7 +2783,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       username: person.crm_username,
       accessRole: person.access_role === "manager" ? "manager" : person.access_role === "specialist" ? "specialist" : null,
       enabled: Number(person.access_enabled) === 1,
-      hasTemporaryPassword: Boolean(person.crm_temp_password),
+      hasTemporaryPassword: Boolean(Number(person.crm_temp_password_pending)),
     })) satisfies StaffAccessRow[],
   };
 }

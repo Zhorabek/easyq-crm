@@ -153,6 +153,21 @@ check('framing is restricted', /frame-ancestors \$\{ancestors/.test(worker));
 check('frame-ancestors is an allowlist, not a wildcard', !/frame-ancestors \*/.test(worker));
 check('frame-ancestors includes self', /const ancestors = \["'self'"\]/.test(worker));
 
+// form-action must cover where the app's own forms actually post.
+//
+// The login flow posts credentials cross-origin to <slug>.<apex>/api/auth/session-login so the
+// tenant host sets its own cookie. `form-action 'self'` silently blocked that: no redirect, and
+// a login page that appeared to do nothing. A CSP that forbids something the app does is not a
+// stricter policy, it is a broken feature.
+const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+const formTargets = [...appSrc.matchAll(/form\.action = `([^`]+)`/g)].map((m) => m[1]);
+check('the login form posts to a tenant host', formTargets.some((t) => /\$\{slug\}\.\$\{apexHost\(\)\}/.test(t)));
+// Against the comment-stripped source: the comment explaining this very fix contains the
+// string "form-action 'self'", and matching it there fails on correct code.
+check('form-action is not locked to self', !/form-action 'self'`/.test(codeOnly));
+check('form-action is built from the tenant roots', /form-action \$\{formTargets\.join\(" "\)\}/.test(worker));
+check('form-action allows subdomains of each root', /formTargets\.push\(`https:\/\/\$\{root\}`, `https:\/\/\*\.\$\{root\}`\)/.test(worker));
+
 /* -------------------------------------------------- error disclosure */
 
 check('public endpoints do not echo internal errors',

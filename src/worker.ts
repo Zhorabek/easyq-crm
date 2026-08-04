@@ -3914,9 +3914,25 @@ function withSecurityHeaders(response: Response, env: Env): Response {
     .filter(Boolean)) {
     ancestors.push(extra);
   }
+  // form-action must include the TENANT HOSTS, not just 'self'.
+  //
+  // Signing in on crm.easyq.uz posts the credentials as a form to
+  // <slug>.easyq.uz/api/auth/session-login, so that host mints its own cookie — the session
+  // cookie carries no Domain= and only exists on the host that set it. That is a CROSS-ORIGIN
+  // form post, and `form-action 'self'` had the browser refuse it silently: no redirect to the
+  // shop's own subdomain, and the login page just sat there until you reloaded it by hand.
+  //
+  // Shipped that way in the security-headers change and broke the flow it did not know about.
+  // Same roots as the framing list, minus the Pages origins: those are places allowed to FRAME
+  // us, which has nothing to do with where our own forms may post.
+  const formTargets = ["'self'"];
+  for (const root of tenantRoots(env)) {
+    if (root === "localhost" || root === "127.0.0.1") formTargets.push(`http://${root}:*`);
+    else formTargets.push(`https://${root}`, `https://*.${root}`);
+  }
   headers.set(
     "content-security-policy",
-    `frame-ancestors ${ancestors.join(" ")}; base-uri 'self'; form-action 'self'`
+    `frame-ancestors ${ancestors.join(" ")}; base-uri 'self'; form-action ${formTargets.join(" ")}`
   );
 
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });

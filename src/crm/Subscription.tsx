@@ -32,28 +32,17 @@ const MANAGER_USERNAME = 'easyq_manager';
 const MANAGER_URL = `https://t.me/${MANAGER_USERNAME}`;
 
 /**
- * Telegram's share sheet, which is the ONLY way to hand it a written message.
+ * Why this opens the manager's chat and does NOT prefill it.
  *
- * `https://t.me/<user>?text=` is ignored — that parameter works for bots and for this share
- * URL, never for a person's chat. So the choice is: land directly in the manager's DM with an
- * empty box, or land in a chat picker with the message already typed. The second is what an
- * owner wants, because the alternative is them writing "hi" and being asked three questions.
+ * Telegram ignores `?text=` on a person's chat. The only URL that carries a written message is
+ * `t.me/share/url`, and that opens a chat PICKER — which Telegram titles "Forward to…". An
+ * owner who clicked "Choose" and got a forward dialog reasonably wondered what they were
+ * forwarding and to whom; the prefill was not worth that confusion.
  *
- * The cost is one tap to pick @easyq_manager from the list. The clipboard copy still happens
- * alongside, so somebody who closes the picker can paste instead.
+ * So: straight into the chat with @easyq_manager, and the request goes to the clipboard. One
+ * paste, no picker, no ambiguity about who they are talking to.
  */
-function shareUrl(message: string) {
-  return `https://t.me/share/url?url=${encodeURIComponent(MANAGER_URL)}&text=${encodeURIComponent(message)}`;
-}
 
-/**
- * The message the owner arrives with.
- *
- * Telegram has NO way to prefill text when opening a person's DM — `?text=` works for bots and
- * for the share sheet, and is ignored for a user. So the text is copied to the clipboard and
- * the screen says to paste it. Clunky, and still better than the owner typing "hi" and the
- * manager having to ask which business, which plan and how many staff.
- */
 function requestText(planLabel: string, price: number, bizName: string, staffCount: number) {
   return [
     'Здравствуйте! Хочу подключить подписку EasyQ.',
@@ -160,10 +149,9 @@ export function PlanGrid({
     const message = requestText(label, plan.price, bizName, subscription.staffCount);
 
     // Copied FIRST: a clipboard write from a document that has just lost focus to a new tab is
-    // refused by browsers that implement the permission properly. This is the fallback for
-    // anyone who dismisses the picker.
+    // refused by browsers that implement the permission properly.
     const copied = await copyText(message);
-    window.open(shareUrl(message), '_blank', 'noopener');
+    window.open(MANAGER_URL, '_blank', 'noopener');
     onPicked?.(copied);
   };
 

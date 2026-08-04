@@ -47,16 +47,28 @@ export function planById(id: string | null | undefined): Plan | null {
  * six staff would be recommending something they cannot use, and they would find that out
  * after paying.
  *
- * The featured tier is the fallback for every case we cannot answer from data: no staff added
- * yet (which is most businesses on the day their trial ends), or a team larger than the biggest
- * plan, where the honest answer is a conversation rather than a button. It is also the one the
- * sales message stars, so the two agree.
+ * ## The floor: never recommend below the featured tier
+ *
+ * A one- or two-person shop technically fits inside p2 at 175k, and we still recommend p5. That
+ * is a pricing decision, not a bug: p5 is the tier the business runs on, it is the one the
+ * outreach message stars, and a two-person shop that hires a third person hits the p2 ceiling
+ * within weeks and has to be moved anyway.
+ *
+ * p2 is still THERE and still selectable — a shop that wants the cheapest thing on the page can
+ * take it in one tap. It is just not what we put the badge on.
+ *
+ * The featured tier is also the fallback for every case we cannot answer from data: no staff
+ * added yet (which is most businesses on the day their trial ends), or a team larger than the
+ * biggest plan, where the honest answer is a conversation rather than a button.
  */
 export function recommendPlan(staffCount: number): Plan {
   const featured = PAID_PLANS.find((plan) => plan.featured)!;
   if (!Number.isFinite(staffCount) || staffCount <= 0) return featured;
 
-  const fits = PAID_PLANS.find((plan) => staffCount <= plan.maxStaff);
+  // Only tiers at or above the featured one are candidates, which is what keeps p2 off the
+  // badge no matter how small the team is.
+  const floor = PAID_PLANS.indexOf(featured);
+  const fits = PAID_PLANS.slice(floor).find((plan) => staffCount <= plan.maxStaff);
   return fits ?? featured;
 }
 

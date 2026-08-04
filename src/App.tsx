@@ -217,13 +217,18 @@ export default function App() {
     return () => { document.body.style.overflow = orig; };
   }, [navOpen]);
   // First-run guided tour: auto-open once the CRM has loaded, unless already seen.
+  //
+  // Keyed per BUSINESS. The flag used to be one global 'easyq_crm_tour_done', so the second
+  // owner to log in on a shared browser — a demo laptop, a shop's front desk, our own machine
+  // during a pitch — silently never got the tour, because somebody else had finished it.
+  const tourKey = `easyq_crm_tour_done_${session?.businessId ?? 'anon'}`;
   useEffect(() => {
     if (!payload || tourAutoShown.current) return;
     tourAutoShown.current = true;
     let seen = false;
-    try { seen = localStorage.getItem('easyq_crm_tour_done') === '1'; } catch {}
+    try { seen = localStorage.getItem(tourKey) === '1'; } catch {}
     if (!seen) setTourOpen(true);
-  }, [payload]);
+  }, [payload, tourKey]);
 
   function setLang(c: Lang) { setLangState(c); try { localStorage.setItem('easyq_crm_lang', c); } catch {} }
   function setTheme(th: Theme) { setThemeState(th); try { localStorage.setItem('easyq_crm_theme', th); } catch {} }
@@ -741,7 +746,7 @@ export default function App() {
         {credentialsEditor && payload && <CredentialsModal initialUsername={payload.business.crmUsername ?? ''} onClose={() => setCredentialsEditor(false)} onSave={(v) => void doSaveCredentials(v)} />}
 
         <Toast msg={toast} />
-        <Tour open={tourOpen} onClose={() => setTourOpen(false)} setActive={setActive} />
+        <Tour open={tourOpen} onClose={() => setTourOpen(false)} setActive={setActive} storageKey={tourKey} />
       </DataCtx.Provider>
     </CRMCtx.Provider>
   );

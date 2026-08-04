@@ -2689,7 +2689,17 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
     {
       id: "client-bot",
       titleKey: "clientBot" as const,
-      url: `https://t.me/${clientBot}`,
+      // Deep-linked to THIS shop, not the bare bot.
+      //
+      // A shop handing out `t.me/easyqueue_client_bot` was sending its customers to a directory
+      // of every business on the platform, with their own somewhere in it — the one link where
+      // we could not afford to make a customer go looking. `?start=` lands them on that shop's
+      // card with the Book button already there.
+      //
+      // The slug when there is one, because it is the readable half of their own booking URL
+      // and matches what they already give people; `b<id>` otherwise, which every business has.
+      // Both are valid Telegram start payloads (letters, digits, hyphen, underscore).
+      url: `https://t.me/${clientBot}?start=${business.slug || `b${business.id}`}`,
       kind: "public",
     },
     {

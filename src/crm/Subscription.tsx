@@ -32,16 +32,28 @@ const MANAGER_USERNAME = 'easyq_manager';
 const MANAGER_URL = `https://t.me/${MANAGER_USERNAME}`;
 
 /**
- * Why this opens the manager's chat and does NOT prefill it.
+ * Open the manager's chat with the request already typed.
  *
- * Telegram ignores `?text=` on a person's chat. The only URL that carries a written message is
- * `t.me/share/url`, and that opens a chat PICKER — which Telegram titles "Forward to…". An
- * owner who clicked "Choose" and got a forward dialog reasonably wondered what they were
- * forwarding and to whom; the prefill was not worth that confusion.
+ * `?text=` on a PUBLIC USERNAME link is documented — core.telegram.org/api/links:
  *
- * So: straight into the chat with @easyq_manager, and the request goes to the clipboard. One
- * paste, no picker, no ambiguity about who they are talking to.
+ *   t.me/<username>?text=<draft_text>
+ *   "UTF-8 text to pre-enter into the text input bar, if the user can write in the chat."
+ *
+ * Not just for bots, which is what an earlier version of this file assumed on its way to using
+ * t.me/share/url instead. That worked, but it opens a chat PICKER titled "Forward to…", and an
+ * owner who clicked "Choose" had every reason to wonder what they were forwarding.
+ *
+ * A client too old to honour the parameter ignores it and opens the chat anyway, which is the
+ * behaviour we would have had regardless — so there is no version of this that is worse than
+ * doing nothing.
+ *
+ * Telegram prepends a space when draft text starts with `@`, to avoid triggering an inline
+ * query. Ours starts with a greeting, so that never fires, but it is why the manager's username
+ * is not the first thing in the message.
  */
+function chatUrl(message: string) {
+  return `${MANAGER_URL}?text=${encodeURIComponent(message)}`;
+}
 
 function requestText(planLabel: string, price: number, bizName: string, staffCount: number) {
   return [
@@ -149,9 +161,10 @@ export function PlanGrid({
     const message = requestText(label, plan.price, bizName, subscription.staffCount);
 
     // Copied FIRST: a clipboard write from a document that has just lost focus to a new tab is
-    // refused by browsers that implement the permission properly.
+    // refused by browsers that implement the permission properly. This is the belt to the
+    // draft's braces — an ancient client that drops ?text= still leaves them something to paste.
     const copied = await copyText(message);
-    window.open(MANAGER_URL, '_blank', 'noopener');
+    window.open(chatUrl(message), '_blank', 'noopener');
     onPicked?.(copied);
   };
 

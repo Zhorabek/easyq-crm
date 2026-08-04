@@ -46,6 +46,7 @@ import { Ic } from './crm/icons';
 import { CRMLogo, Toast } from './crm/ui';
 import { SubscriptionBanner, SubscriptionExpired } from './crm/Subscription';
 import { Tour } from './crm/Tour';
+import { Help } from './crm/Help';
 import { Sidebar, Topbar } from './crm/shell';
 import { useBrandAccent } from './crm/brand-shell';
 import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
@@ -77,20 +78,21 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
   analytics: Analytics,
   branding: Branding,
   settings: Settings,
+  help: Help,
 };
 
-const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'branding', 'settings'];
+const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'branding', 'settings', 'help'];
 
 // Which screens each role sees. This MIRRORS server/permissions.ts to keep the nav tidy —
 // it is NOT the enforcement. Hiding a button stops nobody; the worker rejects the call.
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
   // No branding: it needs business:write, which only an owner has.
-  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings'],
+  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings', 'help'],
   // Customers is theirs now: the payload used to send them an empty book, and now sends the
   // clients they have personally served (see clientsScopedToStaff in worker.ts). Still no
   // staff screen — that is the whole team, including colleagues' numbers.
-  specialist: ['dashboard', 'calendar', 'customers', 'settings'],
+  specialist: ['dashboard', 'calendar', 'customers', 'settings', 'help'],
 };
 
 const LOGIN_LABEL: Record<Lang, string> = { uz: 'Kirish', ru: 'Войти', en: 'Sign in' };
@@ -615,6 +617,7 @@ export default function App() {
     services: { title: t.serv.title, sub: null, action: { label: t.serv.add, run: () => setServiceEditor({ initial: null }) } },
     inventory: { title: t.nav.inventory, sub: t.inv.sub, action: { label: t.inv.add, run: () => setModal({ type: 'product' }) } },
     finance: { title: t.nav.finance, sub: t.fin.sub, action: null },
+    help: { title: t.nav.help, sub: t.help.sub, action: null },
     loyalty: { title: t.nav.loyalty, sub: t.loy.sub, action: null },
     payroll: { title: t.nav.payroll, sub: t.pay.sub, action: null },
     reviews: { title: t.nav.reviews, sub: t.rev.sub, action: null },
@@ -629,7 +632,7 @@ export default function App() {
   const crmValue: CRMContextValue = {
     lang, t, m: CRM_M[lang], bizName, bizType, demo: false,
     // null when nothing is uploaded, so the sidebar falls back to the name's initial.
-    logoVersion: payload?.business.photoFileId ? payload.generatedAt : null, setLang, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
+    logoVersion: payload?.business.photoFileId ? payload.generatedAt : null, setLang, setActive, branch, setBranch, role, staffName: session.staffName, isTemporaryPassword: session.isTemporaryPassword, allowed, navOpen, setNavOpen,
     openModal: (type) => setModal({ type }),
     notify,
     logout: () => void handleLogout(),

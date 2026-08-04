@@ -6,6 +6,7 @@ import { Toast } from './crm/ui';
 import { Sidebar, Topbar } from './crm/shell';
 import { Analytics, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
 import { Automations, Inventory, Loyalty, Marketing, Payroll, Reviews } from './crm/screens-mock';
+import { Help } from './crm/Help';
 import { buildMockPayload } from './crm/mock';
 import { isoToday } from './lib/date';
 import type { CrmPayload } from './types';
@@ -32,18 +33,21 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
   automations: Automations,
   analytics: Analytics,
   settings: Settings,
+  help: Help,
 };
 
 const DEMO_SCREENS = [
   'dashboard', 'calendar', 'customers', 'staff', 'services', 'inventory', 'finance',
-  'loyalty', 'payroll', 'reviews', 'marketing', 'automations', 'analytics', 'settings',
+  // The guide is read-only, so unlike Branding it is safe here — and a prospect being able to
+  // see that the product comes with a manual is worth more in the demo than it costs.
+  'loyalty', 'payroll', 'reviews', 'marketing', 'automations', 'analytics', 'help', 'settings',
 ];
 
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   // Not null: the demo deliberately omits Branding, which would save against the live API.
   owner: DEMO_SCREENS,
-  manager: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'settings'],
-  specialist: ['dashboard', 'calendar', 'customers', 'settings'],
+  manager: ['dashboard', 'calendar', 'customers', 'services', 'inventory', 'reviews', 'automations', 'help', 'settings'],
+  specialist: ['dashboard', 'calendar', 'customers', 'help', 'settings'],
 };
 
 function readParam(name: string, fallback: string): string {
@@ -129,6 +133,7 @@ export default function EmbedApp() {
     marketing: { title: t.nav.marketing, sub: t.mkt.sub },
     automations: { title: t.nav.automations, sub: t.auto.sub },
     analytics: { title: t.an.title, sub: t.an.sub },
+    help: { title: t.nav.help, sub: t.help.sub },
     settings: { title: t.nav.settings, sub: t.set.sub },
   };
   const meta = titles[effActive] || titles.dashboard;
@@ -144,6 +149,7 @@ export default function EmbedApp() {
     demo: true,
     startTour: () => {},
     setLang,
+    setActive,
     branch,
     setBranch,
     role,

@@ -23,6 +23,7 @@ const NAV_ITEMS: string[] = [
   'automations',
   'analytics',
   'branding',
+  'help',
 ];
 
 /**

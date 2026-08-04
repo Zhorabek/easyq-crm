@@ -13,7 +13,7 @@ export const CRM_LANGS: Array<{ code: Lang; label: string }> = [
 // Permissive types: the design accesses many keys dynamically (t.status[x], t.via[x], s.nav[k]).
 export const CRM_T: Record<Lang, any> = {
   uz: {
-    nav: { dashboard: 'Boshqaruv paneli', calendar: 'Jadval', customers: 'Mijozlar', staff: 'Xodimlar', services: 'Xizmatlar', inventory: 'Ombor', finance: 'Kassa', loyalty: 'Sodiqlik', payroll: 'Ish haqi', reviews: 'Sharhlar', marketing: 'Marketing', automations: 'Avtomatlashtirish', analytics: 'Tahlil', branding: 'Brending', settings: 'Sozlamalar' },
+    nav: { dashboard: 'Boshqaruv paneli', calendar: 'Jadval', customers: 'Mijozlar', staff: 'Xodimlar', services: 'Xizmatlar', inventory: 'Ombor', finance: 'Kassa', loyalty: 'Sodiqlik', payroll: 'Ish haqi', reviews: 'Sharhlar', marketing: 'Marketing', automations: 'Avtomatlashtirish', analytics: 'Tahlil', branding: 'Brending', help: 'Qo‘llanma', settings: 'Sozlamalar' },
     search: 'Mijoz, navbat yoki xizmat qidirish…',
     newBooking: 'Yangi navbat',
     notif: {
@@ -121,6 +121,85 @@ export const CRM_T: Record<Lang, any> = {
       tempPasswordWarn: 'Siz vaqtinchalik paroldan foydalanmoqdasiz. Iltimos, o‘zingizning parolingizni o‘rnating.',
       passwordShort: 'Parol kamida 8 belgidan iborat bo‘lishi kerak.', passwordMismatch: 'Parollar bir xil emas.',
     },
+    help: {
+      sub: 'Qo‘llanma va ko‘rsatmalar',
+      openScreen: 'Bo‘limni ochish',
+      tourTitle: 'Interaktiv qo‘llanma',
+      tourSub: 'CRM bo‘limlarini bir daqiqada ko‘rsatamiz.',
+      startTour: 'Boshlash',
+      askTitle: 'Savol qoldimi?',
+      askSub: 'Menejerimizga Telegram orqali yozing — ish vaqtida javob beramiz.',
+      askAction: 'Yozish',
+      topics: {
+        start: { title: 'Ishni boshlash', body: 'Uch qadam — va mijozlar yozila boshlaydi', steps: [
+          'Xizmatlaringizni qo‘shing: nomi, narxi va davomiyligi.',
+          'Xodimlarni qo‘shing va har biriga qaysi xizmatlarni bajarishini belgilang.',
+          'Har bir xodim uchun ish vaqtini tanlang — bo‘sh vaqtlar shundan hosil bo‘ladi.',
+          'Navbat havolangizni mijozlarga yuboring yoki QR-kodni chop etib qo‘ying.',
+        ] },
+        services: { title: 'Xizmatlar', body: 'Mijoz aynan shularni band qiladi', steps: [
+          '«Qo‘shish» tugmasi orqali xizmat yarating.',
+          'Davomiyligini to‘g‘ri belgilang — bo‘sh vaqtlar shu bo‘yicha hisoblanadi.',
+          'Rasm yuklang: kartochkadagi kamera belgisini bosing.',
+          'Xizmatni qaysi xodimlar bajarishini belgilang — aks holda u navbat sahifasida ko‘rinmaydi.',
+        ] },
+        staff: { title: 'Xodimlar va kirish huquqi', body: 'Jamoa, ish vaqti va CRM’ga kirish', steps: [
+          'Xodim qo‘shing: ismi, telefoni va lavozimi.',
+          'Ish vaqtini belgilang — bo‘sh vaqtlar faqat shu oraliqdan chiqadi.',
+          'Ta’tilni yoki dam olish kunini shu yerda belgilaysiz.',
+          'Egasi xodimga CRM’ga kirish uchun login va vaqtinchalik parol berishi mumkin.',
+        ] },
+        calendar: { title: 'Jadval va navbatlar', body: 'Kun, hafta va usta bo‘yicha', steps: [
+          'Kun, hafta yoki oy ko‘rinishini tanlang.',
+          'Navbat ustiga bosing — mijoz, xizmat va narx ko‘rinadi.',
+          'Holatini o‘zgartiring: tasdiqlangan, bajarildi yoki bekor qilindi.',
+          'Qo‘lda navbat qo‘shish uchun yuqoridagi «Yangi navbat» tugmasidan foydalaning.',
+        ] },
+        customers: { title: 'Mijozlar', body: 'Tashriflar tarixi va telefonlar', steps: [
+          'Mijozlar telefon raqami bo‘yicha avtomatik birlashtiriladi.',
+          'Kartochkada tashriflar tarixi va umumiy summa ko‘rinadi.',
+          'Ustalar faqat o‘zi xizmat ko‘rsatgan mijozlarni ko‘radi.',
+        ] },
+        branding: { title: 'Brend va navbat sahifasi', body: 'Sahifangiz sizniki bo‘lib ko‘rinsin', steps: [
+          'Logotip yuklang — u navbat sahifasida va CRM’da ko‘rinadi.',
+          'Firma rangini tanlang; namunada darhol ko‘rasiz.',
+          'O‘zgarishlar saqlangandan so‘ng mijozlar sahifasida ko‘rinadi.',
+        ] },
+        link: { title: 'Navbat havolasi va QR-kod', body: 'Mijozlarga nima yuborish kerak', steps: [
+          'Egasi uchun: «Brending» bo‘limida. Menejer va usta uchun: «Sozlamalar» bo‘limida.',
+          '«Nusxa olish» tugmasini bosing va havolani mijozga yuboring.',
+          'QR-kodni yuklab oling va kassaga yoki eshikka chop etib qo‘ying.',
+          'Havola doim ishlaydi — obuna tugasa ham mijozlar yozilaveradi.',
+        ] },
+        bookingOrder: { title: 'Navbat tartibi', body: 'Mijoz avval nimani tanlaydi', steps: [
+          'Avval xizmat — odatiy tartib, ko‘pchilikka mos.',
+          'Avval usta — mijozlar aniq bir ustaga qaytadigan joylar uchun.',
+          'Avval sana va vaqt — «payshanba kuni bo‘shmi» deb o‘ylaydiganlar uchun.',
+          'Faqat xizmat — ustani mijoz tanlamaydi, o‘zingiz biriktirasiz.',
+        ] },
+        money: { title: 'Kassa va to‘lovlar', body: 'Tushum va to‘lov usullari', steps: [
+          'Bajarilgan navbatlar tushumga tushadi.',
+          'To‘lov usulini tanlang: naqd, karta yoki o‘tkazma.',
+          'Kun bo‘yicha jami va o‘rtacha chek shu yerda ko‘rinadi.',
+        ] },
+        account: { title: 'Login va parol', body: 'CRM’ga kirish ma’lumotlari', steps: [
+          '«Sozlamalar» → «CRM kirish» bo‘limida parolni yangilang.',
+          'Vaqtinchalik parol ishlatilayotgan bo‘lsa, uni albatta o‘zgartiring.',
+          'Parol o‘zgarganda boshqa qurilmalardagi seanslar yopiladi.',
+        ] },
+        bots: { title: 'Telegram botlar', body: 'Mijozlar uchun va egasi uchun', steps: [
+          'Mijozlar boti: xizmat topish va navbatga yozilish uchun.',
+          'Biznes boti: biznesni ro‘yxatdan o‘tkazish va sozlash uchun.',
+          'Botlar obuna tugasa ham ishlashda davom etadi.',
+        ] },
+        billing: { title: 'Obuna', body: 'Bepul oy va tariflar', steps: [
+          'Birinchi oy bepul — hech narsa to‘lanmaydi.',
+          'Tugashiga bir hafta qolganda yuqorida ogohlantirish chiqadi.',
+          'Tarif xodimlar soniga qarab tanlanadi; menejerimiz uni yoqadi.',
+          'Obuna tugasa CRM to‘xtaydi, lekin navbat sahifasi va botlar ishlayveradi.',
+        ] },
+      },
+    },
     tour: {
       next: 'Keyingi', back: 'Orqaga', skip: 'O‘tkazib yuborish', done: 'Boshladik!', replay: 'Qo‘llanma', close: 'Yopish', stepOf: '{n}/{total}',
       steps: {
@@ -141,7 +220,7 @@ export const CRM_T: Record<Lang, any> = {
   },
 
   ru: {
-    nav: { dashboard: 'Панель', calendar: 'Расписание', customers: 'Клиенты', staff: 'Сотрудники', services: 'Услуги', inventory: 'Склад', finance: 'Касса', loyalty: 'Лояльность', payroll: 'Зарплата', reviews: 'Отзывы', marketing: 'Маркетинг', automations: 'Автоматизация', analytics: 'Аналитика', branding: 'Брендинг', settings: 'Настройки' },
+    nav: { dashboard: 'Панель', calendar: 'Расписание', customers: 'Клиенты', staff: 'Сотрудники', services: 'Услуги', inventory: 'Склад', finance: 'Касса', loyalty: 'Лояльность', payroll: 'Зарплата', reviews: 'Отзывы', marketing: 'Маркетинг', automations: 'Автоматизация', analytics: 'Аналитика', branding: 'Брендинг', help: 'Инструкция', settings: 'Настройки' },
     search: 'Поиск клиента, записи или услуги…',
     newBooking: 'Новая запись',
     notif: {
@@ -249,6 +328,85 @@ export const CRM_T: Record<Lang, any> = {
       tempPasswordWarn: 'Вы используете временный пароль. Задайте свой собственный.',
       passwordShort: 'Пароль должен содержать минимум 8 символов.', passwordMismatch: 'Пароли не совпадают.',
     },
+    help: {
+      sub: 'Руководство и инструкции',
+      openScreen: 'Открыть раздел',
+      tourTitle: 'Интерактивная подсказка',
+      tourSub: 'За минуту покажем разделы CRM.',
+      startTour: 'Запустить',
+      askTitle: 'Остался вопрос?',
+      askSub: 'Напишите нашему менеджеру в Telegram — ответим в рабочее время.',
+      askAction: 'Написать',
+      topics: {
+        start: { title: 'С чего начать', body: 'Три шага — и клиенты начнут записываться', steps: [
+          'Добавьте услуги: название, цена и длительность.',
+          'Добавьте сотрудников и отметьте, кто какие услуги выполняет.',
+          'Задайте часы работы каждому — из них строятся свободные слоты.',
+          'Отправьте клиентам ссылку на запись или распечатайте QR-код.',
+        ] },
+        services: { title: 'Услуги', body: 'Именно их бронирует клиент', steps: [
+          'Создайте услугу кнопкой «Добавить».',
+          'Укажите точную длительность — по ней считаются свободные окна.',
+          'Загрузите фото: нажмите значок камеры на карточке.',
+          'Отметьте исполнителей — без этого услуга не появится на странице записи.',
+        ] },
+        staff: { title: 'Сотрудники и доступ', body: 'Команда, часы работы и вход в CRM', steps: [
+          'Добавьте сотрудника: имя, телефон и должность.',
+          'Задайте часы работы — слоты берутся только из них.',
+          'Отпуск или выходной отмечается здесь же.',
+          'Владелец может выдать сотруднику логин и временный пароль для входа в CRM.',
+        ] },
+        calendar: { title: 'Расписание и записи', body: 'По дням, неделям и мастерам', steps: [
+          'Переключайте вид: день, неделя или месяц.',
+          'Нажмите на запись — увидите клиента, услугу и цену.',
+          'Меняйте статус: подтверждена, выполнена или отменена.',
+          'Запись вручную — кнопка «Новая запись» сверху.',
+        ] },
+        customers: { title: 'Клиенты', body: 'История визитов и телефоны', steps: [
+          'Клиенты объединяются автоматически по номеру телефона.',
+          'В карточке видна история визитов и общая сумма.',
+          'Мастер видит только тех клиентов, кого обслуживал сам.',
+        ] },
+        branding: { title: 'Бренд и страница записи', body: 'Чтобы страница выглядела вашей', steps: [
+          'Загрузите логотип — он появится на странице записи и в CRM.',
+          'Выберите фирменный цвет — результат сразу виден в превью.',
+          'После сохранения изменения увидят клиенты.',
+        ] },
+        link: { title: 'Ссылка на запись и QR-код', body: 'Что отправлять клиентам', steps: [
+          'Владельцу — в разделе «Брендинг». Менеджеру и мастеру — в «Настройках».',
+          'Нажмите «Копировать» и отправьте ссылку клиенту.',
+          'Скачайте QR-код и распечатайте его на кассе или на двери.',
+          'Ссылка работает всегда — даже если подписка закончилась.',
+        ] },
+        bookingOrder: { title: 'Порядок записи', body: 'Что клиент выбирает первым', steps: [
+          'Сначала услуга — обычный порядок, подходит большинству.',
+          'Сначала мастер — для мест, куда возвращаются к конкретному человеку.',
+          'Сначала дата и время — для тех, кто думает «свободно ли в четверг».',
+          'Только услуга — мастера клиент не выбирает, вы назначаете сами.',
+        ] },
+        money: { title: 'Касса и платежи', body: 'Выручка и способы оплаты', steps: [
+          'Выполненные записи попадают в выручку.',
+          'Укажите способ оплаты: наличные, карта или перевод.',
+          'Итог за день и средний чек видны здесь же.',
+        ] },
+        account: { title: 'Логин и пароль', body: 'Доступ в CRM', steps: [
+          '«Настройки» → «Доступ в CRM» — там меняется пароль.',
+          'Если используется временный пароль — обязательно смените его.',
+          'При смене пароля сессии на других устройствах закрываются.',
+        ] },
+        bots: { title: 'Telegram-боты', body: 'Для клиентов и для владельца', steps: [
+          'Бот для клиентов: найти сервис и записаться.',
+          'Бот для бизнеса: регистрация и настройка бизнеса.',
+          'Боты продолжают работать даже после окончания подписки.',
+        ] },
+        billing: { title: 'Подписка', body: 'Бесплатный месяц и тарифы', steps: [
+          'Первый месяц бесплатно — платить ничего не нужно.',
+          'За неделю до конца сверху появится предупреждение.',
+          'Тариф подбирается по числу сотрудников; подключает его наш менеджер.',
+          'После окончания CRM останавливается, но страница записи и боты работают.',
+        ] },
+      },
+    },
     tour: {
       next: 'Далее', back: 'Назад', skip: 'Пропустить', done: 'Начать!', replay: 'Подсказка', close: 'Закрыть', stepOf: '{n}/{total}',
       steps: {
@@ -269,7 +427,7 @@ export const CRM_T: Record<Lang, any> = {
   },
 
   en: {
-    nav: { dashboard: 'Dashboard', calendar: 'Schedule', customers: 'Customers', staff: 'Staff', services: 'Services', inventory: 'Inventory', finance: 'Cash desk', loyalty: 'Loyalty', payroll: 'Payroll', reviews: 'Reviews', marketing: 'Marketing', automations: 'Automations', analytics: 'Analytics', branding: 'Branding', settings: 'Settings' },
+    nav: { dashboard: 'Dashboard', calendar: 'Schedule', customers: 'Customers', staff: 'Staff', services: 'Services', inventory: 'Inventory', finance: 'Cash desk', loyalty: 'Loyalty', payroll: 'Payroll', reviews: 'Reviews', marketing: 'Marketing', automations: 'Automations', analytics: 'Analytics', branding: 'Branding', help: 'Guide', settings: 'Settings' },
     search: 'Search customer, booking or service…',
     newBooking: 'New booking',
     notif: {
@@ -377,6 +535,85 @@ export const CRM_T: Record<Lang, any> = {
       tempPasswordWarn: 'You are using a temporary password. Please set your own.',
       passwordShort: 'Password must be at least 8 characters.', passwordMismatch: 'Passwords do not match.',
     },
+    help: {
+      sub: 'Guide and instructions',
+      openScreen: 'Open the screen',
+      tourTitle: 'Interactive tour',
+      tourSub: 'A one-minute walk through the CRM.',
+      startTour: 'Start',
+      askTitle: 'Still stuck?',
+      askSub: 'Message our manager on Telegram — we answer during working hours.',
+      askAction: 'Message us',
+      topics: {
+        start: { title: 'Getting started', body: 'Three steps and customers can book', steps: [
+          'Add your services: name, price and duration.',
+          'Add your team and mark who performs which service.',
+          'Set each person’s working hours — free slots are built from them.',
+          'Send customers your booking link, or print the QR code.',
+        ] },
+        services: { title: 'Services', body: 'Exactly what a customer books', steps: [
+          'Create a service with the Add button.',
+          'Get the duration right — free slots are calculated from it.',
+          'Add a photo: tap the camera badge on the card.',
+          'Assign who performs it — without that it never appears on the booking page.',
+        ] },
+        staff: { title: 'Staff and access', body: 'Your team, their hours, and CRM logins', steps: [
+          'Add a person: name, phone and job title.',
+          'Set their working hours — slots come only from those.',
+          'Holidays and days off are marked here too.',
+          'The owner can give someone a username and a temporary password for the CRM.',
+        ] },
+        calendar: { title: 'Schedule and bookings', body: 'By day, week and specialist', steps: [
+          'Switch between day, week and month.',
+          'Tap a booking to see the customer, the service and the price.',
+          'Change the status: confirmed, done or cancelled.',
+          'Book someone in by hand with the New booking button at the top.',
+        ] },
+        customers: { title: 'Customers', body: 'Visit history and phone numbers', steps: [
+          'Customers merge automatically by phone number.',
+          'Each card shows their visit history and total spend.',
+          'A specialist sees only the customers they served themselves.',
+        ] },
+        branding: { title: 'Brand and booking page', body: 'Make the page look like yours', steps: [
+          'Upload your logo — it appears on the booking page and in the CRM.',
+          'Pick your brand colour; the preview updates as you choose.',
+          'Customers see the change once you save.',
+        ] },
+        link: { title: 'Booking link and QR code', body: 'What to send your customers', steps: [
+          'Owners: in Branding. Managers and specialists: in Settings.',
+          'Tap Copy and send the link to a customer.',
+          'Download the QR code and print it for the counter or the door.',
+          'The link always works — even if the subscription has run out.',
+        ] },
+        bookingOrder: { title: 'Booking order', body: 'What a customer picks first', steps: [
+          'Service first — the usual order, right for most shops.',
+          'Specialist first — for places people return to one particular person.',
+          'Date and time first — for customers who think "am I free Thursday".',
+          'Service only — the customer never picks a specialist; you assign one.',
+        ] },
+        money: { title: 'Cash desk and payments', body: 'Revenue and payment methods', steps: [
+          'Completed bookings count towards revenue.',
+          'Record how it was paid: cash, card or transfer.',
+          'The daily total and the average check are here as well.',
+        ] },
+        account: { title: 'Username and password', body: 'Your CRM login', steps: [
+          'Settings → CRM access is where you change your password.',
+          'If a temporary password is in use, change it.',
+          'Changing your password signs out your other devices.',
+        ] },
+        bots: { title: 'Telegram bots', body: 'One for customers, one for owners', steps: [
+          'The customer bot: find a shop and book a time.',
+          'The business bot: register and configure a business.',
+          'Both keep working even after a subscription runs out.',
+        ] },
+        billing: { title: 'Subscription', body: 'The free month and the plans', steps: [
+          'The first month is free — nothing to pay.',
+          'A week before it ends, a warning appears at the top.',
+          'The plan follows your staff count; our manager activates it.',
+          'When it lapses the CRM stops, but your booking page and the bots keep running.',
+        ] },
+      },
+    },
     tour: {
       next: 'Next', back: 'Back', skip: 'Skip', done: 'Get started!', replay: 'Take the tour', close: 'Close', stepOf: '{n}/{total}',
       steps: {
@@ -458,6 +695,8 @@ export type CRMContextValue = {
   /** true only in the public landing embed (?embed=1) — gates all demo/mock UI. */
   demo: boolean;
   setLang: (l: Lang) => void;
+  /** Jump to another screen. Help links to the screens it documents. */
+  setActive: (screen: string) => void;
   openModal: (type: string, extra?: Record<string, any>) => void;
   notify: (msg?: string) => void;
   branch: number;

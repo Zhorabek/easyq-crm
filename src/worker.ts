@@ -2395,8 +2395,12 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   if (bookingsWithoutStaff.length > 0) {
     calendarColumns.push({
       id: 0,
-      name: "Без сотрудника",
-      role: "Нужна привязка",
+      // Empty, not Russian prose. Same rule as `role` above, and the same reason: an Uzbek
+      // owner with an unassigned booking got a calendar column headed "Без сотрудника".
+      //
+      // `id: 0` is what identifies this column, so the client names it — see t.cal.noStaff.
+      name: "",
+      role: "",
       serviceNames: [],
       slots: [],
       utilization: 0,

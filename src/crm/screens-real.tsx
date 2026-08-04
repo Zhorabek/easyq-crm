@@ -290,15 +290,21 @@ function DayView({ payload }: { payload: CrmPayload }) {
       <Panel pad={0} className="crm-calwrap" style={{ overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: gridCols }}>
           <div />
-          {cols.map((s) => (
+          {cols.map((s) => {
+            // id 0 is the bucket for bookings with nobody assigned. The worker sends it
+            // nameless on purpose — it cannot know which language to name it in.
+            const colName = s.id === 0 ? t.cal.noStaff : s.name;
+            const colRole = s.id === 0 ? t.cal.noStaffRole : s.role;
+            return (
             <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 18px 16px' }}>
-              <Avatar name={s.name} color={avatarColor(s.name)} size={34} />
+              <Avatar name={colName} color={avatarColor(colName)} size={34} />
               <div style={{ minWidth: 0, lineHeight: 1.25 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap' }}>{s.name.split(' ')[0]}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 600 }}>{s.role}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, whiteSpace: 'nowrap' }}>{colName.split(' ')[0]}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 600 }}>{colRole}</div>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
         <div className="scrollarea" style={{ display: 'grid', gridTemplateColumns: gridCols, maxHeight: 600, position: 'relative' }}>
           <div>

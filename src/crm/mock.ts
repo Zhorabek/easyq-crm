@@ -319,6 +319,8 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       totalCompletedVisits: bookings.filter((b) => b.status === 'done').length,
       totalCancelledVisits: 0,
     },
+    // The demo takes no payments, so the cash desk is empty rather than invented.
+    paymentsToday: [],
     bookingLinks: [
       { id: 'public-booking', titleKey: 'publicBooking', url: 'https://barber-house.easyq.uz/booking', kind: 'public' },
       { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },

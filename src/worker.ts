@@ -2348,6 +2348,15 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
 
   const completedToday = bookingsToday.filter((booking) => booking.status === "done");
   const paymentsToday = sumPaymentsInRange(payments, (payment) => getDatePart(payment.created_at) === selectedDate);
+  // The same predicate the day's TOTAL uses, kept as rows for the cash desk. Building this
+  // list on the client out of the day's bookings made the breakdown disagree with the total
+  // whenever a payment was taken against a booking scheduled on another date.
+  // Booking lookup for the payment rows below: a payment names its booking, and the cash desk
+  // shows who it was for.
+  const bookingById = new Map(bookings.map((booking) => [booking.id, booking]));
+  const paymentRowsToday = payments
+    .filter((payment) => getDatePart(payment.created_at) === selectedDate)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const paymentsMonth = sumPaymentsInRange(payments, (payment) => payment.created_at.startsWith(selectedDate.slice(0, 7)));
   const paymentsAll = sumPaymentsInRange(payments, () => true);
   const dayRevenue = paymentsToday.incoming - paymentsToday.outgoing;
@@ -2763,6 +2772,19 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       totalCancelledVisits: bookings.filter((booking) => booking.status === "cancelled").length,
     },
     bookingLinks,
+    paymentsToday: paymentRowsToday.map((payment) => {
+      const booking = bookingById.get(payment.booking_id);
+      return {
+        id: payment.id,
+        amount: Number(payment.amount || 0),
+        method: payment.method,
+        flow: payment.flow,
+        createdAt: payment.created_at,
+        clientName: booking?.client_name ?? "",
+        serviceName: booking?.service_name ?? "",
+        staffName: booking?.staff_name ?? "",
+      };
+    }),
     // The subscription, resolved against TODAY IN THE SHOP'S TIMEZONE. Using UTC would end a
     // trial at five in the morning local, which is a strange time to lock somebody out.
     //

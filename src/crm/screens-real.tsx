@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
 import { Avatar, Badge, Donut, InfoTip, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
-import { avatarColor, colorForId, dayPayments, fmtPrice, fmtSom, serviceSummary, useData } from './data';
+import { avatarColor, colorForId, fmtPrice, fmtSom, serviceSummary, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import { BOOKING_FLOWS, type BookingFlow } from '../shared/bookingFlow';
@@ -921,7 +921,9 @@ export function Finance() {
   const { payload } = useData();
   if (!payload) return null;
   const f = t.fin;
-  const txns = dayPayments(payload).filter((p) => p.flow === 'in');
+  // payload.paymentsToday, not the day's bookings: the server filters on when the money was
+  // TAKEN, which is the same basis as the headline total right above these cards.
+  const txns = (payload.paymentsToday ?? []).filter((p) => p.flow === 'in');
   const methodMeta: Record<string, [string, string, string, string]> = {
     cash: ['var(--accent-deep)', 'var(--accent-tint)', f.cash, 'wallet'],
     card: ['var(--blue)', 'var(--blue-t)', f.card, 'finance'],

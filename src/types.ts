@@ -168,6 +168,25 @@ export interface CalendarBookingCard extends ReservationItem {
   color: string;
 }
 
+/**
+ * One payment TAKEN on the selected day, whichever booking it belongs to.
+ *
+ * The cash desk used to build this list client-side out of the bookings scheduled that day, so
+ * money taken today against a booking scheduled for next week vanished from the breakdown while
+ * still counting towards the headline figure — three numbers on one screen disagreeing with the
+ * fourth. Basis matters: a cash desk reconciles what went through the till today.
+ */
+export interface DayPayment {
+  id: number;
+  amount: number;
+  method: PaymentMethod;
+  flow: PaymentFlow;
+  createdAt: string;
+  clientName: string;
+  serviceName: string;
+  staffName: string;
+}
+
 export interface PaymentEntry {
   id: number;
   amount: number;
@@ -397,6 +416,8 @@ export interface CrmPayload {
     totalCancelledVisits: number;
   };
   bookingLinks: BookingLinkItem[];
+  /** Payments recorded on `selectedDate`, for the cash desk. */
+  paymentsToday: DayPayment[];
   /**
    * Emptied by redactPayloadFor for any actor without the `access:manage` capability,
    * which today means everyone but the owner. Carries login usernames, so it must stay

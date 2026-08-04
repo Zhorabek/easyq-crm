@@ -55,13 +55,36 @@ function chatUrl(message: string) {
   return `${MANAGER_URL}?text=${encodeURIComponent(message)}`;
 }
 
-function requestText(planLabel: string, price: number, bizName: string, staffCount: number) {
+/**
+ * The request itself, in whatever language the owner is reading the CRM in.
+ *
+ * This was hardcoded Russian while every label around it was translated, so an owner working in
+ * Uzbek picked a plan and got handed a Russian paragraph to send. The manager reads all three,
+ * so this is for the owner's benefit, not the manager's: nobody wants to send a message they
+ * cannot read, least of all one with their own business name in it.
+ *
+ * The PRICE stays in ru-RU grouping in every language on purpose — it has to match the number on
+ * the card they just tapped, and a plan that costs "299 000" in the grid and "299,000" in the
+ * message reads like two different prices.
+ */
+// Spelled out rather than taken as `any`: CRM_T is typed Record<Lang, any>, so nothing else in
+// this file would catch a key renamed in one locale and not the others. Naming the five fields
+// here means the compiler does.
+type RequestWords = {
+  hello: string;
+  biz: string;
+  staff: string;
+  plan: string;
+  perMonth: string;
+};
+
+function requestText(r: RequestWords, planLabel: string, price: number, bizName: string, staffCount: number) {
   return [
-    'Здравствуйте! Хочу подключить подписку EasyQ.',
+    r.hello,
     '',
-    `Бизнес: ${bizName}`,
-    `Сотрудников: ${staffCount || '—'}`,
-    `Тариф: ${planLabel} — ${new Intl.NumberFormat('ru-RU').format(price)} so'm/мес`,
+    `${r.biz}: ${bizName}`,
+    `${r.staff}: ${staffCount || '—'}`,
+    `${r.plan}: ${planLabel} — ${new Intl.NumberFormat('ru-RU').format(price)} so'm/${r.perMonth}`,
   ].join('\n');
 }
 
@@ -158,7 +181,7 @@ export function PlanGrid({
 
   const pick = async (plan: SubscriptionInfo['plans'][number]) => {
     const label = `${t.sub.upTo} ${plan.maxStaff} ${t.sub.staffWord}`;
-    const message = requestText(label, plan.price, bizName, subscription.staffCount);
+    const message = requestText(t.sub.req, label, plan.price, bizName, subscription.staffCount);
 
     // Copied FIRST: a clipboard write from a document that has just lost focus to a new tab is
     // refused by browsers that implement the permission properly. This is the belt to the

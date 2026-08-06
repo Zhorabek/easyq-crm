@@ -475,11 +475,6 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
       <div className="crm-topctl" data-tour="topbar" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
         <TopSearch />
         {extra}
-        {!demo && (
-          <button onClick={startTour} data-tour="help" className="crm-iconbtn" title={t.tour.replay} aria-label={t.tour.replay} style={iconBtn as CSSProperties}>
-            <Ic name="help" size={18} />
-          </button>
-        )}
         <div className="crm-langsw" style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 999, padding: 3, gap: 2 }}>
           {CRM_LANGS.map((L) => {
             const on = L.code === lang;
@@ -490,6 +485,14 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
             );
           })}
         </div>
+        {/* The guide sits beside the bell, not on the far side of the language pills. Two icon
+            buttons of the same size and weight reading as one pair, rather than one of them
+            stranded between the search and a segmented control. */}
+        {!demo && (
+          <button onClick={startTour} data-tour="help" className="crm-iconbtn" title={t.tour.replay} aria-label={t.tour.replay} style={iconBtn as CSSProperties}>
+            <Ic name="help" size={18} />
+          </button>
+        )}
         <NotifBell />
         {action && (
           <button onClick={action.onClick} className="crm-addbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, padding: '10px 16px', borderRadius: 11, whiteSpace: 'nowrap', boxShadow: '0 6px 16px -8px color-mix(in srgb, var(--accent) 60%, transparent)', flex: 'none' }}>

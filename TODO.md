@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-08-04. Everything below is either not started or waiting on someone.
+Last updated 2026-08-06. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -49,9 +49,9 @@ Nothing here can be done from the repo.
 
 ---
 
-## Security — reviewed 2026-08-03 and again 2026-08-04
+## Security — reviewed 2026-08-03, 2026-08-04 and 2026-08-06
 
-Two full passes over auth, permissions, SQL, CORS, uploads, headers and both bots. What they
+Three full passes over auth, permissions, SQL, CORS, uploads, headers and both bots. What they
 found, and what is left.
 
 **Closed on 2026-08-03.** Bot webhooks now require Telegram's `secret_token` — they previously
@@ -92,6 +92,33 @@ unknown username burns a decoy hash so timing no longer answers "does this accou
   `'self'` silently blocked it: no redirect, and a login page that appeared to do nothing.
   A CSP that forbids something the app does is a broken feature, not a stricter policy.
 
+**Closed on 2026-08-06 — the third money leak, and the widest.**
+
+`booking.payment` hangs off every booking card and every line of a client's visit history:
+incoming, outgoing, net, remaining, status, and an itemised history with amounts and methods. The
+`payment:write` gate blanked the KPI strip, the cash desk, the analytics block and the per-employee
+revenue, and never touched this one. A specialist's `/api/crm` therefore carried, for every booking
+on their calendar and every visit of a shared client, what that customer paid and what they still
+owe.
+
+Three leaks, one shape: **the gate lists money that is its own field and misses money that travels
+as a property of something else.** Nothing renders any of it, which is what let this survive — the
+specialist screens show no money at all, so from the outside the role looks clean. It was found by
+fetching a real specialist's payload in their own session and grepping the JSON for a non-zero
+amount. **Read the payload, not the screen.**
+
+Two follow-on lessons worth more than the fix:
+
+- **Redaction alone can make things worse.** Blanking the data left the booking modal rendering
+  "0 so'm paid, 0 outstanding" for a customer who had paid in full — a confident false statement a
+  specialist could repeat to that customer. The modals now hide money outright for roles without
+  `payment:write`. Absent beats wrong.
+- **The check I wrote first was decorative: it passed on broken code.** Each field accepted any of
+  three patterns and one of them matched a different field regardless, so deleting a whole line of
+  redaction left all 73 checks green. Rewritten as one exact call per collection, then verified by
+  deleting each line in turn and confirming the matching assertion fails. **A check proves nothing
+  until you have watched it fail.**
+
 **Verified clean, so nobody re-checks it:** no SQL injection anywhere — `scripts/sql-bind-check.cjs`
 walks all 94 prepare/bind pairs and the only interpolations are generated placeholder lists and
 the two image-store table constants; wildcard CORS is safe because no endpoint sets
@@ -121,6 +148,65 @@ constant.
 
 That is also why login is rate limited **before** the hash rather than after: those iterations
 are the cost being defended.
+
+---
+
+## Mobile — reviewed 2026-08-06, both surfaces and all three roles
+
+Audited at 320 / 375 / 414: the CRM as owner, manager and specialist, the public booking page, and
+the landing including its sign-up wizard. Everything found is fixed; recorded here so nobody
+re-derives it.
+
+**What held up.** The CRM's mobile layout was better than expected — the sidebar is a proper
+off-canvas drawer and every wide surface (day calendar, customers table, services list) sits in an
+`overflow-x: auto` wrapper, so **zero content is clipped-and-unreachable on any screen for any
+role**. That distinction is the audit: "off-screen" and "inside a scroller" are identical in a
+screenshot, and the only way to tell them apart is to walk each overflowing element's ancestors
+looking for one that can actually scroll to reveal it.
+
+**What did not.**
+
+- **iOS zoomed the page on every login, and on the landing's sign-up form.** Safari zooms when a
+  focused input is under 16px; the CRM's were 14–14.5px and the landing's were 15px. One media
+  query per repo on bare `input`/`textarea`/`select` with `!important`, because these sizes come
+  from inline style objects and have no class to hook. Small screens only, so the desktop density
+  is unchanged.
+- **The landing's mobile menu could not be opened at all** below 376px. The language pills carried
+  no class, so the breakpoint that hid the nav links and "Sign in" left 146px of pills in place and
+  pushed `.nav-burger` to x=377 — outside a viewport whose ancestor is `overflow-x: clip`. It was
+  painted off the page, and a hit test at its centre returned a plain div.
+- **A phone had no route to the CRM login.** `.nav-signin` is hidden below 860px and the mobile
+  menu only ever held the section links, so an existing customer opening easyq.uz on their phone
+  could not reach their own login. **Hiding a control on a small screen is only correct if it
+  reappears somewhere.**
+- **Touch targets, in both repos.** Eleven footer links at 22px; the five feedback stars at 30px
+  and 4px apart, on the one control whose job is recording which number you meant; the sign-up
+  "Back" at 21px directly above a 52px primary CTA; the booking page's basket-edit at 24px beside
+  a 54px "Confirm booking", where a miss books the appointment. Nothing in the CRM is under 36px
+  now, and nothing on the landing under 38px.
+- **Four separate copies of the language switcher** — header, mobile menu, footer, sign-up page —
+  all at 28px. If a fifth appears, extract the component properly.
+- **Three icon-only buttons had no accessible name**, including the burger that opens the entire
+  CRM on a phone. Sign out had a `title` and no `aria-label`: a hover tooltip is unreliable to a
+  screen reader and dead weight on a touch screen, where nothing hovers.
+
+**The one to remember: breakpoints measure the viewport, the top bar does not.** It sits beside a
+248px sidebar, so its real width is `viewport - 248` until the sidebar collapses at 820. Crowding
+relief belongs at **1024** (`1024 - 248 = 776`, the width the old rule was tuned for). Getting it
+wrong gave the page a horizontal scrollbar across 856–1024 with the search squeezed to 64px.
+
+Two CSS traps from the same pass:
+
+- **A `min-width` on a flex child is a floor it will not cross.** 150px on the search forced the
+  bar wider than the window. If something must shrink, let it.
+- **`minWidth: 0` can hide a bug rather than fix one.** The dashboard donut's legend had it, which
+  promised the legend could shrink to nothing while its text refused to — so nothing wrapped and
+  the card overflowed a 320px viewport.
+
+- [ ] **Sign-up step 2 is unverified at 320px.** Business name, slug and category only render after
+      a real Telegram verification, which needs a phone, so the layout of that one step was never
+      measured. Its inputs are covered — the iOS fix is a bare `input` selector and cannot miss
+      them — but the boxes around them are not. Worth a look during the next real sign-up.
 
 ---
 
@@ -190,6 +276,12 @@ Documented so nobody re-discovers them as defects.
   has paid for a second month is building the wrong thing.
 - **The notification bell caps at 50 pending bookings.** A shop that has ignored confirmations
   for a year should not have that year's backlog serialised into every payload.
+- **There is no search on a phone.** `.crm-search` is `display: none` below 1024px: beside a 248px
+  sidebar there is no room for a usable field, and a 64px one is a magnifying glass with nowhere to
+  type. Everything else in the top bar survives, in the drawer.
+- **A redacted number is not shown as a number.** Where a role may not see money the figure is
+  dropped, not zeroed — a `0` is a confident statement that the customer paid nothing, which a
+  specialist could repeat to them. Absent beats wrong, and it applies to any future redaction.
 - **The guided tour and the Guide carry no screenshots.** Every screenshot taken before
   2026-08-04 would now be showing a product that does not exist, and nothing fails when a
   picture goes stale — it renders perfectly and lies. Each Guide topic carries a button to the

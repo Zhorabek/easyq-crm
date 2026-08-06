@@ -162,10 +162,30 @@ capabilities, not role names** — a new role therefore starts restricted rather
 privileged. A specialist's client book is rebuilt from their own bookings alone, so a
 colleague's takings and visit frequency cannot ride along on a shared client's row.
 
-The failure mode to watch for is a **new field, not a new role**: `paymentsToday` was added to
-the payload one morning and not to the `payment:write` gate, and specialists received the
-amount, method and customer name of every payment the shop took that day. The check now derives
-the field list from the payload rather than from a hand-written list.
+The failure mode to watch for is a **new field, not a new role**. It has now happened three
+times, and the shape is always the same: the gate lists money that is its own field, and misses
+money that travels as a **property of something else**.
+
+| Leaked | How | Found by |
+| --- | --- | --- |
+| `paymentsToday` | added to the payload, not to the gate | reading a real specialist's payload |
+| `bookingsCountByStaff` | transport field for scoping one donut | caught before shipping |
+| `booking.payment` | hangs off every booking card and every line of a client's visit history | grepping a live payload for a non-zero amount |
+
+The third was the widest: a specialist received what each customer paid, what they still owe and
+an itemised history with amounts and methods — for every booking on their calendar. **Nothing
+renders any of it**, which is exactly why it survived; the screens show a specialist no money at
+all, so from the outside the role looks clean.
+
+So the rule is: **read the payload, not the screen.** `scripts/security-check.cjs` now asserts
+one exact stripper call per payment-bearing collection, with no shared fallback pattern — see the
+note there about the version of that check which passed on broken code.
+
+**Redaction is not enough on its own; the UI has to agree.** Blanking `booking.payment` server-side
+made the booking modal render "0 so'm paid, 0 outstanding" to a specialist for a customer who had
+paid in full — a confident false statement they could repeat to that customer, which is worse than
+the leak it replaced. The modals now hide money entirely for roles without `payment:write`, gated
+on the same `can()` matrix the Worker uses. **Absent beats wrong.**
 
 ### Credentials are never stored in the clear
 
@@ -207,6 +227,54 @@ invisible active nav item. See `src/crm/brand-shell.ts`.
 A service with **no specialist assigned is not offered at all** — there is nobody to give it
 to. The services table flags those in amber so the owner can see why one vanished.
 
+## On a phone
+
+Both the CRM and the booking page were audited at 320 / 375 / 414, every screen, every role.
+
+**Wide things scroll inside themselves.** The day calendar (620px), the customers table (539px)
+and the services list all live in `overflow-x: auto` wrappers, so they scroll within their own box
+and **the page itself never scrolls sideways**. The sidebar becomes an off-canvas drawer at 820px,
+opened by `.crm-burger`.
+
+That distinction is the whole audit: "off-screen" and "inside a scroller" look identical in a
+screenshot. The way to tell them apart is to walk each overflowing element's ancestors looking for
+one that can actually scroll to reveal it — anything with no such ancestor is **clipped and
+unreachable**, which is data the owner cannot get to. Every screen currently reports zero of those.
+
+**Inputs are 16px below 820px.** Not a preference: Safari on iOS zooms the whole page when a
+focused input is under 16px, and the CRM's are 14–14.5px by design for a dense desktop UI. Tapping
+the login field on an iPhone used to jerk the page and magnify it. One media query on bare
+`input`/`textarea`/`select` with `!important`, because most of these get their size from an inline
+style object and have no class to hook.
+
+**Touch targets.** Nothing in the CRM is under 36px. Small icon buttons keep their painted size and
+carry a 44px hit area on a `::after` pseudo-element — the paint does not change and the layout does
+not move. That trick is only safe on an **isolated** control: an oversized overlay on one of several
+adjacent buttons swallows its neighbour's edge and makes the row worse. For touching segments (the
+language pills) grow them vertically instead, or you have only moved the boundary a thumb can miss.
+
+### Breakpoints measure the viewport, the top bar does not
+
+The one to remember. Media queries see the **viewport**, but the top bar sits beside a 248px
+sidebar, so its real width is `viewport - 248` until the sidebar collapses at 820. Crowding relief
+therefore belongs at **1024**, not 820: `1024 - 248 = 776`, which is the width the old rule was
+tuned for. Getting this wrong gave the whole page a horizontal scrollbar across 856–1024 with the
+search field squeezed to 64px.
+
+Below 820 the sidebar becomes a drawer and the bar gets its full width back; the language pills and
+the "new booking" label stay hidden there because the drawer carries them. **There is no search on
+a phone** — `.crm-search` is `display: none` below 1024, deliberately.
+
+### Two traps worth knowing
+
+**A `min-width` on a flex child is a floor it will not cross.** 150px on the search field forced the
+bar wider than the window. If something must shrink, let it.
+
+**`minWidth: 0` can hide a bug rather than fix one.** The dashboard's donut legend had it, which
+promised the legend could shrink to nothing while its text refused to — so nothing ever wrapped and
+the card overflowed a 320px viewport. It wraps with a real floor now, and that floor is 140px
+because that is what the container measures, not because 140 is a tidy number.
+
 ## The booking page
 
 A hub of full screens rather than one scrolling form. The customer starts from whichever of
@@ -218,6 +286,14 @@ starts feeling like paperwork.
 The setting used to reorder the menu rows and nothing else: past the first tap every shop
 behaved like `service_first`. `scripts/booking-order-check.cjs` now asserts the walked order for
 every flow × entry pair.
+
+**A chosen day is named with its date.** `dayLabel` says "Today" and "Tomorrow", and for anything
+past that **"Mon, 10 August"** rather than a bare weekday. The bookable window is 21 days, so "Mon"
+alone was three different Mondays — on the summary rows and the final review screen, the last thing
+a customer sees before committing. Auto-selecting the nearest free day made that worse rather than
+better: the customer no longer picks a date at all, so they had nothing to check the booking
+against. The `months` array exists in all three locales, and the Russian entries are genitive
+("августа") because they were written for exactly this.
 
 **It opens on a day that has room.** `GET /api/public/available-days` returns which of the next
 N days (clamped to 30) have availability, computed with the same `getPublicSlots` the slot list
@@ -337,7 +413,7 @@ node scripts/security-check.cjs
 
 | Script | Asserts |
 | --- | --- |
-| `security-check.cjs` | every login door is throttled, every authed route states a capability, money is redacted, headers are set, no plaintext passwords |
+| `security-check.cjs` | every login door is throttled, every authed route states a capability, money is redacted — including the payment summary hanging off every booking — headers are set, no plaintext passwords |
 | `sql-bind-check.cjs` | every `prepare`/`bind` pair agrees on arity — invisible to TypeScript |
 | `tour-check.cjs` | the tour's steps and copy, per role |
 | `help-check.cjs` | every Guide topic points at a screen that exists and the reader can open |
@@ -347,6 +423,12 @@ node scripts/security-check.cjs
 They assert against the **source**, and two of them had to be taught to strip comments first —
 the comment explaining a fix contains the string the check is looking for, so it passed on the
 explanation rather than the code.
+
+**Test the check, not just the code.** A check that passes proves nothing until you have watched it
+fail. The payment-stripping check accepted any of three patterns per field, and one of them was
+present for a different field regardless — so deleting a whole line of redaction left all 73 green.
+The way to find that out is to break each thing on purpose and confirm the matching assertion goes
+red, one at a time.
 
 `outreach/` has its own suite: `npm --prefix outreach test`.
 
@@ -429,7 +511,12 @@ the account login.
 - Availability has one definition — `src/shared/availability.ts`, shared by the owner's
   calendar and the public booking API. Do not fork it.
 - Money is UZS. A **price** of 0 prints nothing, because it means nobody set one; a **total**
-  of 0 prints `0`, because the day really did take zero. `fmtPrice` vs `fmtSom`.
+  of 0 prints `0`, because the day really did take zero. `fmtPrice` vs `fmtSom`. That rule assumes
+  the reader is allowed to see the total at all — where they are not, drop the figure rather than
+  print a redacted `0`, which reads as a fact. See *Roles*.
+- The top bar's order is search, languages, guide, bell, new booking. The two icon buttons sit
+  together on purpose; the search is a `flex: 0 1 300px` child of the control cluster, not a
+  `flex: 1` child of the header, which is what used to pin it against the page title.
 - Tooltips render through a **portal**, positioned `fixed`, and clamp themselves to the
   viewport. Inline they were clipped by whichever card or modal they sat in — the tooltip was
   correct and invisible.

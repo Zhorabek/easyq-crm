@@ -2010,9 +2010,8 @@ async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackConte
     return;
   }
 
-  const stars = row.rating ? "★".repeat(row.rating) + "☆".repeat(5 - row.rating) : "no rating";
   const lines = [
-    `<b>New feedback</b> — ${stars}`,
+    `<b>New feedback</b> — ${feedbackStars(row.rating)}`,
     "",
     `<b>${escapeHtmlText(row.name)}</b>`,
     escapeHtmlText(row.text),
@@ -2024,12 +2023,9 @@ async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackConte
       chat_id: chatId,
       text: lines.join("\n"),
       parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [[
-          { text: "Publish", callback_data: `fb_ok:${row.id}` },
-          { text: "Discard", callback_data: `fb_no:${row.id}` },
-        ]],
-      },
+      // The same builder /pending uses, so the notification and the queue cannot offer different
+      // actions for the same row. A new row is always pending, hence approved: 0.
+      reply_markup: feedbackItemButtons({ ...row, approved: 0, business_id: context?.businessId ?? null, source: context ? "crm" : "landing" }),
     });
   } catch (error) {
     // The most likely cause by far, and it produces no other symptom: a bot cannot open a
@@ -2051,6 +2047,243 @@ async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackConte
  *    without this check, anybody who found the bot could publish arbitrary text onto the landing
  *    page of the product, which is the exact thing `approved = 0` exists to prevent.
  */
+/* -- the moderation bot ------------------------------------------------------
+ *
+ * One Telegram account moderates feedback for the whole platform, so the bot IS the admin panel.
+ * There is no admin role anywhere in this product -- `ActorRole` is owner/manager/specialist and
+ * all three are scoped to a single business -- and building a platform-wide admin UI for a queue
+ * exactly one person will ever read is a great deal of scaffolding for very little.
+ *
+ * Every entry point checks the sender against FEEDBACK_CHAT_ID. The webhook secret proves Telegram
+ * sent the request; it says nothing about who is on the other end, and callback data like `fb_ok:41`
+ * is trivially guessable. Without the sender check, anyone who found the bot could publish arbitrary
+ * text onto easyq.uz -- the whole thing `approved = 0` exists to prevent.
+ */
+
+/** 0 pending, 1 published, 2 discarded. Deleting is a separate and destructive act. */
+const FEEDBACK_STATUS: Record<number, string> = { 0: "pending", 1: "published", 2: "discarded" };
+
+type FeedbackFullRow = FeedbackRow & { approved: number; business_id: number | null; source: string | null };
+
+const FEEDBACK_COLUMNS =
+  "id, name, text, rating, created_at, approved, business_id, source";
+
+function feedbackStars(rating: number | null) {
+  return rating ? "\u2605".repeat(rating) + "\u2606".repeat(5 - rating) : "no rating";
+}
+
+async function feedbackSay(env: Env, chatId: string | number, text: string, markup?: unknown) {
+  await tgCallJson(env.FEEDBACK_BOT_TOKEN!, "sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    ...(markup ? { reply_markup: markup } : {}),
+  }).catch((error) => console.log("feedback bot send failed:", error));
+}
+
+/**
+ * One item, rendered for somebody deciding whether it should be public.
+ *
+ * The business block is the reason the in-CRM submit path exists at all: "4 stars" from a shop with
+ * 300 bookings and "4 stars" from one that signed up yesterday are not the same signal.
+ */
+async function feedbackItemText(env: Env, row: FeedbackFullRow) {
+  const lines = [
+    "<b>#" + row.id + "</b> - " + feedbackStars(row.rating) + " - " + (FEEDBACK_STATUS[row.approved] ?? String(row.approved)),
+    "",
+    "<b>" + escapeHtmlText(row.name) + "</b>",
+    escapeHtmlText(row.text.slice(0, 900)),
+    "",
+    (row.source === "crm" ? "from inside the CRM" : "from the landing page") + " - " + escapeHtmlText(row.created_at || ""),
+  ];
+
+  if (row.business_id) {
+    const biz = await env.DB
+      .prepare("SELECT name, slug, type, plan, created_at FROM businesses WHERE id = ?")
+      .bind(row.business_id)
+      .first<{ name: string; slug: string | null; type: string | null; plan: string | null; created_at: string | null }>()
+      .catch(() => null);
+    if (biz) {
+      const age = daysSince(biz.created_at);
+      lines.push(
+        escapeHtmlText(biz.name) + (biz.slug ? " (" + escapeHtmlText(biz.slug) + ".easyq.uz)" : ""),
+        escapeHtmlText(biz.type || "business") + " - plan " + escapeHtmlText(biz.plan || "trial") +
+          (age === null ? "" : " - " + age + " days on the platform")
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/** Buttons appropriate to the state the row is actually in. */
+function feedbackItemButtons(row: FeedbackFullRow) {
+  const actions: Array<{ text: string; callback_data: string }> = [];
+  if (row.approved !== 1) actions.push({ text: "Publish", callback_data: "fb_ok:" + row.id });
+  if (row.approved !== 2) actions.push({ text: "Discard", callback_data: "fb_no:" + row.id });
+  return { inline_keyboard: [actions, [{ text: "Delete", callback_data: "fb_del:" + row.id }]] };
+}
+
+function feedbackRowById(env: Env, id: number) {
+  return env.DB
+    .prepare("SELECT " + FEEDBACK_COLUMNS + " FROM landing_feedback WHERE id = ?")
+    .bind(id)
+    .first<FeedbackFullRow>();
+}
+
+const FEEDBACK_HELP = [
+  "<b>EasyQ feedback</b>",
+  "",
+  "/pending - everything waiting for a decision",
+  "/recent - the last 10, whatever their state",
+  "/stats - counts, and the average rating of what is published",
+  "/item 12 - one entry in full, with its buttons",
+  "/help - this",
+  "",
+  "Published entries appear on easyq.uz. Discarded ones stay in the database but are never shown.",
+  "Delete removes the row for good, and asks first.",
+].join("\n");
+
+async function handleFeedbackCommand(env: Env, chatId: number, text: string) {
+  const parts = text.trim().split(/\s+/);
+  const word = (parts[0] || "").toLowerCase().split("@")[0];
+
+  if (word === "/start" || word === "/help") {
+    return feedbackSay(env, chatId, FEEDBACK_HELP);
+  }
+
+  if (word === "/stats") {
+    const counts = await env.DB
+      .prepare(
+        "SELECT COUNT(*) AS total," +
+          " SUM(CASE WHEN approved = 0 THEN 1 ELSE 0 END) AS pending," +
+          " SUM(CASE WHEN approved = 1 THEN 1 ELSE 0 END) AS published," +
+          " SUM(CASE WHEN approved = 2 THEN 1 ELSE 0 END) AS discarded," +
+          " AVG(CASE WHEN approved = 1 THEN rating END) AS avg_published" +
+          " FROM landing_feedback"
+      )
+      .first<{ total: number; pending: number; published: number; discarded: number; avg_published: number | null }>();
+    return feedbackSay(
+      env,
+      chatId,
+      [
+        "<b>Feedback</b>",
+        "",
+        "Total      " + (counts?.total ?? 0),
+        "Pending    " + (counts?.pending ?? 0),
+        "Published  " + (counts?.published ?? 0),
+        "Discarded  " + (counts?.discarded ?? 0),
+        "",
+        "Average of published: " + (counts?.avg_published ? counts.avg_published.toFixed(2) : "-"),
+      ].join("\n")
+    );
+  }
+
+  if (word === "/pending" || word === "/recent") {
+    const pendingOnly = word === "/pending";
+    const res = await env.DB
+      .prepare(
+        "SELECT " + FEEDBACK_COLUMNS + " FROM landing_feedback" +
+          (pendingOnly ? " WHERE approved = 0" : "") +
+          " ORDER BY id DESC LIMIT 10"
+      )
+      .all<FeedbackFullRow>();
+    const rows = res.results ?? [];
+    if (rows.length === 0) {
+      return feedbackSay(env, chatId, pendingOnly ? "Nothing waiting. The queue is empty." : "No feedback yet.");
+    }
+    // One message per item, because each carries its own buttons. A single digest would need the id
+    // typed back in before anything could be acted on, which is the friction this bot removes.
+    for (const row of rows) {
+      await feedbackSay(env, chatId, await feedbackItemText(env, row), feedbackItemButtons(row));
+    }
+    return;
+  }
+
+  if (word === "/item") {
+    const id = Number(parts[1]);
+    if (!Number.isInteger(id) || id <= 0) return feedbackSay(env, chatId, "Usage: /item 12");
+    const row = await feedbackRowById(env, id);
+    if (!row) return feedbackSay(env, chatId, "No entry #" + id + ".");
+    return feedbackSay(env, chatId, await feedbackItemText(env, row), feedbackItemButtons(row));
+  }
+
+  return feedbackSay(env, chatId, "Unknown command. /help for the list.");
+}
+
+async function handleFeedbackCallback(env: Env, callback: any) {
+  const token = env.FEEDBACK_BOT_TOKEN!;
+  const ack = (text: string) =>
+    tgCallJson(token, "answerCallbackQuery", { callback_query_id: callback.id, text }).catch(() => {});
+  const data = String(callback.data ?? "");
+  const chatId = callback.message?.chat?.id;
+  const messageId = callback.message?.message_id;
+
+  // Delete asks first. Every other action is undone by pressing a different button; this one
+  // destroys the only copy, and a mis-tap on a phone should not be able to do that.
+  const wantsDelete = /^fb_del:(\d+)$/.exec(data);
+  if (wantsDelete) {
+    await tgCallJson(token, "editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "Yes, delete", callback_data: "fb_delyes:" + wantsDelete[1] },
+          { text: "Cancel", callback_data: "fb_cancel:" + wantsDelete[1] },
+        ]],
+      },
+    }).catch(() => {});
+    return ack("Delete permanently?");
+  }
+
+  const cancelled = /^fb_cancel:(\d+)$/.exec(data);
+  if (cancelled) {
+    const row = await feedbackRowById(env, Number(cancelled[1]));
+    if (row) {
+      await tgCallJson(token, "editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: feedbackItemButtons(row),
+      }).catch(() => {});
+    }
+    return ack("Kept.");
+  }
+
+  const match = /^fb_(ok|no|delyes):(\d+)$/.exec(data);
+  if (!match) return;
+  const action = match[1];
+  const id = Number(match[2]);
+
+  try {
+    if (action === "delyes") {
+      await env.DB.prepare("DELETE FROM landing_feedback WHERE id = ?").bind(id).run();
+    } else {
+      await env.DB
+        .prepare("UPDATE landing_feedback SET approved = ? WHERE id = ?")
+        .bind(action === "ok" ? 1 : 2, id)
+        .run();
+    }
+    const label = action === "ok" ? "Published" : action === "no" ? "Discarded" : "Deleted";
+    await tgCallJson(token, "editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [[{ text: label, callback_data: "fb_done" }]] },
+    }).catch(() => {});
+    return ack(action === "ok" ? "Published on easyq.uz" : label);
+  } catch (error) {
+    console.log("feedback moderation error:", error);
+    return ack("Failed - try again.");
+  }
+}
+
+/**
+ * The moderation webhook.
+ *
+ * Always 200 once the request is authentic. A non-2xx tells Telegram the update was not delivered
+ * and it sends the same one again -- and these handlers write to D1, so a retry after a partial
+ * success repeats the write.
+ */
 async function feedbackWebhook(env: Env, request: Request) {
   if (!env.FEEDBACK_BOT_TOKEN || !env.FEEDBACK_WEBHOOK_SECRET || !env.FEEDBACK_CHAT_ID) {
     return new Response("not found", { status: 404 });
@@ -2062,53 +2295,32 @@ async function feedbackWebhook(env: Env, request: Request) {
   }
 
   const update = (await request.json().catch(() => null)) as any;
-  const callback = update?.callback_query;
-  // Always 200 from here on. A non-2xx tells Telegram the update was not delivered and it retries
-  // the same one — and this handler writes to D1, so a retry after a partial success repeats it.
-  if (!callback) return new Response("ok");
+  if (!update) return new Response("ok");
 
-  const fromId = String(callback.from?.id ?? "");
-  if (fromId !== String(env.FEEDBACK_CHAT_ID)) {
-    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
-      callback_query_id: callback.id,
-      text: "Not your queue.",
-    }).catch(() => {});
+  const callback = update.callback_query;
+  const message = update.message;
+  const senderId = String(callback?.from?.id ?? message?.from?.id ?? "");
+
+  // The secret says Telegram sent this. It says nothing about who is on the other end.
+  if (senderId !== String(env.FEEDBACK_CHAT_ID)) {
+    if (callback) {
+      await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
+        callback_query_id: callback.id,
+        text: "Not your queue.",
+      }).catch(() => {});
+    }
     return new Response("ok");
   }
 
-  const match = /^fb_(ok|no):(\d+)$/.exec(String(callback.data ?? ""));
-  if (!match) return new Response("ok");
-  const publish = match[1] === "ok";
-  const id = Number(match[2]);
-
   try {
-    if (publish) {
-      await env.DB.prepare("UPDATE landing_feedback SET approved = 1 WHERE id = ?").bind(id).run();
-    } else {
-      // Kept, not deleted: "we decided not to publish this" is worth being able to see later, and a
-      // discard button that destroys the only copy is a button nobody wants to press twice.
-      await env.DB.prepare("UPDATE landing_feedback SET approved = 2 WHERE id = ?").bind(id).run();
-    }
-    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "editMessageReplyMarkup", {
-      chat_id: callback.message?.chat?.id,
-      message_id: callback.message?.message_id,
-      reply_markup: { inline_keyboard: [[{ text: publish ? "Published" : "Discarded", callback_data: "fb_done" }]] },
-    }).catch(() => {});
-    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
-      callback_query_id: callback.id,
-      text: publish ? "Published on easyq.uz" : "Discarded",
-    }).catch(() => {});
+    if (callback) await handleFeedbackCallback(env, callback);
+    else if (typeof message?.text === "string") await handleFeedbackCommand(env, message.chat.id, message.text);
   } catch (error) {
-    console.log("feedback moderation error:", error);
-    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
-      callback_query_id: callback.id,
-      text: "Failed — try again.",
-    }).catch(() => {});
+    console.log("feedback bot error:", error);
   }
 
   return new Response("ok");
 }
-
 async function submitFeedback(env: Env, request: Request) {
   // Unauthenticated and uncaptcha'd. Rows land with approved = 0 so nothing reaches the public
   // page, which means the damage was never publication — it was drowning the moderation queue.

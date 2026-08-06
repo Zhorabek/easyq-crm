@@ -26,6 +26,14 @@ APP_TIMEZONE = "Asia/Tashkent"
 # handle in numeric form — so committing it costs nothing. The TOKEN is a secret and stays one.
 FEEDBACK_CHAT_ID = "8789277873"
 
+# Keep the logs. `wrangler tail` cannot run on the dev machine — npm ci fails there, which is why
+# migrations go through the dashboard console — so without this the only way to see why something
+# failed in production was to guess. The feedback bot cost an afternoon of guessing: every failure
+# path in it already writes a console.log naming the exact cause, and none of them were readable.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

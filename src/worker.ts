@@ -2129,8 +2129,13 @@ async function submitFeedback(env: Env, request: Request) {
     return json({ error: "Feedback text is required." }, { status: 400, headers: FEEDBACK_CORS });
   }
 
+  // `source` is deliberately NOT named here even though it exists: it defaults to 'landing', so
+  // omitting it makes this statement valid against the schema both before and after
+  // 2026-08-06-feedback-attribution.sql. Naming it would 500 the public feedback form in the window
+  // between this deploy and that migration — and pushing to main deploys before anyone can run SQL,
+  // so that window is not hypothetical.
   const res = await env.DB
-    .prepare("INSERT INTO landing_feedback (name, text, rating, source) VALUES (?, ?, ?, 'landing')")
+    .prepare("INSERT INTO landing_feedback (name, text, rating) VALUES (?, ?, ?)")
     .bind(name, text, rating)
     .run();
 

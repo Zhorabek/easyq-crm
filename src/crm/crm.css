@@ -673,3 +673,29 @@ a {
 @media (hover: none) {
   .crm-photo-tile-badge { width: 17px; height: 17px; }
 }
+
+/* ---------- iOS zoom on focus ----------
+ *
+ * Safari on iOS zooms the whole page when a focused input's font-size is under 16px. The CRM's
+ * inputs are 14px (`setInput` in ui.tsx) and 14.5px (`.crm-auth-input`), so on an iPhone tapping
+ * the login field jerks the page and magnifies it, and the person has to pinch back out before
+ * they can type — on the first screen of the product. The booking page never had this because
+ * its fields were already 16px.
+ *
+ * A bare element selector, not a class list, because most of these inputs get their size from an
+ * INLINE style object and therefore have no class to hook. `!important` is what beats an inline
+ * style from a stylesheet; it is doing real work here rather than papering over specificity.
+ *
+ * Small screens only: the desktop CRM keeps its tighter 14px, which is the right density for a
+ * dense admin UI on a large display. 16px is Safari's threshold, not a design preference.
+ *
+ * crm.css is also imported by the booking page, where every field is already 16px — so this is a
+ * no-op there rather than a second source of truth.
+ */
+@media (max-width: 820px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

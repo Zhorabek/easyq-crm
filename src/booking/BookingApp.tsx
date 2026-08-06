@@ -539,11 +539,24 @@ export default function BookingApp() {
     };
   }, [screen, services.length, serviceIds, date, eligibleStaff]);
 
+  /**
+   * How a chosen day is named back to the customer.
+   *
+   * The weekday ALONE was ambiguous. The bookable window is `DAYS_SHOWN` = 21 days, so "Mon" is
+   * three different Mondays — and this label is what the summary rows and the final review
+   * screen show before somebody commits. Auto-selecting the nearest free day made it worse: the
+   * customer never picked a date themselves, so they had nothing to check the booking against.
+   *
+   * Today and tomorrow keep their words. Those cannot be ambiguous, and "Today" is what a person
+   * would say. Everything past that carries the date.
+   */
   function dayLabel(iso: string) {
     if (!biz) return iso;
     if (iso === biz.today) return t.today;
     if (iso === addDaysIso(biz.today, 1)) return t.tomorrow;
-    return t.weekdays[isoWeekday(iso)]!;
+    const day = Number(iso.slice(8, 10));
+    const month = t.months[Number(iso.slice(5, 7)) - 1] ?? '';
+    return `${t.weekdays[isoWeekday(iso)]}, ${day} ${month}`;
   }
 
   /** Bookable window: today through DAYS_SHOWN, which is what the API will accept. */
@@ -1108,6 +1121,10 @@ export default function BookingApp() {
                   <button
                     type="button"
                     className="bk-part-head"
+                    // It looks like a heading and behaves like a disclosure, so it has to say
+                    // which it is — otherwise a screen reader announces "Morning, button" and
+                    // gives no hint that the times under it are hidden.
+                    aria-expanded={!shut}
                     onClick={() => setCollapsed((c) => ({ ...c, [key]: !shut }))}
                   >
                     <span className="bk-part-label">{label}</span>

@@ -218,6 +218,20 @@ export function changeOwnPassword(input: ChangeOwnPasswordInput) {
   });
 }
 
+/**
+ * Rate the product, or dismiss the card that asks.
+ *
+ * `snooze` and a rating are the same endpoint on purpose: both are answers to the same question, and
+ * both have to be recorded or the card comes back tomorrow. A separate "dismiss" route is how you
+ * end up with one of the two paths forgetting to write anything down.
+ */
+export function submitProductFeedback(input: { rating?: number; text?: string; snooze?: boolean }) {
+  return request<{ ok: true; snoozed?: boolean }>("/api/me/feedback", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function updateCrmCredentials(input: UpdateCrmCredentialsInput) {
   return request<{ ok: true; session: AuthSession }>("/api/business/credentials", {
     method: "PATCH",

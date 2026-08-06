@@ -323,6 +323,9 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
     pendingBookings: [],
     // The demo takes no payments, so the cash desk is empty rather than invented.
     paymentsToday: [],
+    // The demo never asks for a rating: it is not a real shop, and a prompt there would collect a
+    // review of a mock dataset.
+    askForFeedback: false,
     bookingLinks: [
       { id: 'public-booking', titleKey: 'publicBooking', url: 'https://barber-house.easyq.uz/booking', kind: 'public' },
       { id: 'client-bot', titleKey: 'clientBot', url: 'https://t.me/easyqueue_client_bot', kind: 'public' },

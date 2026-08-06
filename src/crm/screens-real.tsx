@@ -6,7 +6,7 @@ import { avatarColor, colorForId, fmtPrice, fmtSom, serviceSummary, useData } fr
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import { BOOKING_FLOWS, type BookingFlow } from '../shared/bookingFlow';
-import { updateBusinessProfile } from '../lib/api';
+import { submitProductFeedback, updateBusinessProfile } from '../lib/api';
 import {
   BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
   brandTokens, isValidBrandColor, normalizeBrandColor, normalizeBrandTheme, themeTextContrast,
@@ -27,6 +27,93 @@ function EmptyHint({ text }: { text: string }) {
 }
 
 /* ============ DASHBOARD ============ */
+/**
+ * "How is it going?" — shown to an owner once the server decides they have used the product enough
+ * to have a view. Never shown twice: answering or dismissing is recorded server-side, so a reload
+ * does not resurrect it.
+ *
+ * The stars are 44px targets even on desktop. This is a control whose whole point is which number
+ * was meant, and the landing page's version of the same widget was 30px and mis-tappable.
+ */
+function RateCard() {
+  const { t } = useCRM();
+  const { reload } = useData();
+  const r = t.rate;
+  const [rating, setRating] = useState(0);
+  const [text, setText] = useState('');
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const send = async (snooze: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await submitProductFeedback(snooze ? { snooze: true } : { rating, text: text.trim() || undefined });
+      if (snooze) reload();
+      else setSent(true);
+    } catch {
+      // Nothing destructive happened and the card is not load-bearing, so a failure just re-enables
+      // the buttons rather than throwing an error at somebody who was doing us a favour.
+      setBusy(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <Panel pad={18}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, fontWeight: 700 }}>
+          <Ic name="check" size={18} stroke={2.4} style={{ color: 'var(--accent-deep)' }} />
+          {r.thanks}
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel pad={18}>
+      <div style={{ fontSize: 16, fontWeight: 800 }}>{r.title}</div>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 3, lineHeight: 1.45 }}>{r.sub}</div>
+      <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, marginLeft: -10 }}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            aria-label={String(n)}
+            aria-pressed={n <= rating}
+            onClick={() => setRating(rating === n ? 0 : n)}
+            style={{ width: 44, height: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-deep)', lineHeight: 0 }}
+          >
+            <Ic name="star" size={24} stroke={1.8} style={{ opacity: n <= rating ? 1 : 0.32 }} />
+          </button>
+        ))}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={r.placeholder}
+        rows={2}
+        style={{ ...setInput, marginTop: 8, resize: 'vertical', width: '100%' }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => send(false)}
+          disabled={!rating || busy}
+          style={{ minHeight: 40, padding: '0 16px', borderRadius: 10, fontSize: 13.5, fontWeight: 800, background: rating ? 'var(--accent)' : 'var(--panel-2)', color: rating ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: rating ? 'pointer' : 'not-allowed' }}
+        >
+          {r.send}
+        </button>
+        <button
+          onClick={() => send(true)}
+          disabled={busy}
+          style={{ minHeight: 40, padding: '0 14px', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--ink-3)' }}
+        >
+          {r.later}
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
 export function Dashboard() {
   const { t, lang } = useCRM();
   const { payload, openBooking } = useData();
@@ -39,6 +126,10 @@ export function Dashboard() {
 
   return (
     <div className="fadein" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Server-decided — see CrmPayload.askForFeedback. The browser does not know how long this
+          shop has existed or whether it has already answered, and would guess in the direction of
+          asking too often. */}
+      {payload.askForFeedback && <RateCard />}
       <div className="crm-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         {payload.kpis.map((k, i) => (
           <Panel key={k.id} pad={18}>

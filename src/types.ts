@@ -424,6 +424,14 @@ export interface CrmPayload {
   };
   bookingLinks: BookingLinkItem[];
   /**
+   * Whether to show the "how is it going?" rating card.
+   *
+   * Server-decided, not client-decided, because the answer depends on how long the shop has existed,
+   * how much it has actually done, and whether it has already answered or dismissed — none of which
+   * the browser knows, and all of which it would get wrong in the direction of asking too often.
+   */
+  askForFeedback: boolean;
+  /**
    * Bookings still awaiting confirmation, today onwards — what the bell counts.
    *
    * Not limited to the selected day: a booking taken overnight for next week is exactly the

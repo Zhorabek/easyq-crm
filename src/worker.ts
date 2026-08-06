@@ -107,6 +107,19 @@ interface Env {
   VERIFY_BOT_USERNAME?: string;
   /** Echoed by Telegram in X-Telegram-Bot-Api-Secret-Token; gates the webhook. */
   VERIFY_WEBHOOK_SECRET?: string;
+  /**
+   * The feedback moderation bot. Its own bot, for the same reason VERIFY_BOT_TOKEN is: a bot has
+   * exactly one webhook, and borrowing another bot's would steal its updates.
+   *
+   * A SECRET, never a var and never a literal. Two tokens on this platform have already had to be
+   * treated as compromised because they were pasted into a chat; the source tree has never held
+   * one and should not start.
+   */
+  FEEDBACK_BOT_TOKEN?: string;
+  /** Telegram user id that receives the queue and is the only account allowed to moderate it. */
+  FEEDBACK_CHAT_ID?: string;
+  /** Echoed by Telegram in X-Telegram-Bot-Api-Secret-Token; gates the feedback webhook. */
+  FEEDBACK_WEBHOOK_SECRET?: string;
 }
 
 type BusinessRow = {
@@ -1918,6 +1931,184 @@ const FEEDBACK_CORS: Record<string, string> = {
 type FeedbackInput = { name?: string; text?: string; rating?: number | null };
 type FeedbackRow = { id: number; name: string; text: string; rating: number | null; created_at: string };
 
+/** Extra lines describing who sent it, when the sender is a known business. */
+type FeedbackContext = { businessId: number; label: string } | null;
+
+/**
+ * Whole days since an ISO date or datetime, or null if it will not parse.
+ *
+ * Null rather than 0 on a bad value, because 0 means "today" and would make an unparseable date
+ * look like a brand-new shop — and every decision downstream treats a new shop differently.
+ */
+function daysSince(iso: string | null | undefined) {
+  if (!iso) return null;
+  const then = Date.parse(iso.length <= 10 ? `${iso}T00:00:00Z` : iso.replace(" ", "T") + (iso.endsWith("Z") ? "" : "Z"));
+  if (!Number.isFinite(then)) return null;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
+/**
+ * How long a shop must have been using the product before it is asked to rate it, and how much it
+ * must actually have done.
+ *
+ * Time alone is the wrong test. A shop that signed up three days ago and has taken two bookings has
+ * no opinion worth collecting, and asking produces both a bad rating and a burnt chance to ask
+ * again. So both gates have to pass: old enough to have formed a view, busy enough to have one.
+ *
+ * `PROMPT_SNOOZE_DAYS` is deliberately long. "Not now" from somebody mid-shift should not come back
+ * next week, and there is no version of this feature where asking more often is better.
+ */
+const PROMPT_AFTER_DAYS = 3;
+const PROMPT_AFTER_COMPLETED_BOOKINGS = 5;
+const PROMPT_SNOOZE_DAYS = 21;
+
+/**
+ * Whether to show the rating card. Owners only.
+ *
+ * A specialist rating the product on the shop's behalf is not the signal being collected, and the
+ * row would be attributed to a business whose owner never said any of it.
+ */
+function shouldAskForFeedback(input: {
+  role: ActorRole;
+  createdAt: string | null;
+  completedBookings: number;
+  givenAt: string | null;
+  snoozedAt: string | null;
+}) {
+  if (input.role !== "owner") return false;
+  if (input.givenAt) return false;
+  const sinceSnooze = daysSince(input.snoozedAt);
+  if (sinceSnooze !== null && sinceSnooze < PROMPT_SNOOZE_DAYS) return false;
+  const age = daysSince(input.createdAt);
+  if (age === null || age < PROMPT_AFTER_DAYS) return false;
+  return input.completedBookings >= PROMPT_AFTER_COMPLETED_BOOKINGS;
+}
+
+function escapeHtmlText(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Tell the moderator a rating arrived, with the buttons that publish or discard it.
+ *
+ * Nothing here may throw into the caller. A visitor who typed a nice thing about the product must
+ * get their thank-you whether or not Telegram is reachable, and the row is already committed by the
+ * time this runs — so the worst case is a notification that has to be found later with the queue
+ * query in the README, not lost feedback.
+ *
+ * Awaited rather than fired and forgotten because this Worker's fetch handler takes no
+ * `ExecutionContext`, so there is no `waitUntil` to hand it to. A form submit can afford the round
+ * trip; a silently dropped notification is the thing that makes a moderation queue useless.
+ */
+async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackContext) {
+  const token = env.FEEDBACK_BOT_TOKEN;
+  const chatId = env.FEEDBACK_CHAT_ID;
+  if (!token || !chatId) {
+    // Deliberately loud: the feature looks like it works from the outside either way, because the
+    // row still lands and the submitter still gets a tick.
+    console.log("FEEDBACK NOTIFICATIONS ARE OFF — set FEEDBACK_BOT_TOKEN and FEEDBACK_CHAT_ID");
+    return;
+  }
+
+  const stars = row.rating ? "★".repeat(row.rating) + "☆".repeat(5 - row.rating) : "no rating";
+  const lines = [
+    `<b>New feedback</b> — ${stars}`,
+    "",
+    `<b>${escapeHtmlText(row.name)}</b>`,
+    escapeHtmlText(row.text),
+  ];
+  if (context) lines.push("", escapeHtmlText(context.label));
+
+  try {
+    await tgCallJson(token, "sendMessage", {
+      chat_id: chatId,
+      text: lines.join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "Publish", callback_data: `fb_ok:${row.id}` },
+          { text: "Discard", callback_data: `fb_no:${row.id}` },
+        ]],
+      },
+    });
+  } catch (error) {
+    // The most likely cause by far, and it produces no other symptom: a bot cannot open a
+    // conversation, so this fails until the moderator has pressed Start on the bot themselves.
+    console.log("feedback notify failed (has the moderator pressed Start on the bot?):", error);
+  }
+}
+
+/**
+ * The moderation webhook for the feedback bot.
+ *
+ * Two separate checks, and both are load-bearing:
+ *
+ * 1. The shared secret proves the request came from Telegram at all. Unlike the two bot repos, this
+ *    is enforced from the first deploy rather than shipped inert — the bot is new, so there is no
+ *    window where real updates are already flowing and would be rejected.
+ * 2. `from.id` must be FEEDBACK_CHAT_ID. The secret says "Telegram sent this"; it says nothing about
+ *    WHO pressed the button, and callback_data is guessable — `fb_ok:41` is not a hard puzzle. So
+ *    without this check, anybody who found the bot could publish arbitrary text onto the landing
+ *    page of the product, which is the exact thing `approved = 0` exists to prevent.
+ */
+async function feedbackWebhook(env: Env, request: Request) {
+  if (!env.FEEDBACK_BOT_TOKEN || !env.FEEDBACK_WEBHOOK_SECRET || !env.FEEDBACK_CHAT_ID) {
+    return new Response("not found", { status: 404 });
+  }
+  const presented = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+  if (!timingSafeEqualString(presented, env.FEEDBACK_WEBHOOK_SECRET)) {
+    // 404 rather than 401: an unauthenticated caller learns nothing about the route.
+    return new Response("not found", { status: 404 });
+  }
+
+  const update = (await request.json().catch(() => null)) as any;
+  const callback = update?.callback_query;
+  // Always 200 from here on. A non-2xx tells Telegram the update was not delivered and it retries
+  // the same one — and this handler writes to D1, so a retry after a partial success repeats it.
+  if (!callback) return new Response("ok");
+
+  const fromId = String(callback.from?.id ?? "");
+  if (fromId !== String(env.FEEDBACK_CHAT_ID)) {
+    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
+      callback_query_id: callback.id,
+      text: "Not your queue.",
+    }).catch(() => {});
+    return new Response("ok");
+  }
+
+  const match = /^fb_(ok|no):(\d+)$/.exec(String(callback.data ?? ""));
+  if (!match) return new Response("ok");
+  const publish = match[1] === "ok";
+  const id = Number(match[2]);
+
+  try {
+    if (publish) {
+      await env.DB.prepare("UPDATE landing_feedback SET approved = 1 WHERE id = ?").bind(id).run();
+    } else {
+      // Kept, not deleted: "we decided not to publish this" is worth being able to see later, and a
+      // discard button that destroys the only copy is a button nobody wants to press twice.
+      await env.DB.prepare("UPDATE landing_feedback SET approved = 2 WHERE id = ?").bind(id).run();
+    }
+    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "editMessageReplyMarkup", {
+      chat_id: callback.message?.chat?.id,
+      message_id: callback.message?.message_id,
+      reply_markup: { inline_keyboard: [[{ text: publish ? "Published" : "Discarded", callback_data: "fb_done" }]] },
+    }).catch(() => {});
+    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
+      callback_query_id: callback.id,
+      text: publish ? "Published on easyq.uz" : "Discarded",
+    }).catch(() => {});
+  } catch (error) {
+    console.log("feedback moderation error:", error);
+    await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
+      callback_query_id: callback.id,
+      text: "Failed — try again.",
+    }).catch(() => {});
+  }
+
+  return new Response("ok");
+}
+
 async function submitFeedback(env: Env, request: Request) {
   // Unauthenticated and uncaptcha'd. Rows land with approved = 0 so nothing reaches the public
   // page, which means the damage was never publication — it was drowning the moderation queue.
@@ -1939,11 +2130,79 @@ async function submitFeedback(env: Env, request: Request) {
   }
 
   const res = await env.DB
-    .prepare("INSERT INTO landing_feedback (name, text, rating) VALUES (?, ?, ?)")
+    .prepare("INSERT INTO landing_feedback (name, text, rating, source) VALUES (?, ?, ?, 'landing')")
     .bind(name, text, rating)
     .run();
 
-  return json({ ok: true, id: Number(res.meta.last_row_id ?? 0) }, { status: 201, headers: FEEDBACK_CORS });
+  const id = Number(res.meta.last_row_id ?? 0);
+  await notifyFeedback(env, { id, name, text, rating, created_at: "" }, null);
+
+  return json({ ok: true, id }, { status: 201, headers: FEEDBACK_CORS });
+}
+
+/**
+ * The same feedback, submitted from inside the CRM by somebody we can identify.
+ *
+ * Authenticated, so it needs no captcha and no per-IP limit: the account is the rate limit, and
+ * `feedback_given_at` means each one can only do this once. It still lands `approved = 0` — being a
+ * paying customer is not the same as being pre-approved to publish text on the marketing site.
+ *
+ * The attribution is the whole point of this endpoint existing separately. "4 stars" from a shop
+ * with 300 bookings and "4 stars" from one that signed up yesterday are different signals, and the
+ * person deciding whether to publish cannot tell them apart from the stars alone.
+ */
+async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
+  const input = (await request.json().catch(() => ({}))) as FeedbackInput & { snooze?: boolean };
+  const business = actor.business;
+  const now = new Date().toISOString().slice(0, 10);
+
+  // "Not now" is a real answer, and recording it is what stops the card coming back tomorrow.
+  if (input.snooze) {
+    await env.DB.prepare("UPDATE businesses SET feedback_snoozed_at = ? WHERE id = ?").bind(now, business.id).run();
+    return json({ ok: true, snoozed: true });
+  }
+
+  const text = (input.text ?? "").trim().slice(0, 1000);
+  let rating: number | null = null;
+  if (typeof input.rating === "number" && input.rating >= 1 && input.rating <= 5) {
+    rating = Math.round(input.rating);
+  }
+  if (!rating) {
+    return json({ error: "A rating is required." }, { status: 400 });
+  }
+
+  const name = (business.name || "").trim().slice(0, 80) || `business ${business.id}`;
+
+  // `created_at` is read here rather than added to BusinessRow, because that row is loaded by
+  // getBusinessById on EVERY authenticated request and this is wanted once, on one button.
+  const stats = await env.DB
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM bookings WHERE business_id = ?) AS bookings,
+              (SELECT COUNT(*) FROM staff WHERE business_id = ?) AS staff,
+              (SELECT COUNT(*) FROM bookings WHERE business_id = ? AND status = 'done') AS completed,
+              created_at AS created_at
+         FROM businesses WHERE id = ?`
+    )
+    .bind(business.id, business.id, business.id, business.id)
+    .first<{ bookings: number; staff: number; completed: number; created_at: string | null }>();
+
+  const res = await env.DB
+    .prepare("INSERT INTO landing_feedback (name, text, rating, business_id, source) VALUES (?, ?, ?, ?, 'crm')")
+    .bind(name, text, rating, business.id)
+    .run();
+
+  await env.DB.prepare("UPDATE businesses SET feedback_given_at = ? WHERE id = ?").bind(now, business.id).run();
+
+  const days = daysSince(stats?.created_at ?? null);
+  const label = [
+    `From: ${business.name}${business.slug ? ` (${business.slug}.easyq.uz)` : ""}`,
+    `${business.type || "business"} · plan ${business.plan || "trial"} · sent by ${actor.role}`,
+    `${days === null ? "age unknown" : `${days} days on the platform`} · ${stats?.staff ?? 0} staff · ${stats?.bookings ?? 0} bookings (${stats?.completed ?? 0} done)`,
+  ].join("\n");
+
+  await notifyFeedback(env, { id: Number(res.meta.last_row_id ?? 0), name, text, rating, created_at: "" }, { businessId: business.id, label });
+
+  return json({ ok: true });
 }
 
 async function listFeedback(env: Env) {
@@ -2797,6 +3056,23 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   // The per-employee "share this master" entries are gone. All four pointed at the same
   // generic client bot and their own description admitted the master was not preselected,
   // so they were four identical links wearing different names.
+  /**
+   * Whether this shop is due to be asked how the product is going.
+   *
+   * These three columns are read here rather than added to BusinessRow, which getBusinessById loads
+   * on every authenticated request — this is wanted once per payload, for one card. Tolerant of the
+   * migration not having run: a failed read means "do not ask", which costs a prompt and breaks
+   * nothing, whereas letting it throw would 500 the entire CRM over a rating card.
+   */
+  const feedbackState = await env.DB
+    .prepare("SELECT created_at, feedback_given_at, feedback_snoozed_at FROM businesses WHERE id = ?")
+    .bind(business.id)
+    .first<{ created_at: string | null; feedback_given_at: string | null; feedback_snoozed_at: string | null }>()
+    .catch((error) => {
+      console.log("feedback prompt state unavailable (has 2026-08-06-feedback-attribution.sql run?):", error);
+      return null;
+    });
+
   const bookingLinks: BookingLinkItem[] = [
     // The business's own booking page — the one link actually worth sharing, because it
     // is per-tenant. Only offered once a slug exists; before that there is no such page.
@@ -2884,6 +3160,13 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       totalCancelledVisits: bookings.filter((booking) => booking.status === "cancelled").length,
     },
     bookingLinks,
+    askForFeedback: shouldAskForFeedback({
+      role: "owner",
+      createdAt: feedbackState?.created_at ?? null,
+      completedBookings: bookings.filter((booking) => booking.status === "done").length,
+      givenAt: feedbackState?.feedback_given_at ?? null,
+      snoozedAt: feedbackState?.feedback_snoozed_at ?? null,
+    }),
     paymentsToday: paymentRowsToday.map((payment) => {
       const booking = bookingById.get(payment.booking_id);
       return {
@@ -3153,6 +3436,15 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
       ...visible,
       business: { ...visible.business, crmUsername: null, crmHasTemporaryPassword: false },
     };
+  }
+
+  // The rating card is for whoever speaks for the business, which is the same person allowed to
+  // change what the business IS. A specialist rating the product on the shop's behalf is not the
+  // signal being collected, and the row would be attributed to a business whose owner never said
+  // any of it. getCrmPayload cannot make this call — it takes a business, not an actor — so the
+  // time-and-usage gates live there and the role gate lives here.
+  if (!can(actor.role, "business:write")) {
+    visible = { ...visible, askForFeedback: false };
   }
 
   return visible;
@@ -4181,7 +4473,8 @@ const router = {
           url.pathname === "/api/captcha" ||
           url.pathname === "/api/subdomain/check" ||
           url.pathname.startsWith("/api/verify/") ||
-          url.pathname === "/api/telegram/verify-webhook")
+          url.pathname === "/api/telegram/verify-webhook" ||
+          url.pathname === "/api/telegram/feedback-webhook")
       ) {
         return json({ error: "Not found" }, { status: 404 });
       }
@@ -4305,6 +4598,12 @@ const router = {
         return await listFeedback(env);
       }
 
+      // The feedback bot's moderation callbacks. Public by necessity — Telegram cannot hold a
+      // session — and gated by the shared secret plus a sender check inside the handler.
+      if (url.pathname === "/api/telegram/feedback-webhook" && request.method === "POST") {
+        return await feedbackWebhook(env, request);
+      }
+
       if (url.pathname === "/api/crm" && request.method === "GET") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "crm:read");
@@ -4404,6 +4703,14 @@ const router = {
       if (url.pathname === "/api/me/password" && request.method === "PATCH") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         return await changeOwnPassword(env, request, actor, await readJson<ChangeOwnPasswordInput>(request));
+      }
+
+      // Rating the product, or dismissing the card that asks. `business:write` because the opinion
+      // is recorded as the BUSINESS's, and only the owner speaks for that.
+      if (url.pathname === "/api/me/feedback" && request.method === "POST") {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "business:write");
+        return await submitCrmFeedback(env, request, actor);
       }
 
       if (url.pathname === "/api/business/credentials" && request.method === "PATCH") {

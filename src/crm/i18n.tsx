@@ -17,6 +17,15 @@ export const CRM_T: Record<Lang, any> = {
     search: 'Mijoz, navbat yoki xizmat qidirish…', searchEmpty: 'Hech narsa topilmadi',
     /** Icon-only controls that carry no visible text. Mobile chrome, mostly. */
     a11y: { menu: 'Menyu', closeMenu: 'Menyuni yopish' },
+    rate: {
+      title: 'EasyQ sizga qanday yordam beryapti?',
+      sub: 'Bir necha kun ishlatdingiz. Bahoyingiz boshqa ustalarga tanlashda yordam beradi.',
+      placeholder: 'Nima yaxshi, nima yetishmayapti? (majburiy emas)',
+      send: 'Yuborish',
+      later: 'Keyinroq',
+      thanks: 'Rahmat! Fikringiz yuborildi.',
+      ratingLabel: 'Baho',
+    },
     newBooking: 'Yangi navbat',
     notif: {
       title: 'Bildirishnomalar', markAll: 'Hammasini o‘qilgan deb belgilash', empty: 'Yangi bildirishnoma yo‘q', pendingTitle: 'Tasdiqlash kutilmoqda', viewAll: 'Barchasini ko‘rish', justNow: 'hozir', minAgo: 'daq oldin', hAgo: 'soat oldin',
@@ -236,6 +245,15 @@ export const CRM_T: Record<Lang, any> = {
     nav: { dashboard: 'Панель', calendar: 'Расписание', customers: 'Клиенты', staff: 'Сотрудники', services: 'Услуги', inventory: 'Склад', finance: 'Касса', loyalty: 'Лояльность', payroll: 'Зарплата', reviews: 'Отзывы', marketing: 'Маркетинг', automations: 'Автоматизация', analytics: 'Аналитика', branding: 'Брендинг', help: 'Инструкция', settings: 'Настройки' },
     search: 'Поиск клиента, записи или услуги…', searchEmpty: 'Ничего не найдено',
     a11y: { menu: 'Меню', closeMenu: 'Закрыть меню' },
+    rate: {
+      title: 'Как вам работается с EasyQ?',
+      sub: 'Вы пользуетесь уже несколько дней. Ваша оценка поможет другим мастерам выбрать.',
+      placeholder: 'Что удобно, чего не хватает? (необязательно)',
+      send: 'Отправить',
+      later: 'Позже',
+      thanks: 'Спасибо! Отзыв отправлен.',
+      ratingLabel: 'Оценка',
+    },
     newBooking: 'Новая запись',
     notif: {
       title: 'Уведомления', markAll: 'Отметить все прочитанными', empty: 'Нет новых уведомлений', pendingTitle: 'Ждёт подтверждения', viewAll: 'Показать все', justNow: 'сейчас', minAgo: 'мин назад', hAgo: 'ч назад',
@@ -454,6 +472,15 @@ export const CRM_T: Record<Lang, any> = {
     nav: { dashboard: 'Dashboard', calendar: 'Schedule', customers: 'Customers', staff: 'Staff', services: 'Services', inventory: 'Inventory', finance: 'Cash desk', loyalty: 'Loyalty', payroll: 'Payroll', reviews: 'Reviews', marketing: 'Marketing', automations: 'Automations', analytics: 'Analytics', branding: 'Branding', help: 'Guide', settings: 'Settings' },
     search: 'Search customer, booking or service…', searchEmpty: 'Nothing found',
     a11y: { menu: 'Menu', closeMenu: 'Close menu' },
+    rate: {
+      title: 'How is EasyQ working out for you?',
+      sub: 'You have been using it a few days now. Your rating helps other shops decide.',
+      placeholder: 'What works, what is missing? (optional)',
+      send: 'Send',
+      later: 'Later',
+      thanks: 'Thank you — your feedback was sent.',
+      ratingLabel: 'Rating',
+    },
     newBooking: 'New booking',
     notif: {
       title: 'Notifications', markAll: 'Mark all as read', empty: 'No new notifications', pendingTitle: 'Awaiting confirmation', viewAll: 'View all', justNow: 'just now', minAgo: 'min ago', hAgo: 'h ago',

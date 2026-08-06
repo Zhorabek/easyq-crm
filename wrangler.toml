@@ -18,6 +18,14 @@ compatibility_date = "2026-04-06"
 # this is an Uzbek product and Kazakhstan could diverge.
 APP_TIMEZONE = "Asia/Tashkent"
 
+# Who receives the feedback queue and is the only account allowed to moderate it.
+#
+# Here rather than in the dashboard for exactly the reason written above APP_TIMEZONE: a plain var
+# set through the dashboard is dropped by the next deploy that does not declare it, and this repo
+# has already lost one that way. A Telegram user id is not a credential — it is the account's public
+# handle in numeric form — so committing it costs nothing. The TOKEN is a secret and stays one.
+FEEDBACK_CHAT_ID = "8789277873"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

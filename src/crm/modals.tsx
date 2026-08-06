@@ -5,6 +5,7 @@ import { Avatar, Badge, Field, FooterBtns, InfoTip, Modal, PhoneInput, Segmented
 import { avatarColor, fmtPrice, fmtSom } from './data';
 import { CUSTOMERS, SERVICES, SERV_NAME, STAFF } from './mock';
 import { formatPhone, isValidPhone, toStoragePhone } from '../shared/phone';
+import { can } from '../server/permissions';
 import { generateDayIntervals, normalizeTime, parseBusinessHours, timeToMinutes } from '../lib/date';
 import type { BookingStatus, CalendarBookingCard, ClientRow, CreateCrmBookingInput, CrmPayload, EmployeeRow, PaymentMethod, ServiceCatalogItem, StaffAccessRow } from '../types';
 
@@ -55,8 +56,17 @@ export function ModalLayer({ modal, onClose, onSaved }: { modal: { type: string 
 
 /* ===================== real: booking detail (status + payments) ===================== */
 export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { booking: CalendarBookingCard; onClose: () => void; onStatus: (s: BookingStatus) => void; onPay: (p: { amount: number; method: PaymentMethod; flow: 'in' | 'out'; note?: string }) => void }) {
-  const { t, m } = useCRM();
+  const { t, m, role } = useCRM();
   const f = t.fin;
+  /**
+   * Whether to show money at all, from the SAME matrix the Worker redacts by.
+   *
+   * The server blanks `booking.payment` for a role without `payment:write`, which is correct —
+   * but rendering the blanks was worse than the leak it replaced: a specialist saw "0 so'm paid,
+   * 0 outstanding" for a customer who had paid in full, which is a confident false statement they
+   * could repeat to that customer. Absent beats wrong.
+   */
+  const showMoney = can(role, 'payment:write');
   const [amount, setAmount] = useState(booking.payment.remaining > 0 ? String(Math.round(booking.payment.remaining)) : '');
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [flow, setFlow] = useState<'in' | 'out'>('in');
@@ -92,12 +102,17 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-        {/* Price can be unset; the two payment figures are real totals and 0 is meaningful. */}
+      <div style={{ display: 'grid', gridTemplateColumns: showMoney ? 'repeat(3,1fr)' : '1fr', gap: 10 }}>
+        {/* Price can be unset; the two payment figures are real totals and 0 is meaningful — to
+            somebody allowed to see them. To anybody else the tiles are dropped, not zeroed. */}
         {[
           [fmtPrice(booking.price) ?? '—', t.serv.colPrice],
-          [`${fmtSom(booking.payment.net)} ${f.currency}`, f.incoming],
-          [`${fmtSom(Math.max(booking.payment.remaining, 0))} ${f.currency}`, t.an.outstanding],
+          ...(showMoney
+            ? [
+                [`${fmtSom(booking.payment.net)} ${f.currency}`, f.incoming],
+                [`${fmtSom(Math.max(booking.payment.remaining, 0))} ${f.currency}`, t.an.outstanding],
+              ]
+            : []),
         ].map((s, i) => (
           <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 11, padding: '12px 10px', textAlign: 'center' }}>
             <div className="tnum" style={{ fontSize: 15, fontWeight: 800 }}>{s[0]}</div>
@@ -115,6 +130,10 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
           </button>
         ))}
       </div>
+      {/* The whole cash-desk block, not just its figures. A specialist cannot record a payment —
+          the Worker 403s `payment:write` — so offering them the form is offering a button that
+          fails, and the history beneath it is the shop's takings. */}
+      {showMoney && (
       <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
         {/* A heading and a sentence, not three bare dropdowns.
             "Kirim / Naqd / 0" is a set of category names, and a category name only helps
@@ -166,18 +185,30 @@ export function BookingDetailModal({ booking, onClose, onStatus, onPay }: { book
           ))}
         </div>
       </div>
+      )}
     </Modal>
   );
 }
 
 /* ===================== real: client history ===================== */
 export function ClientHistoryModal({ client, onClose }: { client: ClientRow; onClose: () => void }) {
-  const { t } = useCRM();
+  const { t, role } = useCRM();
   const c = t.cust;
+  /**
+   * `spentTotal` is 0 for a specialist by design — their client rows carry no money. The
+   * Customers TABLE already swaps that column out for them; this modal did not, so tapping a
+   * client who had spent real money showed "Spent: 0". The table's own rule, applied one screen
+   * deeper.
+   */
+  const showMoney = can(role, 'payment:write');
   return (
     <Modal title={client.name} sub={c.history} icon="customers" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-        {[[client.totalVisits, c.detailVisits], [fmtSom(client.spentTotal), c.detailSpent], [client.cancelledVisits, c.detailNoshow]].map((s, i) => (
+      <div style={{ display: 'grid', gridTemplateColumns: showMoney ? 'repeat(3,1fr)' : 'repeat(2,1fr)', gap: 10 }}>
+        {[
+          [client.totalVisits, c.detailVisits],
+          ...(showMoney ? [[fmtSom(client.spentTotal), c.detailSpent]] : []),
+          [client.cancelledVisits, c.detailNoshow],
+        ].map((s, i) => (
           <div key={i} style={{ background: 'var(--panel-2)', borderRadius: 11, padding: '12px 10px', textAlign: 'center' }}>
             <div className="tnum" style={{ fontSize: 16, fontWeight: 800 }}>{s[0]}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{s[1]}</div>

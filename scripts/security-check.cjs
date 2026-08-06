@@ -157,6 +157,36 @@ for (const f of payloadFields) {
   check(`payload field "${f}" is inside the money gate`, moneyGate.includes(`${f}: []`));
 }
 
+// Money that travels as a PROPERTY of something else, which is how all three leaks happened.
+// `payment` hangs off every booking card and every line of a client's visit history, so a
+// specialist was receiving what each customer paid, what they still owe, and an itemised
+// history with amounts — none of it rendered, all of it in the JSON.
+//
+// Derived from the source rather than listed here: every collection that attaches a payment
+// summary must be run through the stripper inside the gate. Add a fifth booking list and this
+// fails until it is covered.
+check('a payment stripper exists in the money gate', /const stripPayment = /.test(moneyGate));
+check('the blanked summary keeps the shape rather than dropping the key',
+  /const noPayment = \(\): PaymentSummary =>/.test(moneyGate) && /history: \[\]/.test(moneyGate));
+// One exact expected call per collection, and NO shared fallback alternative.
+//
+// The first version of this check accepted any of three patterns per field, and one of them —
+// `history: stripPayment(` — is present for `clients` no matter which field is being tested. So
+// deleting the `pendingBookings` line left all 73 checks green. Proved by deleting that line and
+// watching this file pass, which is the only way to find out that a check is decorative.
+const paymentBearing = [
+  ['calendar.bookings', 'bookings: stripPayment(visible.calendar.bookings)'],
+  ['reservationsToday', 'reservationsToday: stripPayment(visible.reservationsToday)'],
+  ['pendingBookings', 'pendingBookings: stripPayment(visible.pendingBookings)'],
+  ['clients[].history', 'history: stripPayment(client.history)'],
+];
+for (const [field, expected] of paymentBearing) {
+  check(`payment is stripped from ${field}`, moneyGate.includes(expected));
+}
+// Every site that attaches a summary should be accounted for by the four above.
+const attachSites = (worker.match(/payment: paymentSummaryByBooking\.get\(booking\.id\)!/g) || []).length;
+check('every payment-attaching site is covered by the stripped collections', attachSites === 4);
+
 // Pending bookings are booking rows, so they follow the same scoping as the calendar: a master
 // is asked to confirm their OWN bookings, never the shop's.
 check('pending bookings are sent', /pendingBookings,/.test(worker));

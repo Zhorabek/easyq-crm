@@ -3069,6 +3069,35 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
   // use for the totals, and the two move together: the specialist payload was already zeroing
   // these, so this changes nothing for today's three roles and makes tomorrow's safe.
   if (!can(actor.role, "payment:write")) {
+    /**
+     * The payment summary hanging off every booking.
+     *
+     * This is the third money field to reach a role that may not see money, and the pattern is
+     * always the same: the gate lists the OBVIOUS money — the KPI strip, the cash desk, the
+     * analytics block — and misses money that travels as a property of something else. Found by
+     * reading a real specialist's `/api/crm` response and grepping it for a non-zero amount,
+     * not by reading this function; the screens render none of it, so it is invisible from the
+     * outside while sitting in the JSON.
+     *
+     * What a specialist was receiving, for every booking on their calendar and every visit in a
+     * shared client's history: what the customer paid, what they still owe, whether they
+     * overpaid, and an itemised history with amounts and methods.
+     *
+     * Zeroed rather than deleted. `CalendarBookingCard.payment` and `ClientHistoryItem.payment`
+     * are non-optional, and the booking modal reads `.status` and `.remaining` unconditionally —
+     * dropping the key would trade a data leak for a crash on tap.
+     */
+    const noPayment = (): PaymentSummary => ({
+      incoming: 0,
+      outgoing: 0,
+      net: 0,
+      remaining: 0,
+      status: "unpaid",
+      history: [],
+    });
+    const stripPayment = <T extends { payment: PaymentSummary }>(rows: T[]): T[] =>
+      rows.map((row) => ({ ...row, payment: noPayment() }));
+
     visible = {
       ...visible,
       kpis: [],
@@ -3089,7 +3118,10 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
         totalCompletedVisits: 0,
         totalCancelledVisits: 0,
       },
-      calendar: { ...visible.calendar, dayRevenue: 0 },
+      calendar: { ...visible.calendar, dayRevenue: 0, bookings: stripPayment(visible.calendar.bookings) },
+      reservationsToday: stripPayment(visible.reservationsToday),
+      pendingBookings: stripPayment(visible.pendingBookings),
+      clients: visible.clients.map((client) => ({ ...client, history: stripPayment(client.history) })),
       employees: visible.employees.map((employee) => ({
         ...employee,
         completedRevenue: 0,

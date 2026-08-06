@@ -320,6 +320,9 @@ export function Segmented({ options, value, onChange }: { options: Array<{ v: st
 
 /* ---------------- Modal shell ---------------- */
 export function Modal({ title, sub, icon, onClose, children, footer }: { title: string; sub?: string; icon: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+  // Every modal in the CRM shares this shell, so its close button is the one dismiss control on
+  // a phone — and it was a 34px unnamed icon. One fix, everywhere.
+  const { t } = useCRM();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -342,7 +345,7 @@ export function Modal({ title, sub, icon, onClose, children, footer }: { title: 
             <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.02em' }}>{title}</div>
             {sub && <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 1 }}>{sub}</div>}
           </div>
-          <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
+          <button onClick={onClose} aria-label={t.tour.close} style={{ width: 40, height: 40, borderRadius: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
             <Ic name="x" size={17} />
           </button>
         </div>

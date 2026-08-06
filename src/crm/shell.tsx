@@ -104,7 +104,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
             </span>
           </span>
         )}
-        <button className="crm-navclose" onClick={() => setNavOpen(false)} aria-label={t.a11y.closeMenu} style={{ display: 'none', width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center', flex: 'none' }}>
+        <button className="crm-navclose" onClick={() => setNavOpen(false)} aria-label={t.a11y.closeMenu} style={{ display: 'none', width: 40, height: 40, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center', flex: 'none' }}>
           <Ic name="x" size={18} />
         </button>
       </div>
@@ -237,7 +237,11 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffName || bizName}</div>
                 <div style={{ fontSize: 10.5, color: role === 'owner' ? 'var(--on-sidebar-2)' : 'var(--accent-nav)', fontWeight: 700, whiteSpace: 'nowrap' }}>{roleNames[role]}</div>
               </div>
-              <button onClick={logout} title={t.set.logout} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.06)', color: 'var(--on-sidebar-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
+              {/* aria-label as well as title. `title` is a hover tooltip: unreliable to screen
+                  readers and dead weight on a touch screen, where nothing hovers — so on a phone
+                  this was an unnamed icon sitting beside the user's own name, and what it does is
+                  sign them out. Also grown to 40px, because that is the mis-tap you least want. */}
+              <button onClick={logout} title={t.set.logout} aria-label={t.set.logout} style={{ width: 40, height: 40, borderRadius: 9, background: 'rgba(255,255,255,.06)', color: 'var(--on-sidebar-2)', display: 'grid', placeItems: 'center', flex: 'none' }}>
                 <Ic name="logout" size={16} />
               </button>
             </div>

@@ -104,7 +104,7 @@ export function Sidebar({ active, setActive, navOpen }: { active: string; setAct
             </span>
           </span>
         )}
-        <button className="crm-navclose" onClick={() => setNavOpen(false)} style={{ display: 'none', width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center', flex: 'none' }}>
+        <button className="crm-navclose" onClick={() => setNavOpen(false)} aria-label={t.a11y.closeMenu} style={{ display: 'none', width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.08)', color: '#fff', placeItems: 'center', flex: 'none' }}>
           <Ic name="x" size={18} />
         </button>
       </div>
@@ -304,7 +304,7 @@ function NotifBell() {
   const unread = items.filter((x) => x.unread).length;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen((o) => !o)} className="crm-iconbtn" style={{ ...iconBtn, position: 'relative', background: open ? 'var(--accent-tint)' : 'var(--panel-2)', color: open ? 'var(--accent-deep)' : 'var(--ink-2)' }}>
+      <button onClick={() => setOpen((o) => !o)} className="crm-iconbtn" aria-label={t.notif.title} aria-expanded={open} style={{ ...iconBtn, position: 'relative', background: open ? 'var(--accent-tint)' : 'var(--panel-2)', color: open ? 'var(--accent-deep)' : 'var(--ink-2)' }}>
         <Ic name="bell" size={18} />
         {unread > 0 && (
           <span className="tnum" style={{ position: 'absolute', top: 5, right: 6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: 'var(--rose)', color: '#fff', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', border: '2px solid var(--panel)' }}>{unread}</span>
@@ -449,7 +449,9 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
   const { t, lang, setLang, demo, startTour } = useCRM();
   return (
     <header className="crm-topbar" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '20px 28px', borderBottom: '1px solid var(--line)', background: 'var(--panel)', position: 'sticky', top: 0, zIndex: 20 }}>
-      <button className="crm-burger" onClick={onMenu} style={{ display: 'none', width: 40, height: 40, borderRadius: 11, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', placeItems: 'center', flex: 'none' }}>
+      {/* The only way into the nav on a phone, and it was an unnamed button — a screen reader
+          announced "button" and nothing else for the control that opens the entire CRM. */}
+      <button className="crm-burger" onClick={onMenu} aria-label={t.a11y.menu} style={{ display: 'none', width: 40, height: 40, borderRadius: 11, background: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--ink-2)', placeItems: 'center', flex: 'none' }}>
         <Ic name="menu" size={20} />
       </button>
       <div className="crm-title" style={{ minWidth: 0, flex: '0 0 auto', overflow: 'hidden' }}>

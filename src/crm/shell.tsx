@@ -422,7 +422,7 @@ function TopSearch() {
   );
 
   return (
-    <div ref={ref} className="crm-search" style={{ position: 'relative', marginLeft: 12, flex: 1, maxWidth: 420 }}>
+    <div ref={ref} className="crm-search" style={{ position: 'relative', flex: '0 1 300px', maxWidth: 320, minWidth: 150 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 11, padding: '9px 13px' }}>
         <Ic name="search" size={17} style={{ color: 'var(--ink-3)', flex: 'none' }} />
         <input
@@ -463,9 +463,13 @@ export function Topbar({ title, sub, action, onMenu, extra }: { title: string; s
         {sub && <div className="crm-sub" style={{ fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
       </div>
 
-      <TopSearch />
-
+      {/* Search belongs with the other controls, not wedged against the page title.
+          As a `flex: 1` child of the header it absorbed all the free space, which is what pinned
+          it to the left and left the gap on the right. Inside the control cluster it needs a
+          fixed basis instead — `flex: 1` there has no free space to claim and would collapse it
+          to the width of its own icon. See .crm-search in crm.css. */}
       <div className="crm-topctl" data-tour="topbar" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <TopSearch />
         {extra}
         {!demo && (
           <button onClick={startTour} data-tour="help" className="crm-iconbtn" title={t.tour.replay} aria-label={t.tour.replay} style={iconBtn as CSSProperties}>

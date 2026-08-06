@@ -124,9 +124,14 @@ export function Dashboard() {
                min-content width from the service names, this row bottomed out at 302px + 42px of
                card padding — 344px inside a 316px viewport, so a 320px phone scrolled sideways.
                `minWidth: 0` did not help: it let the legend claim it could shrink to nothing
-               while its text still refused to, so nothing ever wrapped. A 150px floor makes the
+               while its text still refused to, so nothing ever wrapped. A real floor makes the
                legend drop below the donut when the two genuinely do not fit, which is the layout
-               that actually works at that width. */
+               that actually works at that width.
+
+               The floor is 140px because that is what the box measures, not what looks round: at
+               386px this row has 298px of content, and 132 for the donut plus an 18px gap leaves
+               148 for the legend. A 150px floor — my first guess — was two pixels too greedy and
+               wrapped the card on every phone instead of only the narrow ones. */
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
               <div style={{ position: 'relative', flex: 'none' }}>
                 <Donut segments={servSegments} size={132} thickness={17} />
@@ -137,7 +142,7 @@ export function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: '1 1 150px', minWidth: 150 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: '1 1 140px', minWidth: 140 }}>
                 {servSegments.map((s, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: 'none' }} />

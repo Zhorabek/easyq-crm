@@ -531,9 +531,6 @@ a {
   .crm-navclose {
     display: grid !important;
   }
-  .crm-search {
-    display: none !important;
-  }
   .crm-hide-sm {
     display: none !important;
   }
@@ -562,18 +559,29 @@ a {
     grid-template-columns: 1fr !important;
   }
 }
-/* Everything that relieves crowding in the top bar happens at 820px, the same point the sidebar
- * becomes a drawer and the search disappears — not at 680.
+/* Top-bar crowding relief at 1024px, and the number is not a guess.
  *
- * Between those two widths the search was already gone while the language switcher, the full
- * "new booking" label and the page subtitle were all still rendered, so the bar was wider than
- * the window and the whole page scrolled sideways. Measured at 696px before this: the top bar
- * overflowed its own container. It is one layout shift, so it belongs at one breakpoint.
+ * These queries measure the VIEWPORT, but the top bar lives beside a 248px sidebar, so its real
+ * width is `viewport - 248` until the sidebar collapses at 820. That gap is the whole bug: at
+ * 950px the bar had 702px to fit a title, a search field, the guide, the language switcher, the
+ * bell and "new booking" — and the rules that drop the last three did not fire until 820. The bar
+ * overflowed and the page scrolled sideways across 856-1024, with the search squeezed to 64px,
+ * which is a magnifying glass and no room to type.
  *
- * The modal rules below stay at 680 deliberately: turning a dialog into a bottom sheet is about
- * how a phone is held, not about whether a row of buttons fits.
+ * 1024 - 248 = 776, which is the width the old 820 rule was tuned for. So the sidebar's own
+ * width is now accounted for instead of ignored. Below 820 the sidebar becomes a drawer and the
+ * bar gets all 820px back; these stay hidden there because the drawer carries them.
+ *
+ * Verified across fifteen widths from 1440 down to 320, checking the bar against its own
+ * container rather than trusting one screenshot.
+ *
+ * The modal rules further down stay at 680 deliberately: turning a dialog into a bottom sheet is
+ * about how a phone is held, not about whether a row of buttons fits.
  */
-@media (max-width: 820px) {
+@media (max-width: 1024px) {
+  .crm-search {
+    display: none !important;
+  }
   .crm-langsw {
     display: none !important;
   }

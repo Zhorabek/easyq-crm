@@ -119,7 +119,15 @@ export function Dashboard() {
           {totalServ === 0 ? (
             <EmptyHint text={t.serv.title} />
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            /* Wraps, and the legend has a real floor rather than `minWidth: 0`.
+               With a 132px donut that cannot shrink and a legend whose rows have their own
+               min-content width from the service names, this row bottomed out at 302px + 42px of
+               card padding — 344px inside a 316px viewport, so a 320px phone scrolled sideways.
+               `minWidth: 0` did not help: it let the legend claim it could shrink to nothing
+               while its text still refused to, so nothing ever wrapped. A 150px floor makes the
+               legend drop below the donut when the two genuinely do not fit, which is the layout
+               that actually works at that width. */
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
               <div style={{ position: 'relative', flex: 'none' }}>
                 <Donut segments={servSegments} size={132} thickness={17} />
                 <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
@@ -129,7 +137,7 @@ export function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: '1 1 150px', minWidth: 150 }}>
                 {servSegments.map((s, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: 'none' }} />

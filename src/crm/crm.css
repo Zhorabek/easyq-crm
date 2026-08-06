@@ -562,7 +562,18 @@ a {
     grid-template-columns: 1fr !important;
   }
 }
-@media (max-width: 680px) {
+/* Everything that relieves crowding in the top bar happens at 820px, the same point the sidebar
+ * becomes a drawer and the search disappears — not at 680.
+ *
+ * Between those two widths the search was already gone while the language switcher, the full
+ * "new booking" label and the page subtitle were all still rendered, so the bar was wider than
+ * the window and the whole page scrolled sideways. Measured at 696px before this: the top bar
+ * overflowed its own container. It is one layout shift, so it belongs at one breakpoint.
+ *
+ * The modal rules below stay at 680 deliberately: turning a dialog into a bottom sheet is about
+ * how a phone is held, not about whether a row of buttons fits.
+ */
+@media (max-width: 820px) {
   .crm-langsw {
     display: none !important;
   }
@@ -584,6 +595,8 @@ a {
   .crm-title {
     flex: 0 1 auto !important;
   }
+}
+@media (max-width: 680px) {
   .crm-overlay {
     padding: 0 !important;
     place-items: end stretch !important;

@@ -422,7 +422,11 @@ function TopSearch() {
   );
 
   return (
-    <div ref={ref} className="crm-search" style={{ position: 'relative', flex: '0 1 300px', maxWidth: 320, minWidth: 150 }}>
+    // No min-width: a 150px floor forced the top bar wider than the window between 900 and 1024px
+    // and gave the whole page a horizontal scrollbar, because the field refused to yield and
+    // something had to. It shrinks freely instead, and vanishes below the burger breakpoint, so a
+    // cramped-but-present field is only ever a brief stage on the way there.
+    <div ref={ref} className="crm-search" style={{ position: 'relative', flex: '0 1 300px', maxWidth: 320, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 11, padding: '9px 13px' }}>
         <Ic name="search" size={17} style={{ color: 'var(--ink-3)', flex: 'none' }} />
         <input

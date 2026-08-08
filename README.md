@@ -519,12 +519,18 @@ button that destroys the only copy is one nobody wants to press. Deleting is sep
 
 ### Who is asked, and when
 
-| Who | When | Filed as |
-| --- | --- | --- |
-| Owner | 3 days old **and** 5 completed bookings, once ever | the shop |
-| Manager | same, once ever, per person | *"Sardor — manager at barber777"* |
-| Master | same, once ever, per person | *"Aziz — specialist at barber777"* |
-| Customer | every booking, on the confirmation screen | *"Rated the BOOKING PAGE, not the shop"* |
+| Who | Where | What triggers it | How often | Filed as |
+| --- | --- | --- | --- | --- |
+| Owner | card on the CRM dashboard | shop is **3 days old** AND has **5 completed bookings** | once, ever | the shop |
+| Manager | the same card | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Sardor — manager at barber777"* |
+| Master | the same card | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Aziz — specialist at barber777"* |
+| Customer | booking confirmation screen | finishing a booking | every booking | *"Rated the BOOKING PAGE, not the shop"* |
+| Any visitor | the form on easyq.uz | they choose to | unlimited | just the name they typed |
+
+The trigger counts **completed** bookings (`status = 'done'`) for the whole shop, not per person and
+not bookings merely taken — a shop with forty pending appointments and none finished has not used
+the product yet. Counted off the raw payload, because redaction zeroes analytics for a specialist
+and "has this shop been used enough" is a fact about the shop, not about who is looking.
 
 **Both gates, not either.** A shop that signed up on Tuesday with two bookings has no opinion worth
 collecting, and asking anyway burns the single chance to ask. `PROMPT_AFTER_DAYS` and

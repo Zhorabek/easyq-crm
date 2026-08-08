@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-08-06. Everything below is either not started or waiting on someone.
+Last updated 2026-08-08. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -28,6 +28,23 @@ Nothing here can be done from the repo.
       5 Aug 10:00, a confirmed booking today 17:30, a 1 so'm payment on the cash desk, and an
       edited business description. `jora` was merged into `Sardor Testov` by phone — that one is
       the phone-keyed merge working, not damage.
+- [ ] **Delete the feedback probe rows.** Eight submissions made while debugging the moderation
+      bot, all `approved = 0` so none is public. Review then remove:
+
+      ```sql
+      SELECT id, name, rating, substr(text,1,50) AS text, source, created_at FROM landing_feedback ORDER BY id;
+      ```
+
+      ```sql
+      DELETE FROM landing_feedback WHERE name IN ('Deploy probe','probe2','NOTIFY TEST','NOTIFY TEST 2','WEBHOOK TEST','SECRETS TEST','LOG TEST','probe');
+      ```
+
+      By NAME rather than by id range: ids 1-3, 5, 6 and 8 were never accounted for and may be real
+      feedback from real visitors. The bot's own Delete button does the same job one row at a time.
+- [ ] **Take the variable-name listing out of the webhook's 503.** `feedbackWebhook` returns the
+      string-valued env keys it can see when unconfigured. It was the thing that finally found a
+      trailing space in a variable name, and it is a debugging aid on a public endpoint — the names
+      are all in the public repo already, so the leak is nil, but it should not outlive its purpose.
 - [ ] **Delete one orphaned row:** `DELETE FROM users WHERE id = 1604;` — left behind when
       the `zz-probe-not-real` business was removed.
 
@@ -228,6 +245,32 @@ Two CSS traps from the same pass:
       filter by role, and both have their own check script. That is fine while they say
       different things — the tour is nine steps of orientation, the Guide is twelve topics of
       detail — but if one grows into the other, merge them.
+
+---
+
+## Feedback — shipped 2026-08-08, and what it cost
+
+Three sources (`landing`, `crm`, `booking`), a Telegram bot for moderation, nothing published
+without approval. The README has how it works and how to set it up. What belongs here is the
+lesson, because it was expensive and it generalises.
+
+**Every one of the three failures in this feature was silent, and the code knew the answer in all
+three cases.** The webhook returned 404 for both "not configured" and "wrong secret", so Telegram's
+own error record said the same thing either way. `notifyFeedback` returned quietly when unconfigured
+while the submitter still saw a tick. A bot command that threw was caught, logged, and answered
+nothing, so a missing column read as "some commands don't work".
+
+The root cause of the outage itself was smaller than any of that: **a trailing space in a variable
+name in the Cloudflare dashboard.** `FEEDBACK_BOT_TOKEN ` is 19 characters. It renders identically
+to the correct name and makes the value unreachable. Type variable names by hand; paste only values.
+
+What actually found it was asking the Worker to report the env keys it could see. Hours went into
+inferring config state from status codes first — Variable-vs-Secret, wipe-on-deploy, the Deploy
+button — and every one of those hypotheses was wrong.
+
+**The rule: when something can fail invisibly, spend the first five minutes making it audible.**
+`wrangler tail` does not run on this machine, which is why `[observability]` is now on and why the
+503 names what is missing.
 
 ---
 
@@ -575,6 +618,7 @@ All in `migrations/`.
 | `2026-08-04-subscriptions.sql` | `businesses.plan`, `plan_started_at`, `plan_expires_at` + index | yes |
 | `2026-08-04-service-images.sql` | `crm_service_images` table + index | yes |
 | `2026-08-04-temp-password-flag.sql` | `crm_temp_password_pending` on `businesses` and `staff`; nulls the plaintext | yes |
+| `2026-08-06-feedback-attribution.sql` | `landing_feedback.business_id` + `.source`; `businesses.feedback_given_at` + `.feedback_snoozed_at`; pending index | yes — 2026-08-08 |
 
 `2026-08-03-rate-limit.sql` was confirmed live by burst-probing `/api/subdomain/check` in
 production and watching it turn 429 — the limiter fails open, so "no error" and "no limiter"

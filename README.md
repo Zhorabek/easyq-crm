@@ -432,6 +432,19 @@ red, one at a time.
 
 `outreach/` has its own suite: `npm --prefix outreach test`.
 
+## Who is using it
+
+`scripts/usage.sql` — nine queries for the D1 console: shops vs end-customers, who is actually
+active, who signed up and stalled, weekly growth, booking channel, plans and expiries, money,
+repeat rate and language.
+
+Two words there mean different things, and mixing them up makes every number wrong: **`businesses`
+are the shops paying for this; `users` are Telegram end-customers who booked through a bot.**
+Thousands of the latter would be a success and none of them are accounts.
+
+SQLite, not MySQL — no `NOW()`, no `DATE_SUB()`, no `SHOW TABLES` — and the console aborts a batch
+on the first error, so run them one at a time.
+
 ## Deploy
 
 Push to `main`. **Cloudflare's own Git integration builds and deploys**, not GitHub Actions;
@@ -475,6 +488,88 @@ using the other one.
 
 The handler lives in `easyqueue-business-bot/src/handlers/signup.handler.ts` — in that repo,
 not this one, because a bot has exactly one webhook and that bot's already points there.
+
+## Feedback
+
+Three places collect it, and each asks a **different question**. Mixing them up would make every
+rating unreadable, so `landing_feedback.source` records which one was answered.
+
+| `source` | Who | Asked | Endpoint |
+| --- | --- | --- | --- |
+| `landing` | anyone on easyq.uz | how the product looks | `POST /api/feedback` |
+| `crm` | a shop owner, once ever | how it is to run a shop on | `POST /api/me/feedback` |
+| `booking` | every customer who books | **was booking easy** | `POST /api/public/feedback` |
+
+A customer who has just booked a haircut has no opinion about a CRM — what they can judge is the
+thing they just did. The moderator's message says *"Rated the BOOKING PAGE, not the shop"* outright,
+because a 2-star meaning "the form confused me" and one meaning "the salon is bad" are otherwise
+indistinguishable, and publishing the second beside a shop's name would be unfair.
+
+**Nothing is ever published automatically.** `approved` defaults to 0 and the public list filters
+`approved = 1`. Three states, not two:
+
+```
+0  pending      waiting for a decision
+1  published    visible on easyq.uz
+2  discarded    decided against, kept
+```
+
+Discarded rows are kept because "we decided not to publish this" is worth being able to see, and a
+button that destroys the only copy is one nobody wants to press. Deleting is separate and asks first.
+
+### The moderation bot IS the admin panel
+
+There is no admin role in this product: `ActorRole` is owner / manager / specialist and all three
+are scoped to one business. A platform-wide admin UI for a queue exactly one person will ever read
+is a lot of scaffolding for very little, so a Telegram bot does it.
+
+| Command | |
+| --- | --- |
+| `/pending` | everything awaiting a decision |
+| `/recent` | the last 10, any state |
+| `/stats` | counts, and the average rating of what is published |
+| `/item 12` | one entry in full |
+| `/help` | the list |
+
+Each row arrives as its own message with its own buttons — a digest would need the id typed back
+in before anything could be acted on, which is the friction the bot exists to remove.
+
+### Setting it up
+
+Two secrets and one webhook. `FEEDBACK_CHAT_ID` is in `wrangler.toml` on purpose — a Telegram user
+id is not a credential, and a plain var set through the dashboard is wiped by the next deploy that
+does not declare it. That has already cost this project once, with `APP_TIMEZONE`.
+
+1. In the dashboard, add `FEEDBACK_BOT_TOKEN` and `FEEDBACK_WEBHOOK_SECRET` as type **Secret**.
+   Secrets survive deploys; plain variables do not.
+2. `setWebhook` pointing at `/api/telegram/feedback-webhook` with the same `secret_token`.
+3. **Open the bot and press Start.** A bot cannot begin a conversation, so `sendMessage` fails
+   until the moderator has messaged it — and that failure has no other symptom.
+
+**Type the variable NAMES by hand rather than pasting them.** A trailing space in the name is
+invisible in the dashboard and makes the value unreachable, and diagnosing that took most of a day.
+
+### Two checks, not one
+
+The webhook secret proves Telegram sent the request. It says nothing about **who** pressed the
+button, and callback data like `fb_ok:41` is not a hard guess — so `from.id` must also equal
+`FEEDBACK_CHAT_ID`. Without that, anyone who found the bot could publish arbitrary text onto the
+product's own landing page, which is the entire thing `approved = 0` exists to prevent.
+
+### What it taught us: make failures visible
+
+Three separate failures in this one feature were **silent**, and each cost hours:
+
+- the webhook returned 404 for *both* "not configured" and "wrong secret", so `getWebhookInfo`
+  reported the same thing either way. It now answers **503** with the missing names for the first
+  and keeps 404 for the second.
+- `notifyFeedback` logged and returned when unconfigured, while the submitter still got their tick.
+- a bot command that threw was caught, logged, and answered nothing at all — so a missing column
+  read as "some commands don't work" rather than "no such column: business_id".
+
+`wrangler tail` does not run on the dev machine, so `[observability]` is enabled in
+`wrangler.toml` and logs are readable in the dashboard. **A failure the code understands and does
+not report is the expensive kind.**
 
 ## Multi-branch — planned, not built
 

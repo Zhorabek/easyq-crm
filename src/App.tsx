@@ -523,7 +523,10 @@ export default function App() {
             <span className="crm-auth-domain">easyq.uz</span>
           </aside>
 
-          <div className="crm-auth-form">
+          {/* role="main" because the signed-in CRM has a real <main> and this screen had none —
+              the hero beside it is an <aside>, so without this the login form belonged to no
+              landmark at all and "skip to content" had nowhere to go. */}
+          <div className="crm-auth-form" role="main">
             {/* Language first, and before sign-in on purpose: the CRM's own switcher lives
                 inside the sidebar, so until now someone whose Uzbek is shaky had to log in
                 through a language they could not read to reach the control that changes it. */}
@@ -544,9 +547,9 @@ export default function App() {
             <p className="crm-auth-sub">{lt.set.credentialsSub}</p>
 
             <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <input className="crm-auth-input" value={loginForm.username} onChange={(e) => setLoginForm((c) => ({ ...c, username: e.target.value }))} placeholder={lt.set.username} autoComplete="username" autoCapitalize="none" spellCheck={false} />
+              <input className="crm-auth-input" aria-label={lt.set.username} value={loginForm.username} onChange={(e) => setLoginForm((c) => ({ ...c, username: e.target.value }))} placeholder={lt.set.username} autoComplete="username" autoCapitalize="none" spellCheck={false} />
               <div className="crm-auth-pw">
-                <input className="crm-auth-input" type={showPassword ? 'text' : 'password'} value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
+                <input className="crm-auth-input" aria-label={lt.set.currentPassword} type={showPassword ? 'text' : 'password'} value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} placeholder={lt.set.currentPassword} autoComplete="current-password" />
                 {/* Owner-issued temporary passwords are random strings typed on a phone, so
                     being able to see what you typed is the difference between one attempt
                     and four. The label survives as the accessible name and the tooltip —

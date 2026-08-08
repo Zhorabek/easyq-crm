@@ -167,5 +167,16 @@ export const LIMITS = {
    * per tenant and a shop behind CGNAT should not inherit its neighbour's uploads.
    */
   imageUpload: { action: "imageupload", limit: 40, windowSeconds: 3600 },
+  /**
+   * Rating the product, or dismissing the card that asks.
+   *
+   * The rating itself is already one-per-business, checked against `feedback_given_at` before the
+   * insert. This is for the other path: "not now" only updates a column, so it is cheap, unbounded,
+   * and reachable in a loop by anybody holding an owner session. Same reasoning as imageUpload —
+   * authenticated does not mean free, and keyed per business because the cost is per tenant.
+   *
+   * 10 an hour is far above any real use: a person answers this card once, ever.
+   */
+  productFeedback: { action: "prodfeedback", limit: 10, windowSeconds: 3600 },
   verifyStart: { action: "verifystart", limit: 10, windowSeconds: 3600 },
 } satisfies Record<string, RateLimitRule>;

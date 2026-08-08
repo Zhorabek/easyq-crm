@@ -2392,16 +2392,30 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
 
   // `created_at` is read here rather than added to BusinessRow, because that row is loaded by
   // getBusinessById on EVERY authenticated request and this is wanted once, on one button.
+  //
+  // `feedback_given_at` comes along for the ride so it can be CHECKED before the insert. It was
+  // only being written afterwards, and the "you have already answered" rule lived entirely in
+  // `askForFeedback`, which decides whether to draw a card — cosmetic, exactly like every other UI
+  // gate in this product. Anybody holding an owner session could POST this endpoint in a loop and
+  // add a row to the moderation queue and a Telegram message to the moderator every time.
   const stats = await env.DB
     .prepare(
       `SELECT (SELECT COUNT(*) FROM bookings WHERE business_id = ?) AS bookings,
               (SELECT COUNT(*) FROM staff WHERE business_id = ?) AS staff,
               (SELECT COUNT(*) FROM bookings WHERE business_id = ? AND status = 'done') AS completed,
-              created_at AS created_at
+              created_at AS created_at,
+              feedback_given_at AS feedback_given_at
          FROM businesses WHERE id = ?`
     )
     .bind(business.id, business.id, business.id, business.id)
-    .first<{ bookings: number; staff: number; completed: number; created_at: string | null }>();
+    .first<{ bookings: number; staff: number; completed: number; created_at: string | null; feedback_given_at: string | null }>();
+
+  // One per business, enforced where it counts. 409 rather than a silent success: the caller is our
+  // own card, and a second submission means either a double tap or somebody poking the endpoint —
+  // both are better answered honestly than by pretending to accept a row that was never written.
+  if (stats?.feedback_given_at) {
+    return json({ error: "This business has already sent feedback." }, { status: 409 });
+  }
 
   const res = await env.DB
     .prepare("INSERT INTO landing_feedback (name, text, rating, business_id, source) VALUES (?, ?, ?, ?, 'crm')")
@@ -4927,6 +4941,7 @@ const router = {
       if (url.pathname === "/api/me/feedback" && request.method === "POST") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "business:write");
+        await requireUnderRateLimit(env, request, LIMITS.productFeedback, `biz:${actor.business.id}`);
         return await submitCrmFeedback(env, request, actor);
       }
 

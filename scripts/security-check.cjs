@@ -205,6 +205,28 @@ check('the breakdown is stripped for every role', /bookingsCountByStaff: _droppe
 const scopedBranch = (worker.match(/if \(isScopedToOwnBookings\(actor\.role\)[\s\S]*?\n  \}/) || [''])[0];
 check('the strip is not inside the specialist-only branch', !scopedBranch.includes('_dropped'));
 
+/* -------------------------------------------- one-shot writes are enforced server-side */
+
+// The rating card is drawn when `askForFeedback` is true, and that is cosmetic — every UI gate in
+// this product is. The rule "one per business" therefore has to live in the handler: it wrote
+// `feedback_given_at` AFTER inserting and never read it first, so an owner session could POST the
+// endpoint in a loop and add a queue row and a Telegram message every time.
+const crmFeedback = functionBody(worker, 'async function submitCrmFeedback(');
+check('the in-CRM feedback handler exists', crmFeedback !== null);
+if (crmFeedback) {
+  // The BRANCH, not the column name. Asserting that "feedback_given_at" appears before the insert
+  // passes on broken code, because it is also in the SELECT list that reads the row — the first
+  // version of this check did exactly that and stayed green when the guard was deleted.
+  const insertAt = crmFeedback.indexOf('INSERT INTO landing_feedback');
+  const guardAt = crmFeedback.indexOf('if (stats?.feedback_given_at)');
+  check('the already-answered branch runs BEFORE the insert',
+    guardAt !== -1 && insertAt !== -1 && guardAt < insertAt);
+  check('a repeat submission is refused rather than silently accepted',
+    /status: 409/.test(crmFeedback));
+}
+check('the product-feedback endpoint is rate limited per business',
+  /requireUnderRateLimit\(env, request, LIMITS\.productFeedback, `biz:\$\{actor\.business\.id\}`\)/.test(worker));
+
 /* ------------------------------------------------------------- headers */
 
 check('every response goes through withSecurityHeaders',

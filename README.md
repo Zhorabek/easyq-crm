@@ -476,6 +476,50 @@ using the other one.
 The handler lives in `easyqueue-business-bot/src/handlers/signup.handler.ts` — in that repo,
 not this one, because a bot has exactly one webhook and that bot's already points there.
 
+## Multi-branch — planned, not built
+
+A chain with two or three locations wants one login, per-branch staff and services, and a
+dashboard that can show one branch, several, or all. Parked deliberately: it is the largest
+feature in the backlog and no shop on the platform currently has a second location. Written down
+here because the *approach* is the expensive decision, not the UI.
+
+**The sidebar branch picker already exists — and it is a mock.** `t.branches` in `src/crm/i18n.tsx`
+is a hardcoded array (Yunusobod, Chilonzor, Mirzo Ulug'bek) with nothing behind it, and the whole
+control is wrapped in `{demo && …}` so only the demo renders it. Do not mistake it for a
+half-finished implementation; there is no server-side concept of a branch anywhere.
+
+### Two ways to model it, and one is far cheaper
+
+**A — `branch_id` on everything.** A `branches` table, then a column on staff, services, bookings
+and payments, and a filter added to every query that touches them.
+
+**B — a branch IS a business, with a parent.** One column, `businesses.parent_id`. Each branch is
+an ordinary business row.
+
+**B, for a structural reason.** This product is already multi-tenant: every query in
+`getCrmPayload` filters by `business_id`, and permissions, the calendar, the cash desk, analytics,
+the booking page and both Telegram bots all already scope to one business. Branches are just
+tenants that happen to share an owner. Concretely that means:
+
+- **No changes to either bot repo.** They work per business already. Option A would need both —
+  separate repos, separate deploys, and one of them has no tests.
+- Each branch gets its own subdomain and booking page for free, which is what customers want.
+- Staff, services and prices differ per branch naturally, which is usually true in real chains.
+- The only new work is the parent link, letting one session switch between children, and an
+  aggregate "all branches" view.
+
+**And A carries a specific risk.** Three separate money leaks in this codebase came from a new
+dimension not being applied everywhere it was needed. `branch_id` is that same failure shape
+spread across *every query in the product* rather than one gate — and a miss shows one branch's
+bookings on another branch's calendar.
+
+### Worth doing before any of it
+
+**Branch location on the booking confirmation** — an address and a map link on the "you're booked"
+screen and in the bot's message. Independent of branches, useful to every single-location shop
+today, and small: store an address and a map URL, render a link. Yandex Maps rather than Google,
+which is what people in Uzbekistan actually use. No API key, no embed, no bill.
+
 ## Outreach
 
 `outreach/` runs the project's **own Telegram account** to send the intro to a list of

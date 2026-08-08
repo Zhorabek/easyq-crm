@@ -631,7 +631,7 @@ export default function BookingApp() {
 
   if (loadError) {
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         <div className="bk-card bk-empty">{t.errGeneric}</div>
       </div>
     );
@@ -639,7 +639,7 @@ export default function BookingApp() {
 
   if (!biz) {
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         <div className="bk-card bk-empty">{t.loading}</div>
       </div>
     );
@@ -688,7 +688,7 @@ export default function BookingApp() {
 
   if (done) {
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         <div className="bk-card bk-done">
           <div className="bk-done-mark">
             {/* Drawn, not the ✓ character: a text glyph picks up whatever the system font
@@ -760,7 +760,7 @@ export default function BookingApp() {
     }
 
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         {head}
         <div className="bk-card">
           {biz.services.length === 0 ? (
@@ -821,7 +821,7 @@ export default function BookingApp() {
          ...(hasLoose ? [['', shown.filter((x) => !x.category)] as const] : [])];
 
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         {head}
         <h2 className="bk-title">{t.service}</h2>
 
@@ -910,7 +910,7 @@ export default function BookingApp() {
     // particular barber sees they exist and are busy rather than concluding they have left.
 
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         {head}
         <h2 className="bk-title">{t.specialist}</h2>
 
@@ -1043,7 +1043,7 @@ export default function BookingApp() {
     const monthIndex = Number(monthAnchor.slice(5, 7)) - 1;
 
     return (
-      <div className="bk-shell">
+      <div className="bk-shell" role="main">
         {head}
         <div className="bk-card">
           <div className="bk-cal-head">
@@ -1162,7 +1162,7 @@ export default function BookingApp() {
   /* ----------------------------------------------------------------- details */
 
   return (
-    <div className="bk-shell">
+    <div className="bk-shell" role="main">
       {head}
       <h2 className="bk-title">{t.detailsTitle}</h2>
 

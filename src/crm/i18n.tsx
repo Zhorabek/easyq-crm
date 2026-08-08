@@ -25,6 +25,7 @@ export const CRM_T: Record<Lang, any> = {
       later: 'Keyinroq',
       thanks: 'Rahmat! Fikringiz yuborildi.',
       ratingLabel: 'Baho',
+      scale: ['Yomon', 'So‘so‘', 'Yaxshi', 'Juda yaxshi', 'Zo‘r'],
     },
     newBooking: 'Yangi navbat',
     notif: {
@@ -253,6 +254,7 @@ export const CRM_T: Record<Lang, any> = {
       later: 'Позже',
       thanks: 'Спасибо! Отзыв отправлен.',
       ratingLabel: 'Оценка',
+      scale: ['Плохо', 'Так себе', 'Нормально', 'Хорошо', 'Отлично'],
     },
     newBooking: 'Новая запись',
     notif: {
@@ -480,6 +482,7 @@ export const CRM_T: Record<Lang, any> = {
       later: 'Later',
       thanks: 'Thank you — your feedback was sent.',
       ratingLabel: 'Rating',
+      scale: ['Poor', 'Fair', 'Good', 'Great', 'Excellent'],
     },
     newBooking: 'New booking',
     notif: {

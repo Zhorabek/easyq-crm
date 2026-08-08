@@ -52,9 +52,14 @@ function RateDialog({ preview, onDone }: { preview?: boolean; onDone: () => void
   const { reload } = useData();
   const r = t.rate;
   const [rating, setRating] = useState(0);
+  // What the row is showing right now, which is the hovered value while a pointer is over it.
+  // Without this the stars only respond after a click, and a control that does nothing until you
+  // commit to it reads as disabled — which is exactly how the flat outlines looked.
+  const [hover, setHover] = useState(0);
   const [text, setText] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const shown = hover || rating;
 
   const finish = async (snooze: boolean) => {
     if (busy) return;
@@ -110,7 +115,17 @@ function RateDialog({ preview, onDone }: { preview?: boolean; onDone: () => void
           <button
             onClick={() => finish(false)}
             disabled={!rating || busy}
-            style={{ flex: 1, minHeight: 44, borderRadius: 10, fontSize: 14, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: rating ? 'var(--accent-ink)' : 'var(--ink-3)', background: rating ? 'var(--accent)' : 'var(--panel-2)', cursor: rating ? 'pointer' : 'not-allowed' }}
+            style={{
+              flex: 1, minHeight: 44, borderRadius: 10, fontSize: 14, fontWeight: 800,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              color: rating ? 'var(--accent-ink)' : 'var(--ink-3)',
+              background: rating ? 'var(--accent)' : 'var(--panel-2)',
+              // A dashed outline while nothing is chosen. Flat grey read as a broken button; this
+              // reads as one waiting for an answer, which is what it is.
+              border: rating ? '1px solid transparent' : '1px dashed var(--line-2)',
+              cursor: rating ? 'pointer' : 'not-allowed',
+              transition: 'background .12s ease, color .12s ease',
+            }}
           >
             <Ic name="send" size={16} stroke={2.2} />
             {r.send}
@@ -119,36 +134,68 @@ function RateDialog({ preview, onDone }: { preview?: boolean; onDone: () => void
       }
     >
       {preview && (
-        <div style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--amber)' }}>
+        <div style={{ marginBottom: 10, fontSize: 11, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--amber)', textAlign: 'center' }}>
           preview — nothing is sent
         </div>
       )}
 
       {/* 52px targets, bigger than the 44px floor used elsewhere: this is the one control in the
-          dialog and there is room, and picking 4 when you meant 5 is the failure that matters. */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            aria-label={String(n)}
-            aria-pressed={n <= rating}
-            onClick={() => setRating(rating === n ? 0 : n)}
-            style={{ width: 52, height: 52, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-deep)', opacity: n <= rating ? 1 : 0.26, lineHeight: 0 }}
-          >
-            <Ic name="star" size={30} stroke={1.7} />
-          </button>
-        ))}
+          dialog, there is room, and picking 4 when you meant 5 is the failure that matters here. */}
+      <div
+        style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}
+        onMouseLeave={() => setHover(0)}
+      >
+        {[1, 2, 3, 4, 5].map((n) => {
+          const on = n <= shown;
+          return (
+            <button
+              key={n}
+              type="button"
+              aria-label={`${n} — ${r.scale[n - 1]}`}
+              aria-pressed={n <= rating}
+              onClick={() => setRating(rating === n ? 0 : n)}
+              onMouseEnter={() => setHover(n)}
+              onFocus={() => setHover(n)}
+              onBlur={() => setHover(0)}
+              style={{
+                width: 52, height: 52, flex: 'none', lineHeight: 0,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                // Filled when chosen, outlined when not — a shape change rather than only an
+                // opacity change, because faint outlines read as "switched off" rather than "not
+                // yet picked". That was the whole problem with the first version.
+                color: on ? 'var(--amber)' : 'var(--line-2)',
+                transform: on ? 'scale(1.06)' : 'none',
+                transition: 'color .12s ease, transform .12s ease',
+              }}
+            >
+              {/* `fill` is a boolean on Ic and the stroke stays on: a filled star with no stroke
+                  loses its points at this size, because the path is drawn for an outline. */}
+              <Ic name="star" size={32} stroke={1.8} fill={on} />
+            </button>
+          );
+        })}
       </div>
 
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={r.placeholder}
-        rows={3}
-        maxLength={1000}
-        style={{ ...setInput, resize: 'vertical', width: '100%' }}
-      />
+      {/* Names the score. A number out of five is a measurement; a word is an opinion, and it is
+          the opinion being asked for. Reserved height so choosing one does not shift the dialog. */}
+      <div style={{ minHeight: 20, textAlign: 'center', fontSize: 13.5, fontWeight: 800, color: shown ? 'var(--amber)' : 'transparent', marginBottom: 4 }}>
+        {r.scale[(shown || 1) - 1]}
+      </div>
+
+      {/* The comment appears only once a rating is picked. An empty box sitting there before the
+          question is answered makes a one-tap favour look like a form to fill in — and stars alone
+          are a complete answer. */}
+      {rating > 0 && (
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={r.placeholder}
+          rows={2}
+          maxLength={1000}
+          autoFocus
+          style={{ ...setInput, resize: 'vertical', width: '100%', marginTop: 4 }}
+        />
+      )}
     </Modal>
   );
 }

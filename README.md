@@ -521,9 +521,9 @@ button that destroys the only copy is one nobody wants to press. Deleting is sep
 
 | Who | Where | What triggers it | How often | Filed as |
 | --- | --- | --- | --- | --- |
-| Owner | card on the CRM dashboard | shop is **3 days old** AND has **5 completed bookings** | once, ever | the shop |
-| Manager | the same card | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Sardor — manager at barber777"* |
-| Master | the same card | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Aziz — specialist at barber777"* |
+| Owner | dialog on the CRM dashboard | shop is **3 days old** AND has **5 completed bookings** | once, ever | the shop |
+| Manager | the same dialog | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Sardor — manager at barber777"* |
+| Master | the same dialog | shop is **3 days old** AND has **5 completed bookings** | once, ever — **per person** | *"Aziz — specialist at barber777"* |
 | Customer | booking confirmation screen | finishing a booking | every booking | *"Rated the BOOKING PAGE, not the shop"* |
 | Any visitor | the form on easyq.uz | they choose to | unlimited | just the name they typed |
 
@@ -555,6 +555,44 @@ it"* are different claims and only one of them is true.
 therefore cannot answer "is THIS person due". It briefly did both — computing the card with
 `role: "owner"` hardcoded and switching it off again in `redactPayloadFor` — which was two half
 answers pretending to be one.
+
+### The dialog, and two rules it must keep
+
+A dialog rather than a strip above the KPIs. Inline it competed with the numbers somebody opened
+the CRM to look at, and since it is asked **once in the lifetime of an account** it can afford to
+be a moment rather than a permanent-looking banner. Built on the CRM's own `Modal`, so it inherits
+Escape, the 44px labelled close button and the bottom-sheet treatment on a phone — a bespoke
+overlay would have to re-earn all three, and two of them were only fixed in the accessibility pass.
+
+**Dismissing records a snooze.** The close button, Escape and "Later" all write `feedback_snoozed_at`.
+A dialog that returns on every page load because closing it wrote nothing is not a prompt, it is an
+obstacle — and this one opens over the first screen of the product. That single rule is the whole
+difference between asking once and nagging.
+
+**The comment box appears only after a rating is picked**, and stars alone are a complete answer.
+An empty box sitting there before the question is answered turns a one-tap favour into a form. The
+booking page's version follows the same rule.
+
+Smaller decisions worth not undoing: the stars fill gold (`--amber`) rather than tinting the lime
+accent, which is already carrying the primary button; unpicked stars are outlined rather than faded,
+because a faint icon reads as *disabled* rather than *not yet chosen*; and the score is named in
+words (Yomon → Zo'r) because five-out-of-five is a measurement while "Zo'r" is an opinion, which is
+what is being asked for.
+
+### Looking at it without waiting three days
+
+```
+https://<slug>.easyq.uz/?preview=rate
+```
+
+Draws the dialog on demand, for any role. **Purely client-side**: the server is not consulted,
+nothing is sent, nothing is recorded, and no other account is affected. Reaching it honestly needs a
+shop three days old with five completed bookings, and answering sets `feedback_given_at` — so
+checking the design the real way costs the one chance to ever ask that account.
+
+It is labelled `PREVIEW — NOTHING IS SENT` in amber, and that label is not decoration: a dialog that
+looks live and silently discards what somebody typed is worse than having no preview. The flag only
+applies when the payload has **not** already decided to ask, so a real prompt is never mislabelled.
 
 ### The moderation bot IS the admin panel
 

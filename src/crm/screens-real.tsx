@@ -35,7 +35,16 @@ function EmptyHint({ text }: { text: string }) {
  * The stars are 44px targets even on desktop. This is a control whose whole point is which number
  * was meant, and the landing page's version of the same widget was 30px and mis-tappable.
  */
-function RateCard() {
+/**
+ * `preview` renders the card on demand, for looking at it.
+ *
+ * Reaching it normally means a shop three days old with five completed bookings, and answering it
+ * sets feedback_given_at — so checking the design the honest way costs you the one chance to ask
+ * that account. In preview nothing is sent and nothing is recorded; the thanks state is shown so
+ * the whole flow can be seen, and the panel says so, because a card that looks live and silently
+ * discards what you typed is worse than no preview at all.
+ */
+function RateCard({ preview }: { preview?: boolean }) {
   const { t } = useCRM();
   const { reload } = useData();
   const r = t.rate;
@@ -47,6 +56,12 @@ function RateCard() {
   const send = async (snooze: boolean) => {
     if (busy) return;
     setBusy(true);
+    if (preview) {
+      // Nothing leaves the browser. The point is the look, not a row in the queue.
+      if (!snooze) setSent(true);
+      setBusy(false);
+      return;
+    }
     try {
       await submitProductFeedback(snooze ? { snooze: true } : { rating, text: text.trim() || undefined });
       if (snooze) reload();
@@ -72,6 +87,11 @@ function RateCard() {
   return (
     <Panel pad={18}>
       <div style={{ fontSize: 16, fontWeight: 800 }}>{r.title}</div>
+      {preview && (
+        <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--amber)' }}>
+          preview — nothing is sent
+        </div>
+      )}
       <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 3, lineHeight: 1.45 }}>{r.sub}</div>
       <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, marginLeft: -10 }}>
         {[1, 2, 3, 4, 5].map((n) => (
@@ -116,6 +136,7 @@ function RateCard() {
 
 export function Dashboard() {
   const { t, lang } = useCRM();
+  const previewRate = typeof location !== 'undefined' && new URLSearchParams(location.search).get('preview') === 'rate';
   const { payload, openBooking } = useData();
   if (!payload) return null;
   const d = t.dash;
@@ -129,7 +150,10 @@ export function Dashboard() {
       {/* Server-decided — see CrmPayload.askForFeedback. The browser does not know how long this
           shop has existed or whether it has already answered, and would guess in the direction of
           asking too often. */}
-      {payload.askForFeedback && <RateCard />}
+      {/* `?preview=rate` on any CRM URL draws the card without waiting for the thresholds and
+          without recording anything — see RateCard. Purely client-side: no other account is
+          affected and the server is not consulted. */}
+      {(payload.askForFeedback || previewRate) && <RateCard preview={previewRate && !payload.askForFeedback} />}
       <div className="crm-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         {payload.kpis.map((k, i) => (
           <Panel key={k.id} pad={18}>

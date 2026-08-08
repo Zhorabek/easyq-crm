@@ -1060,7 +1060,11 @@
 .bk-rate-send {
   flex: none;
   height: 44px;
-  padding: 0 18px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border-radius: 11px;
   /* Outlined, not filled. "Book again" directly below is the filled accent button, and two solid
      accent buttons stacked make the screen ask twice which one matters. This one is a favour. */

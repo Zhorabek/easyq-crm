@@ -978,51 +978,76 @@
   color: var(--ink-3);
 }
 
-/* ---- rating the booking, on the confirmation screen ---- */
+/* ---- rating the booking, on the confirmation screen ----
+ *
+ * A quiet panel rather than more of the confirmation. The first version inherited `text-align:
+ * center` from .bk-done and then mixed three widths inside it — stars nudged off-centre by a
+ * -10px hack meant for a left-aligned row, a full-width input, and a small centred Send wedged
+ * between two full-width buttons. Every element was individually defensible and together they
+ * looked accidental.
+ *
+ * Now it is one bordered block that reads as an aside: everything the customer came for sits
+ * above it, and this is clearly optional.
+ */
 
 .bk-rate {
-  margin: 18px 0 4px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  margin: 20px 0 16px;
+  padding: 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+  text-align: center;
 }
 .bk-rate-title {
   font-size: 13.5px;
   font-weight: 700;
   color: var(--ink-2);
-  margin-bottom: 6px;
 }
 .bk-rate-stars {
-  display: inline-flex;
-  /* No gap, and pulled left by the padding inside each button, so five 44px targets sit flush
-     without the row looking like it has been stretched. The landing page's version of this widget
-     was 30px with a 4px gap and picking 4 when you meant 5 was the normal outcome. */
-  margin-left: -10px;
+  display: flex;
+  /* Centred, with no negative margin. The stars are 44px targets that draw a 26px glyph, so the
+     row is already visually centred by the padding inside each button. */
+  justify-content: center;
+  margin-top: 4px;
 }
 .bk-rate-star {
   width: 44px;
   height: 44px;
+  /* Never shrink. Five 44px buttons need 220px and a 320px screen leaves 218 inside the panel's
+     border, so as flex items with the default shrink they quietly became 43.6px each — which is
+     the one dimension these buttons exist to guarantee. The rule below buys the room back. */
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--accent-deep);
-  opacity: 0.34;
+  opacity: 0.3;
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .bk-rate-star.is-on {
   opacity: 1;
 }
 .bk-rate-star:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
+}
+
+/* Input and Send on one line: one control, one width, no orphan button floating between two
+   full-width elements. */
+.bk-rate-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 .bk-rate-note {
-  width: 100%;
-  margin-top: 8px;
+  flex: 1;
+  min-width: 0;
   border: 1.5px solid var(--line-2);
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--ink);
   border-radius: 11px;
-  padding: 11px 13px;
-  /* 16px, or iOS zooms the whole page the moment this is focused — the same rule the rest of the
+  padding: 0 13px;
+  height: 44px;
+  /* 16px, or iOS zooms the whole page the moment this is focused — the rule the rest of the
      booking page already follows. */
   font-size: 16px;
   font-weight: 600;
@@ -1033,22 +1058,40 @@
   border-color: var(--accent-deep);
 }
 .bk-rate-send {
-  margin-top: 8px;
-  min-height: 44px;
+  flex: none;
+  height: 44px;
   padding: 0 18px;
   border-radius: 11px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  /* Outlined, not filled. "Book again" directly below is the filled accent button, and two solid
+     accent buttons stacked make the screen ask twice which one matters. This one is a favour. */
+  background: transparent;
+  border: 1.5px solid var(--accent-deep);
+  color: var(--accent-deep);
   font-size: 14px;
   font-weight: 800;
   font-family: var(--font);
 }
 .bk-rate-send:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 .bk-rate-thanks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 700;
   color: var(--accent-deep);
+  min-height: 44px;
+}
+
+/* The narrowest phones. 320 - 32 (page) - 40 (card) - 28 (panel) - 2 (border) = 218, two pixels
+   short of the five 44px stars. Trimming the panel's own padding is the cheapest place to find
+   them: it costs nothing visually and keeps the targets at full size. */
+@media (max-width: 360px) {
+  .bk-rate {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
 }

@@ -738,7 +738,12 @@ export default function BookingApp() {
               screen above it, and skipping this costs them nothing. */}
           <div className="bk-rate">
             {rateSent ? (
-              <div className="bk-rate-thanks">{t.rateThanks}</div>
+              <div className="bk-rate-thanks">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                {t.rateThanks}
+              </div>
             ) : (
               <>
                 <div className="bk-rate-title">{t.rateTitle}</div>
@@ -758,8 +763,11 @@ export default function BookingApp() {
                     </button>
                   ))}
                 </div>
+                {/* The comment only appears once a rating is chosen: asking for a written note
+                    before knowing whether they want to say anything is the step people close the
+                    tab on. Stars alone are a complete answer. */}
                 {rating > 0 && (
-                  <>
+                  <div className="bk-rate-row">
                     <input
                       className="bk-rate-note"
                       value={rateNote}
@@ -770,7 +778,7 @@ export default function BookingApp() {
                     <button type="button" className="bk-rate-send" onClick={sendRating} disabled={rateBusy}>
                       {t.rateSend}
                     </button>
-                  </>
+                  </div>
                 )}
               </>
             )}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ic } from './icons';
 import { useCRM } from './i18n';
-import { Avatar, Badge, Donut, InfoTip, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
+import { Avatar, Badge, Donut, InfoTip, Modal, Panel, SetField, SetHead, SetRow, setInput, StatusBadge, Switch } from './ui';
 import { avatarColor, colorForId, fmtPrice, fmtSom, serviceSummary, useData } from './data';
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
@@ -28,23 +28,26 @@ function EmptyHint({ text }: { text: string }) {
 
 /* ============ DASHBOARD ============ */
 /**
- * "How is it going?" — shown to an owner once the server decides they have used the product enough
- * to have a view. Never shown twice: answering or dismissing is recorded server-side, so a reload
- * does not resurrect it.
+ * "How is it going?" — a dialog, not a strip above the KPIs.
  *
- * The stars are 44px targets even on desktop. This is a control whose whole point is which number
- * was meant, and the landing page's version of the same widget was 30px and mis-tappable.
- */
-/**
- * `preview` renders the card on demand, for looking at it.
+ * Inline it read as an advert wedged into the dashboard, competing with the numbers somebody
+ * opened the CRM to look at. This is asked once in the lifetime of an account, so it can afford
+ * to be a moment rather than a permanent-looking banner.
  *
- * Reaching it normally means a shop three days old with five completed bookings, and answering it
- * sets feedback_given_at — so checking the design the honest way costs you the one chance to ask
- * that account. In preview nothing is sent and nothing is recorded; the thanks state is shown so
- * the whole flow can be seen, and the panel says so, because a card that looks live and silently
- * discards what you typed is worse than no preview at all.
+ * Built on the CRM's own Modal, which already handles Escape, a 44px labelled close button and
+ * the bottom-sheet treatment on a phone. A bespoke overlay would have to re-earn all of that.
+ *
+ * ## Dismissing MUST record something
+ *
+ * The close button, Escape and "Later" all snooze. A dialog that comes back on every page load
+ * because closing it wrote nothing is not a prompt, it is an obstacle — and this one opens over
+ * the first screen of the product.
+ *
+ * `preview` renders it on demand for looking at: nothing is sent, nothing is recorded, and it
+ * says so. A dialog that looks live and silently discards what was typed is worse than no
+ * preview at all.
  */
-function RateCard({ preview }: { preview?: boolean }) {
+function RateDialog({ preview, onDone }: { preview?: boolean; onDone: () => void }) {
   const { t } = useCRM();
   const { reload } = useData();
   const r = t.rate;
@@ -53,47 +56,77 @@ function RateCard({ preview }: { preview?: boolean }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const send = async (snooze: boolean) => {
+  const finish = async (snooze: boolean) => {
     if (busy) return;
     setBusy(true);
     if (preview) {
-      // Nothing leaves the browser. The point is the look, not a row in the queue.
-      if (!snooze) setSent(true);
+      if (snooze) onDone();
+      else setSent(true);
       setBusy(false);
       return;
     }
     try {
       await submitProductFeedback(snooze ? { snooze: true } : { rating, text: text.trim() || undefined });
-      if (snooze) reload();
-      else setSent(true);
+      if (snooze) {
+        onDone();
+        reload();
+      } else {
+        setSent(true);
+      }
     } catch {
-      // Nothing destructive happened and the card is not load-bearing, so a failure just re-enables
-      // the buttons rather than throwing an error at somebody who was doing us a favour.
+      // Nothing destructive happened and this is a favour being asked, so a failure re-enables the
+      // buttons rather than throwing an error at somebody who was helping.
       setBusy(false);
     }
   };
 
   if (sent) {
     return (
-      <Panel pad={18}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, fontWeight: 700 }}>
-          <Ic name="check" size={18} stroke={2.4} style={{ color: 'var(--accent-deep)' }} />
-          {r.thanks}
+      <Modal title={r.thanks} icon="check" onClose={onDone}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0 12px', fontSize: 14.5, fontWeight: 600, color: 'var(--ink-2)' }}>
+          <Ic name="check" size={19} stroke={2.4} style={{ color: 'var(--accent-deep)' }} />
+          {r.sub}
         </div>
-      </Panel>
+      </Modal>
     );
   }
 
   return (
-    <Panel pad={18}>
-      <div style={{ fontSize: 16, fontWeight: 800 }}>{r.title}</div>
+    <Modal
+      title={r.title}
+      sub={r.sub}
+      icon="star"
+      // Closing is an answer, and it is recorded. See the note above.
+      onClose={() => finish(true)}
+      footer={
+        <>
+          <button
+            onClick={() => finish(true)}
+            disabled={busy}
+            style={{ flex: 'none', minHeight: 44, padding: '0 18px', borderRadius: 10, fontSize: 14, fontWeight: 700, color: 'var(--ink-2)', background: 'var(--panel)', border: '1px solid var(--line-2)' }}
+          >
+            {r.later}
+          </button>
+          <button
+            onClick={() => finish(false)}
+            disabled={!rating || busy}
+            style={{ flex: 1, minHeight: 44, borderRadius: 10, fontSize: 14, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: rating ? 'var(--accent-ink)' : 'var(--ink-3)', background: rating ? 'var(--accent)' : 'var(--panel-2)', cursor: rating ? 'pointer' : 'not-allowed' }}
+          >
+            <Ic name="send" size={16} stroke={2.2} />
+            {r.send}
+          </button>
+        </>
+      }
+    >
       {preview && (
-        <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--amber)' }}>
+        <div style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--amber)' }}>
           preview — nothing is sent
         </div>
       )}
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600, marginTop: 3, lineHeight: 1.45 }}>{r.sub}</div>
-      <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, marginLeft: -10 }}>
+
+      {/* 52px targets, bigger than the 44px floor used elsewhere: this is the one control in the
+          dialog and there is room, and picking 4 when you meant 5 is the failure that matters. */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
         {[1, 2, 3, 4, 5].map((n) => (
           <button
             key={n}
@@ -101,42 +134,31 @@ function RateCard({ preview }: { preview?: boolean }) {
             aria-label={String(n)}
             aria-pressed={n <= rating}
             onClick={() => setRating(rating === n ? 0 : n)}
-            style={{ width: 44, height: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-deep)', lineHeight: 0 }}
+            style={{ width: 52, height: 52, flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-deep)', opacity: n <= rating ? 1 : 0.26, lineHeight: 0 }}
           >
-            <Ic name="star" size={24} stroke={1.8} style={{ opacity: n <= rating ? 1 : 0.32 }} />
+            <Ic name="star" size={30} stroke={1.7} />
           </button>
         ))}
       </div>
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={r.placeholder}
-        rows={2}
-        style={{ ...setInput, marginTop: 8, resize: 'vertical', width: '100%' }}
+        rows={3}
+        maxLength={1000}
+        style={{ ...setInput, resize: 'vertical', width: '100%' }}
       />
-      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-        <button
-          onClick={() => send(false)}
-          disabled={!rating || busy}
-          style={{ minHeight: 40, padding: '0 16px', borderRadius: 10, fontSize: 13.5, fontWeight: 800, background: rating ? 'var(--accent)' : 'var(--panel-2)', color: rating ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: rating ? 'pointer' : 'not-allowed' }}
-        >
-          {r.send}
-        </button>
-        <button
-          onClick={() => send(true)}
-          disabled={busy}
-          style={{ minHeight: 40, padding: '0 14px', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--ink-3)' }}
-        >
-          {r.later}
-        </button>
-      </div>
-    </Panel>
+    </Modal>
   );
 }
+
 
 export function Dashboard() {
   const { t, lang } = useCRM();
   const previewRate = typeof location !== 'undefined' && new URLSearchParams(location.search).get('preview') === 'rate';
+  // Local, so closing the dialog does not wait for the payload to refetch before it disappears.
+  const [rateOpen, setRateOpen] = useState(true);
   const { payload, openBooking } = useData();
   if (!payload) return null;
   const d = t.dash;
@@ -148,12 +170,11 @@ export function Dashboard() {
   return (
     <div className="fadein" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Server-decided — see CrmPayload.askForFeedback. The browser does not know how long this
-          shop has existed or whether it has already answered, and would guess in the direction of
-          asking too often. */}
-      {/* `?preview=rate` on any CRM URL draws the card without waiting for the thresholds and
-          without recording anything — see RateCard. Purely client-side: no other account is
-          affected and the server is not consulted. */}
-      {(payload.askForFeedback || previewRate) && <RateCard preview={previewRate && !payload.askForFeedback} />}
+          shop has existed or whether it has already answered, and would guess towards asking too
+          often. `?preview=rate` opens it on demand, recording nothing, for looking at the design. */}
+      {rateOpen && (payload.askForFeedback || previewRate) && (
+        <RateDialog preview={previewRate && !payload.askForFeedback} onDone={() => setRateOpen(false)} />
+      )}
       <div className="crm-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         {payload.kpis.map((k, i) => (
           <Panel key={k.id} pad={18}>

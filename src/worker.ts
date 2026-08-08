@@ -2501,6 +2501,69 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
   return json({ ok: true });
 }
 
+/**
+ * A rating from a customer who has just booked, sent from the shop's own booking page.
+ *
+ * Three things make this different from the landing form and from the in-CRM card, and all three
+ * shape the implementation:
+ *
+ * **It is anonymous and public.** No session, no captcha, and it lives on every tenant host — so
+ * it is the most reachable write in the product. Rate limited per IP on the same bucket as the
+ * landing form, and it lands `approved = 0` like everything else, so the worst case is queue noise
+ * rather than anything published.
+ *
+ * **The rating is about the BOOKING EXPERIENCE, not the shop.** A customer who just booked a
+ * haircut has no opinion about a CRM; what they can judge is whether booking was easy. The copy on
+ * the booking page asks exactly that, and the moderator needs to know which question was answered —
+ * hence `source = 'booking'` rather than folding it in with the landing form.
+ *
+ * **It carries the business it came from.** Not to attribute the opinion to the shop — the customer
+ * is not speaking for them — but because "booking was confusing" means something different from a
+ * shop with four services than from one with forty.
+ *
+ * A name is optional here, unlike the landing form: this person is doing us a favour on the way out
+ * of a task they came to do, and a required field is how you turn a 5-star rating into a closed tab.
+ */
+async function publicFeedbackEndpoint(env: Env, tenant: TenantContext, request: Request) {
+  await requireUnderRateLimit(env, request, LIMITS.feedback, undefined, PUBLIC_GET_CORS);
+
+  const input = (await request.json().catch(() => ({}))) as FeedbackInput;
+  const text = (input.text ?? "").trim().slice(0, 1000);
+  let rating: number | null = null;
+  if (typeof input.rating === "number" && input.rating >= 1 && input.rating <= 5) {
+    rating = Math.round(input.rating);
+  }
+  if (!rating) {
+    return json({ error: "A rating is required." }, { status: 400, headers: PUBLIC_GET_CORS });
+  }
+
+  const name = (input.name ?? "").trim().slice(0, 80) || "Mijoz";
+
+  const res = await env.DB
+    .prepare("INSERT INTO landing_feedback (name, text, rating, business_id, source) VALUES (?, ?, ?, ?, 'booking')")
+    .bind(name, text, rating, tenant.businessId)
+    .run();
+
+  const business = await env.DB
+    .prepare("SELECT name, slug FROM businesses WHERE id = ?")
+    .bind(tenant.businessId)
+    .first<{ name: string; slug: string | null }>()
+    .catch(() => null);
+
+  const label = [
+    "Rated the BOOKING PAGE, not the shop.",
+    `Booked at: ${business?.name ?? `business ${tenant.businessId}`}${business?.slug ? ` (${business.slug}.easyq.uz)` : ""}`,
+  ].join("\n");
+
+  await notifyFeedback(
+    env,
+    { id: Number(res.meta.last_row_id ?? 0), name, text, rating, created_at: "" },
+    { businessId: tenant.businessId, label }
+  );
+
+  return json({ ok: true }, { status: 201, headers: PUBLIC_GET_CORS });
+}
+
 async function listFeedback(env: Env) {
   const res = await env.DB
     .prepare("SELECT id, name, text, rating, created_at FROM landing_feedback WHERE approved = 1 ORDER BY created_at DESC, id DESC LIMIT 20")
@@ -4830,6 +4893,11 @@ const router = {
         }
         if (url.pathname === "/api/public/available-days" && request.method === "GET") {
           return await publicAvailableDaysEndpoint(env, tenant, url);
+        }
+        // A customer rating the booking experience on their way out. Tenant-scoped by
+        // construction: without a resolved host there is no business to attribute it to.
+        if (url.pathname === "/api/public/feedback" && request.method === "POST") {
+          return await publicFeedbackEndpoint(env, tenant, request);
         }
         if (url.pathname === "/api/public/bookings" && request.method === "POST") {
           // The existing cap is three per phone per day, which a script sidesteps by changing

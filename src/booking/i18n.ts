@@ -70,6 +70,10 @@ type Copy = {
   doneTitle: string;
   doneSub: string;
   addAnother: string;
+  rateTitle: string;
+  rateSend: string;
+  rateThanks: string;
+  ratePlaceholder: string;
   /** Errors, keyed to the API's `code` */
   errSlotTaken: string;
   errRateLimited: string;
@@ -133,6 +137,10 @@ export const T: Record<BookingLang, Copy> = {
     doneTitle: "Navbat band qilindi",
     doneSub: "Tez orada siz bilan bog‘lanamiz.",
     addAnother: "Yana navbat olish",
+    rateTitle: "Navbat olish qulay bo‘ldimi?",
+    rateSend: "Yuborish",
+    rateThanks: "Rahmat!",
+    ratePlaceholder: "Izoh (majburiy emas)",
     errSlotTaken: "Bu vaqtni allaqachon band qilishdi. Boshqa vaqtni tanlang.",
     errRateLimited: "Bu raqamdan bugunga juda ko‘p navbat olindi.",
     errName: "Ism-familiyani kiriting.",
@@ -191,6 +199,10 @@ export const T: Record<BookingLang, Copy> = {
     doneTitle: "Вы записаны",
     doneSub: "Мы свяжемся с вами в ближайшее время.",
     addAnother: "Записаться ещё раз",
+    rateTitle: "Удобно было записаться?",
+    rateSend: "Отправить",
+    rateThanks: "Спасибо!",
+    ratePlaceholder: "Комментарий (необязательно)",
     errSlotTaken: "Это время уже заняли. Выберите другое.",
     errRateLimited: "С этого номера уже слишком много записей на сегодня.",
     errName: "Укажите имя и фамилию.",
@@ -249,6 +261,10 @@ export const T: Record<BookingLang, Copy> = {
     doneTitle: "You're booked",
     doneSub: "We'll be in touch shortly.",
     addAnother: "Book again",
+    rateTitle: "Was booking easy?",
+    rateSend: "Send",
+    rateThanks: "Thank you!",
+    ratePlaceholder: "Comment (optional)",
     errSlotTaken: "That time was just taken. Please pick another.",
     errRateLimited: "Too many bookings from this number for today.",
     errName: "Please enter your name.",

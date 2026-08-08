@@ -977,3 +977,78 @@
   font-weight: 600;
   color: var(--ink-3);
 }
+
+/* ---- rating the booking, on the confirmation screen ---- */
+
+.bk-rate {
+  margin: 18px 0 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.bk-rate-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.bk-rate-stars {
+  display: inline-flex;
+  /* No gap, and pulled left by the padding inside each button, so five 44px targets sit flush
+     without the row looking like it has been stretched. The landing page's version of this widget
+     was 30px with a 4px gap and picking 4 when you meant 5 was the normal outcome. */
+  margin-left: -10px;
+}
+.bk-rate-star {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-deep);
+  opacity: 0.34;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.bk-rate-star.is-on {
+  opacity: 1;
+}
+.bk-rate-star:active {
+  transform: scale(0.92);
+}
+.bk-rate-note {
+  width: 100%;
+  margin-top: 8px;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--ink);
+  border-radius: 11px;
+  padding: 11px 13px;
+  /* 16px, or iOS zooms the whole page the moment this is focused — the same rule the rest of the
+     booking page already follows. */
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font);
+  outline: none;
+}
+.bk-rate-note:focus {
+  border-color: var(--accent-deep);
+}
+.bk-rate-send {
+  margin-top: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 800;
+  font-family: var(--font);
+}
+.bk-rate-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.bk-rate-thanks {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-deep);
+}

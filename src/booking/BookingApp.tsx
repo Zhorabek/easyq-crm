@@ -304,6 +304,10 @@ export default function BookingApp() {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rating, setRating] = useState(0);
+  const [rateNote, setRateNote] = useState('');
+  const [rateSent, setRateSent] = useState(false);
+  const [rateBusy, setRateBusy] = useState(false);
   const [done, setDone] = useState<{ serviceName: string; staffName: string } | null>(null);
 
   function setLang(next: BookingLang) {
@@ -686,6 +690,30 @@ export default function BookingApp() {
 
   /* ------------------------------------------------------------- confirmation */
 
+  /**
+   * Send the rating, and say nothing if it fails.
+   *
+   * This person has finished what they came to do. Their booking is already made and confirmed;
+   * the rating is a favour on the way out. An error toast here would tell somebody that something
+   * went wrong with a thing they did not need to do, moments after telling them their appointment
+   * is booked -- which reads as "your booking failed" no matter what the words say.
+   */
+  const sendRating = async () => {
+    if (!rating || rateBusy) return;
+    setRateBusy(true);
+    try {
+      await fetch('/api/public/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rating, text: rateNote.trim() || undefined, name: name.trim() || undefined }),
+      });
+    } catch {
+      /* swallowed on purpose */
+    }
+    setRateSent(true);
+    setRateBusy(false);
+  };
+
   if (done) {
     return (
       <div className="bk-shell" role="main">
@@ -704,6 +732,50 @@ export default function BookingApp() {
             {date} · {time}
           </p>
           <p className="bk-done-sub">{t.doneSub}</p>
+
+          {/* Rating the BOOKING, not the shop. Below the confirmation and above "book again", so it
+              is offered rather than demanded: everything the customer came for is already on the
+              screen above it, and skipping this costs them nothing. */}
+          <div className="bk-rate">
+            {rateSent ? (
+              <div className="bk-rate-thanks">{t.rateThanks}</div>
+            ) : (
+              <>
+                <div className="bk-rate-title">{t.rateTitle}</div>
+                <div className="bk-rate-stars">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      aria-label={String(n)}
+                      aria-pressed={n <= rating}
+                      className={`bk-rate-star${n <= rating ? ' is-on' : ''}`}
+                      onClick={() => setRating(rating === n ? 0 : n)}
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill={n <= rating ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9z" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+                {rating > 0 && (
+                  <>
+                    <input
+                      className="bk-rate-note"
+                      value={rateNote}
+                      onChange={(e) => setRateNote(e.target.value)}
+                      placeholder={t.ratePlaceholder}
+                      maxLength={1000}
+                    />
+                    <button type="button" className="bk-rate-send" onClick={sendRating} disabled={rateBusy}>
+                      {t.rateSend}
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
           <button type="button" className="bk-primary" onClick={reset}>
             {t.addAnother}
           </button>

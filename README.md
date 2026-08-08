@@ -497,7 +497,7 @@ rating unreadable, so `landing_feedback.source` records which one was answered.
 | `source` | Who | Asked | Endpoint |
 | --- | --- | --- | --- |
 | `landing` | anyone on easyq.uz | how the product looks | `POST /api/feedback` |
-| `crm` | a shop owner, once ever | how it is to run a shop on | `POST /api/me/feedback` |
+| `crm` | **anyone who signs in** — owner, manager or master — once each | how it is to run a shop on | `POST /api/me/feedback` |
 | `booking` | every customer who books | **was booking easy** | `POST /api/public/feedback` |
 
 A customer who has just booked a haircut has no opinion about a CRM — what they can judge is the
@@ -517,6 +517,39 @@ indistinguishable, and publishing the second beside a shop's name would be unfai
 Discarded rows are kept because "we decided not to publish this" is worth being able to see, and a
 button that destroys the only copy is one nobody wants to press. Deleting is separate and asks first.
 
+### Who is asked, and when
+
+| Who | When | Filed as |
+| --- | --- | --- |
+| Owner | 3 days old **and** 5 completed bookings, once ever | the shop |
+| Manager | same, once ever, per person | *"Sardor — manager at barber777"* |
+| Master | same, once ever, per person | *"Aziz — specialist at barber777"* |
+| Customer | every booking, on the confirmation screen | *"Rated the BOOKING PAGE, not the shop"* |
+
+**Both gates, not either.** A shop that signed up on Tuesday with two bookings has no opinion worth
+collecting, and asking anyway burns the single chance to ask. `PROMPT_AFTER_DAYS` and
+`PROMPT_AFTER_COMPLETED_BOOKINGS` are named constants at the top of that block.
+
+**"Later" snoozes 21 days; answering never asks again.** Both recorded server-side, so a reload
+cannot resurrect a dismissed card. `PROMPT_SNOOZE_DAYS` — long on purpose, because "not now" from
+somebody mid-shift should not come back next week.
+
+**Once per PERSON, not per shop.** The owner's state lives on `businesses`, everyone else's on
+their `staff` row. Keeping it all on the business would let the first master to answer silence the
+owner and every colleague.
+
+**Managers and masters are asked because they use the CRM most** — a master is in the calendar every
+hour they work, and their experience is a different one: schedule-heavy, no money, own bookings
+only. They were the heaviest users and the only ones never asked. What the original owner-only rule
+was protecting was ATTRIBUTION, and that is solved by naming the person rather than by refusing to
+collect the answer: *"barber777 said the calendar is confusing"* and *"a master at barber777 said
+it"* are different claims and only one of them is true.
+
+**The decision is made at the `/api/crm` route**, not in `getCrmPayload`, which takes a business and
+therefore cannot answer "is THIS person due". It briefly did both — computing the card with
+`role: "owner"` hardcoded and switching it off again in `redactPayloadFor` — which was two half
+answers pretending to be one.
+
 ### The moderation bot IS the admin panel
 
 There is no admin role in this product: `ActorRole` is owner / manager / specialist and all three
@@ -529,7 +562,20 @@ is a lot of scaffolding for very little, so a Telegram bot does it.
 | `/recent` | the last 10, any state |
 | `/stats` | counts, and the average rating of what is published |
 | `/item 12` | one entry in full |
+| `/who` | who may moderate, and where the queue is delivered |
+| `/add 12345` | let that Telegram id moderate |
+| `/remove 12345` | take it away |
+| `/here` | send the queue to **this** chat — works in a group |
 | `/help` | the list |
+
+**Nothing has to be typed.** A standing keyboard carries Pending, Recent, Stats and Moderators.
+Telegram delivers a tapped button as an ordinary message whose text is the label, so the labels
+*are* the commands as far as the handler is concerned — which is why none of them carries an emoji
+or punctuation somebody might type by accident.
+
+**To add somebody:** have them open the bot and press Start. It replies with their Telegram id,
+because "ask an admin to add you" is useless without the number the admin has to type. Private
+chats only — the bot should not announce itself in a group it has no business in.
 
 Each row arrives as its own message with its own buttons — a digest would need the id typed back
 in before anything could be acted on, which is the friction the bot exists to remove.
@@ -540,6 +586,9 @@ Two secrets and one webhook. `FEEDBACK_CHAT_ID` is in `wrangler.toml` on purpose
 id is not a credential, and a plain var set through the dashboard is wiped by the next deploy that
 does not declare it. That has already cost this project once, with `APP_TIMEZONE`.
 
+0. Run the three feedback migrations: `2026-08-06-feedback-attribution.sql`,
+   `2026-08-08-feedback-moderators.sql`, `2026-08-08-staff-feedback-state.sql`. All additive, so
+   the order against the deploy does not matter; a missing column costs a prompt, not a 500.
 1. In the dashboard, add `FEEDBACK_BOT_TOKEN` and `FEEDBACK_WEBHOOK_SECRET` as type **Secret**.
    Secrets survive deploys; plain variables do not.
 2. `setWebhook` pointing at `/api/telegram/feedback-webhook` with the same `secret_token`.
@@ -549,12 +598,34 @@ does not declare it. That has already cost this project once, with `APP_TIMEZONE
 **Type the variable NAMES by hand rather than pasting them.** A trailing space in the name is
 invisible in the dashboard and makes the value unreachable, and diagnosing that took most of a day.
 
-### Two checks, not one
+### Two checks, and the second is on the PERSON
 
 The webhook secret proves Telegram sent the request. It says nothing about **who** pressed the
-button, and callback data like `fb_ok:41` is not a hard guess — so `from.id` must also equal
-`FEEDBACK_CHAT_ID`. Without that, anyone who found the bot could publish arbitrary text onto the
-product's own landing page, which is the entire thing `approved = 0` exists to prevent.
+button, and callback data like `fb_ok:41` is not a hard guess — so every update is also checked
+against the moderator set. Without that, anyone who found the bot could publish arbitrary text onto
+the product's own landing page, which is the entire thing `approved = 0` exists to prevent.
+
+**It is checked on `from.id`, never on the chat.** That distinction is what makes a group safe: in a
+group every member can SEE the buttons, so authorising by chat would make everybody a moderator the
+moment the bot was added. `from.id` is the person who actually pressed, and it reads identically in
+a private chat and in a group of forty. `scripts/security-check.cjs` fails if a chat-id comparison
+ever comes back.
+
+Two things were doing one job and are now separated:
+
+| | |
+| --- | --- |
+| `feedback_moderators` | **who** may act. Plus `FEEDBACK_CHAT_ID`, always allowed |
+| `feedback_settings.notify_chat_id` | **where** the queue is delivered. A user or a group |
+
+`FEEDBACK_CHAT_ID` stays in `wrangler.toml` as the ROOT moderator — the bootstrap. With an empty
+table and no root, nobody could add the first moderator and the queue would lock with no way in.
+Living in config also means a careless `/remove` cannot delete it, and `/add` refuses to touch it.
+
+A table rather than a comma-separated variable because only one of those lets the operator add
+somebody from their phone at the moment they are asked. The other means opening the dashboard and
+redeploying — and this project has already lost a day to a variable name typed into that dashboard
+with a trailing space.
 
 ### What it taught us: make failures visible
 

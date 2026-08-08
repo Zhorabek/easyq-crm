@@ -2365,7 +2365,23 @@ async function feedbackWebhook(env: Env, request: Request) {
     if (callback) await handleFeedbackCallback(env, callback);
     else if (typeof message?.text === "string") await handleFeedbackCommand(env, message.chat.id, message.text);
   } catch (error) {
+    /**
+     * Tell the moderator what broke, in the chat where it broke.
+     *
+     * This used to log and return "ok", so a failing command produced NOTHING — no reply, no error,
+     * no symptom. `/help` answered because it touches no database while `/pending` died on a
+     * missing column, and from the outside that reads as "some commands do not work", which is a
+     * mystery rather than a fault report.
+     *
+     * Safe to show: the sender has already been checked against FEEDBACK_CHAT_ID, so the only
+     * person who can see this is the operator, looking at their own database.
+     */
+    const detail = String((error as Error)?.message ?? error).slice(0, 300);
     console.log("feedback bot error:", error);
+    const hint = /no such column|no such table/i.test(detail)
+      ? "\n\nThis usually means migrations/2026-08-06-feedback-attribution.sql has not been run yet."
+      : "";
+    await feedbackSay(env, chatId, `Command failed:\n<code>${escapeHtmlText(detail)}</code>${hint}`).catch(() => {});
   }
 
   return new Response("ok");

@@ -2447,27 +2447,16 @@ async function feedbackWebhook(env: Env, request: Request) {
     ].filter(Boolean).join(", ");
 
     /**
-     * The NAMES the Worker can actually see, never the values.
+     * Names the missing variables, but no longer lists everything the Worker can see.
      *
-     * "It is missing" and "it is there under a slightly different name" are different problems
-     * with the same symptom, and telling them apart by re-reading a truncated dashboard column has
-     * not worked. Keys only, and only the string-valued ones — the bindings (DB, ASSETS) are
-     * objects and are not what anybody is mistyping.
-     *
-     * Safe to return: every one of these names is already declared in the `Env` interface in this
-     * file, and this repository is public. No value is ever included, and this branch is only
-     * reachable while the bot is unconfigured. Delete it once the bot works.
+     * That listing existed to answer "is it absent, or present under a slightly different name?",
+     * and it earned its keep: it found a TRAILING SPACE in FEEDBACK_BOT_TOKEN that the dashboard
+     * rendered invisibly and that had cost the best part of a day. It was a debugging aid on a
+     * public endpoint, though, and it should not outlive the bug — the console.log keeps the same
+     * detail for anyone who needs it again, now that [observability] makes logs readable.
      */
-    const visible = Object.keys(env)
-      .filter((k) => typeof (env as unknown as Record<string, unknown>)[k] === "string")
-      .sort()
-      .join(", ");
-
-    console.log("feedback webhook is not configured; missing:", missing, "| visible string vars:", visible);
-    return new Response(
-      `feedback bot not configured: ${missing}\nstring vars this Worker can see: ${visible || "(none)"}`,
-      { status: 503 }
-    );
+    console.log("feedback webhook is not configured; missing:", missing);
+    return new Response(`feedback bot not configured: ${missing}`, { status: 503 });
   }
   const presented = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
   if (!timingSafeEqualString(presented, secret)) {

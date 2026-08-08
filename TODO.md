@@ -28,23 +28,17 @@ Nothing here can be done from the repo.
       5 Aug 10:00, a confirmed booking today 17:30, a 1 so'm payment on the cash desk, and an
       edited business description. `jora` was merged into `Sardor Testov` by phone — that one is
       the phone-keyed merge working, not damage.
-- [ ] **Delete the feedback probe rows.** Eight submissions made while debugging the moderation
-      bot, all `approved = 0` so none is public. Review then remove:
+- [ ] **One row of unknown provenance in `landing_feedback`.** The debugging probes were deleted
+      on 2026-08-08 and the table came back with a count of 1, which none of my test names should
+      have left behind. Look before removing it — if `source = 'booking'` it is a real customer who
+      rated the booking page, and that is the first genuine feedback the platform has received:
 
       ```sql
       SELECT id, name, rating, substr(text,1,50) AS text, source, created_at FROM landing_feedback ORDER BY id;
       ```
 
-      ```sql
-      DELETE FROM landing_feedback WHERE name IN ('Deploy probe','probe2','NOTIFY TEST','NOTIFY TEST 2','WEBHOOK TEST','SECRETS TEST','LOG TEST','probe');
-      ```
-
-      By NAME rather than by id range: ids 1-3, 5, 6 and 8 were never accounted for and may be real
-      feedback from real visitors. The bot's own Delete button does the same job one row at a time.
-- [ ] **Take the variable-name listing out of the webhook's 503.** `feedbackWebhook` returns the
-      string-valued env keys it can see when unconfigured. It was the thing that finally found a
-      trailing space in a variable name, and it is a debugging aid on a public endpoint — the names
-      are all in the public repo already, so the leak is nil, but it should not outlive its purpose.
+      `/recent` in the moderation bot shows the same row with Publish / Discard / Delete attached,
+      which is the better way to deal with it now that the bot works.
 - [ ] **Delete one orphaned row:** `DELETE FROM users WHERE id = 1604;` — left behind when
       the `zz-probe-not-real` business was removed.
 
@@ -619,6 +613,8 @@ All in `migrations/`.
 | `2026-08-04-service-images.sql` | `crm_service_images` table + index | yes |
 | `2026-08-04-temp-password-flag.sql` | `crm_temp_password_pending` on `businesses` and `staff`; nulls the plaintext | yes |
 | `2026-08-06-feedback-attribution.sql` | `landing_feedback.business_id` + `.source`; `businesses.feedback_given_at` + `.feedback_snoozed_at`; pending index | yes — 2026-08-08 |
+| `2026-08-08-feedback-moderators.sql` | `feedback_moderators`, `feedback_settings` | yes — 2026-08-08 |
+| `2026-08-08-staff-feedback-state.sql` | `staff.feedback_given_at` + `.feedback_snoozed_at` | yes — 2026-08-08 |
 
 `2026-08-03-rate-limit.sql` was confirmed live by burst-probing `/api/subdomain/check` in
 production and watching it turn 429 — the limiter fails open, so "no error" and "no limiter"

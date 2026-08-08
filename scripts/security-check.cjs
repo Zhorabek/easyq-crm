@@ -227,6 +227,28 @@ if (crmFeedback) {
 check('the product-feedback endpoint is rate limited per business',
   /requireUnderRateLimit\(env, request, LIMITS\.productFeedback, `biz:\$\{actor\.business\.id\}`\)/.test(worker));
 
+/* ------------------------------------- the feedback queue authorises the USER */
+
+// Once the queue can live in a GROUP, checking the chat is the same as trusting everybody in it:
+// adding the bot to a group would make every member a moderator. The check has to be on
+// `from.id`, the person who actually pressed, which reads identically in a private chat and in a
+// group of forty.
+const webhookBody = functionBody(worker, 'async function feedbackWebhook(');
+check('the feedback webhook exists', webhookBody !== null);
+if (webhookBody) {
+  check('the feedback queue authorises the sender, not the chat',
+    /await isFeedbackModerator\(env, senderId\)/.test(webhookBody));
+  check('a non-moderator is refused rather than served',
+    /You are not a moderator of this queue/.test(webhookBody));
+  // Chat-based authorisation is the exact bug this replaced; it must not come back.
+  check('no chat-id comparison is used for authorisation',
+    !/senderId !== String\(chatId\)/.test(webhookBody));
+}
+// The root moderator lives in config so an unlucky /remove cannot lock everybody out of the queue.
+const modCheck = functionBody(worker, 'async function isFeedbackModerator(');
+check('the root moderator is allowed without a database lookup',
+  modCheck !== null && /if \(id === String\(env\.FEEDBACK_CHAT_ID\)\) return true;/.test(modCheck));
+
 /* ------------------------------------------------------------- headers */
 
 check('every response goes through withSecurityHeaders',

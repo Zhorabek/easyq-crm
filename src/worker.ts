@@ -2002,7 +2002,8 @@ function escapeHtmlText(value: string) {
  */
 async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackContext) {
   const token = env.FEEDBACK_BOT_TOKEN;
-  const chatId = env.FEEDBACK_CHAT_ID;
+  // Resolved, not read from env: the operator may have pointed the queue at a group with /here.
+  const chatId = await feedbackNotifyChat(env);
   if (!token || !chatId) {
     // Deliberately loud: the feature looks like it works from the outside either way, because the
     // row still lands and the submitter still gets a tick.
@@ -2061,6 +2062,66 @@ async function notifyFeedback(env: Env, row: FeedbackRow, context: FeedbackConte
  */
 
 /** 0 pending, 1 published, 2 discarded. Deleting is a separate and destructive act. */
+/**
+ * Who may act, and where the queue lives — two different questions.
+ *
+ * FEEDBACK_CHAT_ID used to answer both, which only works while the moderator is one person in a
+ * private chat. In a group the destination is a group id and every member can SEE the buttons, so
+ * "can see" must stop meaning "may publish". Authorisation is therefore always on `from.id`, the
+ * user who actually pressed, and the destination is stored separately.
+ *
+ * The env id is the ROOT moderator and is always allowed. It is the bootstrap: with an empty
+ * moderators table and no root, nobody could add the first moderator and the queue would be locked
+ * with no way in. It lives in wrangler.toml rather than the table so a careless /remove cannot
+ * delete it.
+ */
+async function isFeedbackModerator(env: Env, userId: string | number) {
+  const id = String(userId);
+  if (!id) return false;
+  if (id === String(env.FEEDBACK_CHAT_ID)) return true;
+  const row = await env.DB
+    .prepare("SELECT 1 AS ok FROM feedback_moderators WHERE telegram_id = ?")
+    .bind(Number(id))
+    .first<{ ok: number }>()
+    .catch(() => null);
+  return Boolean(row);
+}
+
+/** Where notifications go: the chat the operator pointed the bot at, else the root moderator. */
+async function feedbackNotifyChat(env: Env) {
+  const row = await env.DB
+    .prepare("SELECT value FROM feedback_settings WHERE key = 'notify_chat_id'")
+    .first<{ value: string }>()
+    .catch(() => null);
+  return row?.value || env.FEEDBACK_CHAT_ID || "";
+}
+
+/**
+ * The persistent button row, so the queue is usable without remembering any commands.
+ *
+ * Telegram sends a tapped button as an ordinary text message whose text is the label, so the
+ * labels ARE the commands as far as the handler is concerned — `buttonToCommand` maps them back.
+ * That is why the labels carry no emoji or punctuation that a person might also type by accident.
+ */
+const FEEDBACK_KEYBOARD = {
+  keyboard: [
+    [{ text: "Pending" }, { text: "Recent" }],
+    [{ text: "Stats" }, { text: "Moderators" }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
+function buttonToCommand(text: string) {
+  const map: Record<string, string> = {
+    Pending: "/pending",
+    Recent: "/recent",
+    Stats: "/stats",
+    Moderators: "/who",
+  };
+  return map[text.trim()] ?? text;
+}
+
 const FEEDBACK_STATUS: Record<number, string> = { 0: "pending", 1: "published", 2: "discarded" };
 
 type FeedbackFullRow = FeedbackRow & { approved: number; business_id: number | null; source: string | null };
@@ -2078,7 +2139,9 @@ async function feedbackSay(env: Env, chatId: string | number, text: string, mark
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    ...(markup ? { reply_markup: markup } : {}),
+    // Inline buttons when given (they belong to one row), otherwise the standing keyboard, so the
+    // controls are always on screen and nothing has to be typed.
+    reply_markup: markup ?? FEEDBACK_KEYBOARD,
   }).catch((error) => console.log("feedback bot send failed:", error));
 }
 
@@ -2132,6 +2195,17 @@ function feedbackRowById(env: Env, id: number) {
     .first<FeedbackFullRow>();
 }
 
+const FEEDBACK_HELP_EXTRA = [
+  "",
+  "<b>Team</b>",
+  "/who - who can moderate",
+  "/add 12345 - let that Telegram id moderate",
+  "/remove 12345 - take it away",
+  "/here - send the queue to THIS chat (works in a group)",
+  "",
+  "To add somebody: have them open the bot and press Start. It replies with their id.",
+].join("\n");
+
 const FEEDBACK_HELP = [
   "<b>EasyQ feedback</b>",
   "",
@@ -2145,12 +2219,65 @@ const FEEDBACK_HELP = [
   "Delete removes the row for good, and asks first.",
 ].join("\n");
 
-async function handleFeedbackCommand(env: Env, chatId: number, text: string) {
-  const parts = text.trim().split(/\s+/);
+async function handleFeedbackCommand(env: Env, chatId: number, text: string, actorId: string) {
+  const parts = buttonToCommand(text).trim().split(/\s+/);
   const word = (parts[0] || "").toLowerCase().split("@")[0];
 
   if (word === "/start" || word === "/help") {
-    return feedbackSay(env, chatId, FEEDBACK_HELP);
+    return feedbackSay(env, chatId, FEEDBACK_HELP + FEEDBACK_HELP_EXTRA);
+  }
+
+  /* ---- team ---- */
+
+  if (word === "/who") {
+    const res = await env.DB
+      .prepare("SELECT telegram_id, label, added_at FROM feedback_moderators ORDER BY added_at")
+      .all<{ telegram_id: number; label: string | null; added_at: string }>();
+    const rows = res.results ?? [];
+    const lines = [
+      "<b>Moderators</b>",
+      "",
+      `${escapeHtmlText(String(env.FEEDBACK_CHAT_ID))} - owner (set in config, cannot be removed)`,
+      ...rows.map((r) => `${r.telegram_id} - ${escapeHtmlText(r.label || "no name")}`),
+    ];
+    if (rows.length === 0) lines.push("", "Nobody else yet. /add 12345 to add somebody.");
+    lines.push("", `Queue is delivered to chat ${escapeHtmlText(String(await feedbackNotifyChat(env)))}.`);
+    return feedbackSay(env, chatId, lines.join("\n"));
+  }
+
+  if (word === "/add" || word === "/remove") {
+    const id = Number(parts[1]);
+    if (!Number.isInteger(id) || id === 0) {
+      return feedbackSay(env, chatId, `Usage: ${word} 12345\n\nThe person can get their id by opening this bot and pressing Start.`);
+    }
+    // The root moderator lives in config precisely so it survives a careless /remove.
+    if (String(id) === String(env.FEEDBACK_CHAT_ID)) {
+      return feedbackSay(env, chatId, "That is the owner id from the config. It cannot be changed from here.");
+    }
+    if (word === "/add") {
+      await env.DB
+        .prepare("INSERT OR REPLACE INTO feedback_moderators (telegram_id, label, added_by) VALUES (?, ?, ?)")
+        .bind(id, (parts.slice(2).join(" ") || "").slice(0, 60) || null, Number(actorId) || null)
+        .run();
+      return feedbackSay(env, chatId, `${id} can now moderate feedback.`);
+    }
+    await env.DB.prepare("DELETE FROM feedback_moderators WHERE telegram_id = ?").bind(id).run();
+    return feedbackSay(env, chatId, `${id} can no longer moderate feedback.`);
+  }
+
+  /**
+   * Point the queue at whatever chat this was typed in.
+   *
+   * The whole reason group support needs no separate setting: a group's chat id arrives on the
+   * message like any other, so "send it here" is the entire configuration step. Moderation is
+   * still per USER, so adding the bot to a group does not make everybody in it a moderator.
+   */
+  if (word === "/here") {
+    await env.DB
+      .prepare("INSERT OR REPLACE INTO feedback_settings (key, value, updated_at) VALUES ('notify_chat_id', ?, datetime('now'))")
+      .bind(String(chatId))
+      .run();
+    return feedbackSay(env, chatId, "New feedback will be sent to this chat from now on.\n\nOnly moderators can act on it - /who lists them, /add lets somebody in.");
   }
 
   if (word === "/stats") {
@@ -2350,12 +2477,27 @@ async function feedbackWebhook(env: Env, request: Request) {
   const message = update.message;
   const senderId = String(callback?.from?.id ?? message?.from?.id ?? "");
 
-  // The secret says Telegram sent this. It says nothing about who is on the other end.
-  if (senderId !== String(chatId)) {
+  /**
+   * Authorised on the USER, never on the chat.
+   *
+   * The secret proves Telegram sent this and says nothing about who is on the other end. In a
+   * group every member sees the buttons, so checking the chat would make the whole group
+   * moderators the moment the bot was added to it. `from.id` is the person who actually pressed,
+   * and it reads the same in a private chat and in a group of forty.
+   */
+  if (!(await isFeedbackModerator(env, senderId))) {
     if (callback) {
       await tgCallJson(token, "answerCallbackQuery", {
         callback_query_id: callback.id,
-        text: "Not your queue.",
+        text: "You are not a moderator of this queue.",
+      }).catch(() => {});
+    } else if (message?.chat?.type === "private" && typeof message?.text === "string") {
+      // A private hello gets an answer with their id, because "ask an admin to add you" is
+      // useless without the number an admin has to type. Only in private: the bot should not
+      // announce itself to a group it has no business in.
+      await tgCallJson(token, "sendMessage", {
+        chat_id: message.chat.id,
+        text: `Your Telegram id is ${senderId}.\n\nAsk an EasyQ admin to run /add ${senderId} to give you access to the feedback queue.`,
       }).catch(() => {});
     }
     return new Response("ok");
@@ -2363,7 +2505,7 @@ async function feedbackWebhook(env: Env, request: Request) {
 
   try {
     if (callback) await handleFeedbackCallback(env, callback);
-    else if (typeof message?.text === "string") await handleFeedbackCommand(env, message.chat.id, message.text);
+    else if (typeof message?.text === "string") await handleFeedbackCommand(env, message.chat.id, message.text, senderId);
   } catch (error) {
     /**
      * Tell the moderator what broke, in the chat where it broke.
@@ -2379,7 +2521,7 @@ async function feedbackWebhook(env: Env, request: Request) {
     const detail = String((error as Error)?.message ?? error).slice(0, 300);
     console.log("feedback bot error:", error);
     const hint = /no such column|no such table/i.test(detail)
-      ? "\n\nThis usually means migrations/2026-08-06-feedback-attribution.sql has not been run yet."
+      ? "\n\nThis usually means a migration has not been run. Feedback needs both\n2026-08-06-feedback-attribution.sql and 2026-08-08-feedback-moderators.sql."
       : "";
     await feedbackSay(env, chatId, `Command failed:\n<code>${escapeHtmlText(detail)}</code>${hint}`).catch(() => {});
   }

@@ -2313,8 +2313,29 @@ async function feedbackWebhook(env: Env, request: Request) {
       !secret && "FEEDBACK_WEBHOOK_SECRET",
       !chatId && "FEEDBACK_CHAT_ID",
     ].filter(Boolean).join(", ");
-    console.log("feedback webhook is not configured; missing:", missing);
-    return new Response(`feedback bot not configured: ${missing}`, { status: 503 });
+
+    /**
+     * The NAMES the Worker can actually see, never the values.
+     *
+     * "It is missing" and "it is there under a slightly different name" are different problems
+     * with the same symptom, and telling them apart by re-reading a truncated dashboard column has
+     * not worked. Keys only, and only the string-valued ones — the bindings (DB, ASSETS) are
+     * objects and are not what anybody is mistyping.
+     *
+     * Safe to return: every one of these names is already declared in the `Env` interface in this
+     * file, and this repository is public. No value is ever included, and this branch is only
+     * reachable while the bot is unconfigured. Delete it once the bot works.
+     */
+    const visible = Object.keys(env)
+      .filter((k) => typeof (env as unknown as Record<string, unknown>)[k] === "string")
+      .sort()
+      .join(", ");
+
+    console.log("feedback webhook is not configured; missing:", missing, "| visible string vars:", visible);
+    return new Response(
+      `feedback bot not configured: ${missing}\nstring vars this Worker can see: ${visible || "(none)"}`,
+      { status: 503 }
+    );
   }
   const presented = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
   if (!timingSafeEqualString(presented, secret)) {

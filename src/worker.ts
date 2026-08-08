@@ -2285,12 +2285,40 @@ async function handleFeedbackCallback(env: Env, callback: any) {
  * success repeats the write.
  */
 async function feedbackWebhook(env: Env, request: Request) {
-  if (!env.FEEDBACK_BOT_TOKEN || !env.FEEDBACK_WEBHOOK_SECRET || !env.FEEDBACK_CHAT_ID) {
-    return new Response("not found", { status: 404 });
+  /**
+   * 503 for "not configured", 404 for "wrong secret" — two causes that must not share a status.
+   *
+   * Both returned 404 and the failure was invisible from outside: `getWebhookInfo` reports only
+   * "Wrong response from the webhook: 404 Not Found", which is equally true whether the Worker has
+   * no token or the secret does not match. That ambiguity cost most of a day of bisecting config by
+   * pushing and re-testing.
+   *
+   * The reason 404 was chosen originally — "an unauthenticated caller learns nothing about the
+   * route" — does not survive contact with the facts: this repository is PUBLIC, so the path is in
+   * the source on GitHub and hiding it from a prober protects nothing. What the 404 actually hid
+   * was the diagnosis, from us.
+   *
+   * A wrong secret still gets 404 and still tells a prober nothing useful; the extra status only
+   * fires when the Worker itself is unconfigured, which is a state the operator needs to see.
+   * Telegram records the status verbatim, which makes it readable without dashboard access.
+   */
+  // Locals rather than reading env three times, so the guard below NARROWS them to string for the
+  // rest of the function. An `.filter(Boolean).length > 0` check reads well and narrows nothing.
+  const token = env.FEEDBACK_BOT_TOKEN;
+  const secret = env.FEEDBACK_WEBHOOK_SECRET;
+  const chatId = env.FEEDBACK_CHAT_ID;
+  if (!token || !secret || !chatId) {
+    const missing = [
+      !token && "FEEDBACK_BOT_TOKEN",
+      !secret && "FEEDBACK_WEBHOOK_SECRET",
+      !chatId && "FEEDBACK_CHAT_ID",
+    ].filter(Boolean).join(", ");
+    console.log("feedback webhook is not configured; missing:", missing);
+    return new Response(`feedback bot not configured: ${missing}`, { status: 503 });
   }
   const presented = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-  if (!timingSafeEqualString(presented, env.FEEDBACK_WEBHOOK_SECRET)) {
-    // 404 rather than 401: an unauthenticated caller learns nothing about the route.
+  if (!timingSafeEqualString(presented, secret)) {
+    console.log("feedback webhook: secret mismatch (header present:", presented.length > 0, ")");
     return new Response("not found", { status: 404 });
   }
 
@@ -2302,9 +2330,9 @@ async function feedbackWebhook(env: Env, request: Request) {
   const senderId = String(callback?.from?.id ?? message?.from?.id ?? "");
 
   // The secret says Telegram sent this. It says nothing about who is on the other end.
-  if (senderId !== String(env.FEEDBACK_CHAT_ID)) {
+  if (senderId !== String(chatId)) {
     if (callback) {
-      await tgCallJson(env.FEEDBACK_BOT_TOKEN, "answerCallbackQuery", {
+      await tgCallJson(token, "answerCallbackQuery", {
         callback_query_id: callback.id,
         text: "Not your queue.",
       }).catch(() => {});

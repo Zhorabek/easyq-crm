@@ -218,7 +218,7 @@ if (crmFeedback) {
   // passes on broken code, because it is also in the SELECT list that reads the row — the first
   // version of this check did exactly that and stayed green when the guard was deleted.
   const insertAt = crmFeedback.indexOf('INSERT INTO landing_feedback');
-  const guardAt = crmFeedback.indexOf('if (stats?.feedback_given_at)');
+  const guardAt = crmFeedback.indexOf("if (already)");
   check('the already-answered branch runs BEFORE the insert',
     guardAt !== -1 && insertAt !== -1 && guardAt < insertAt);
   check('a repeat submission is refused rather than silently accepted',

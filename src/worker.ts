@@ -1963,19 +1963,24 @@ const PROMPT_AFTER_COMPLETED_BOOKINGS = 5;
 const PROMPT_SNOOZE_DAYS = 21;
 
 /**
- * Whether to show the rating card. Owners only.
+ * Whether this PERSON is due to be asked. Every role, not only the owner.
  *
- * A specialist rating the product on the shop's behalf is not the signal being collected, and the
- * row would be attributed to a business whose owner never said any of it.
+ * Managers and masters live in the calendar all day and their experience of the product is a
+ * different one — schedule-heavy, no money, own bookings only — so they were the heaviest users
+ * and the only ones never asked. What the owner-only rule was actually protecting was
+ * ATTRIBUTION: one master's opinion must not be filed as the shop's. That is fixed by saying
+ * whose opinion it is, not by refusing to collect it.
+ *
+ * "Answered" and "snoozed" are therefore per person: the owner's live on `businesses`, everyone
+ * else's on their `staff` row. Keeping them on the business would let the first master to reply
+ * silence the owner and every colleague.
  */
 function shouldAskForFeedback(input: {
-  role: ActorRole;
   createdAt: string | null;
   completedBookings: number;
   givenAt: string | null;
   snoozedAt: string | null;
 }) {
-  if (input.role !== "owner") return false;
   if (input.givenAt) return false;
   const sinceSnooze = daysSince(input.snoozedAt);
   if (sinceSnooze !== null && sinceSnooze < PROMPT_SNOOZE_DAYS) return false;
@@ -2580,9 +2585,23 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
   const business = actor.business;
   const now = new Date().toISOString().slice(0, 10);
 
+  // The owner has no staff row, so their state lives on the business; everybody else's lives on
+  // theirs. Keeping it all on the business would let the first master to answer silence the rest.
+  const isOwner = actor.role === "owner" || !actor.staffId;
+  const stateId = isOwner ? business.id : actor.staffId!;
+
   // "Not now" is a real answer, and recording it is what stops the card coming back tomorrow.
+  //
+  // Written as two literal statements rather than one with the table name interpolated. The table
+  // here is picked from a boolean and could never carry user input, but scripts/security-check
+  // forbids interpolation into SQL without caring why — and an allowlist of "safe" exceptions is
+  // how that check stops being worth running.
   if (input.snooze) {
-    await env.DB.prepare("UPDATE businesses SET feedback_snoozed_at = ? WHERE id = ?").bind(now, business.id).run();
+    if (isOwner) {
+      await env.DB.prepare("UPDATE businesses SET feedback_snoozed_at = ? WHERE id = ?").bind(now, stateId).run();
+    } else {
+      await env.DB.prepare("UPDATE staff SET feedback_snoozed_at = ? WHERE id = ?").bind(now, stateId).run();
+    }
     return json({ ok: true, snoozed: true });
   }
 
@@ -2595,7 +2614,23 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
     return json({ error: "A rating is required." }, { status: 400 });
   }
 
-  const name = (business.name || "").trim().slice(0, 80) || `business ${business.id}`;
+  /**
+   * Whose opinion this is, in the row itself.
+   *
+   * The owner speaks for the shop, so the shop's name is honest. A manager or master does not, so
+   * the row carries THEIR name — filing "the calendar is confusing" under the business name would
+   * attribute it to an owner who never said it.
+   */
+  const staffRow = isOwner
+    ? null
+    : await env.DB
+        .prepare("SELECT name, role FROM staff WHERE id = ?")
+        .bind(stateId)
+        .first<{ name: string; role: string | null }>()
+        .catch(() => null);
+  const name = (
+    isOwner ? business.name || "" : staffRow?.name || `staff ${stateId}`
+  ).trim().slice(0, 80) || `business ${business.id}`;
 
   // `created_at` is read here rather than added to BusinessRow, because that row is loaded by
   // getBusinessById on EVERY authenticated request and this is wanted once, on one button.
@@ -2617,11 +2652,21 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
     .bind(business.id, business.id, business.id, business.id)
     .first<{ bookings: number; staff: number; completed: number; created_at: string | null; feedback_given_at: string | null }>();
 
+  // Whether THIS person has already answered, which is a different question from whether the shop
+  // has. Read from wherever their state lives.
+  const already = isOwner
+    ? stats?.feedback_given_at ?? null
+    : (await env.DB
+        .prepare("SELECT feedback_given_at FROM staff WHERE id = ?")
+        .bind(stateId)
+        .first<{ feedback_given_at: string | null }>()
+        .catch(() => null))?.feedback_given_at ?? null;
+
   // One per business, enforced where it counts. 409 rather than a silent success: the caller is our
   // own card, and a second submission means either a double tap or somebody poking the endpoint —
   // both are better answered honestly than by pretending to accept a row that was never written.
-  if (stats?.feedback_given_at) {
-    return json({ error: "This business has already sent feedback." }, { status: 409 });
+  if (already) {
+    return json({ error: "You have already sent feedback." }, { status: 409 });
   }
 
   const res = await env.DB
@@ -2629,11 +2674,20 @@ async function submitCrmFeedback(env: Env, request: Request, actor: Actor) {
     .bind(name, text, rating, business.id)
     .run();
 
-  await env.DB.prepare("UPDATE businesses SET feedback_given_at = ? WHERE id = ?").bind(now, business.id).run();
+  if (isOwner) {
+    await env.DB.prepare("UPDATE businesses SET feedback_given_at = ? WHERE id = ?").bind(now, stateId).run();
+  } else {
+    await env.DB.prepare("UPDATE staff SET feedback_given_at = ? WHERE id = ?").bind(now, stateId).run();
+  }
 
   const days = daysSince(stats?.created_at ?? null);
+  // The first line names the PERSON when it is not the owner. "barber777 said the calendar is
+  // confusing" and "a master at barber777 said it" are different claims, and only one is true.
+  const who = isOwner
+    ? `From: ${business.name}${business.slug ? ` (${business.slug}.easyq.uz)` : ""}`
+    : `From: ${staffRow?.name ?? "a staff member"} — ${actor.role} at ${business.name}${business.slug ? ` (${business.slug}.easyq.uz)` : ""}`;
   const label = [
-    `From: ${business.name}${business.slug ? ` (${business.slug}.easyq.uz)` : ""}`,
+    who,
     `${business.type || "business"} · plan ${business.plan || "trial"} · sent by ${actor.role}`,
     `${days === null ? "age unknown" : `${days} days on the platform`} · ${stats?.staff ?? 0} staff · ${stats?.bookings ?? 0} bookings (${stats?.completed ?? 0} done)`,
   ].join("\n");
@@ -2963,6 +3017,46 @@ async function replaceServiceBindings(db: D1Database, serviceId: number, staffId
       .bind(staffId, serviceId)
       .run();
   }
+}
+
+/**
+ * Is this particular person due to be asked?
+ *
+ * One query, and tolerant of the migrations not having run: a failed read means "do not ask",
+ * which costs a prompt. Letting it throw would 500 the whole CRM over a rating card.
+ */
+async function askFeedbackFor(env: Env, actor: Actor, completedBookings: number) {
+  const isOwner = actor.role === "owner" || !actor.staffId;
+
+  // Two whole statements rather than one with a ternary inside prepare(). scripts/sql-bind-check
+  // counts the placeholders in the string it can see and the arguments actually bound, and a
+  // ternary gives it both branches' `?` against one branch's args — it reported 4 placeholders and
+  // 1 argument here, which is a false alarm produced entirely by writing it cleverly.
+  type FeedbackState = { created_at: string | null; feedback_given_at: string | null; feedback_snoozed_at: string | null };
+  const read = isOwner
+    ? env.DB
+        .prepare("SELECT created_at, feedback_given_at, feedback_snoozed_at FROM businesses WHERE id = ?")
+        .bind(actor.business.id)
+        .first<FeedbackState>()
+    : env.DB
+        .prepare(
+          `SELECT (SELECT created_at FROM businesses WHERE id = ?) AS created_at,
+                  feedback_given_at, feedback_snoozed_at FROM staff WHERE id = ?`
+        )
+        .bind(actor.business.id, actor.staffId)
+        .first<FeedbackState>();
+
+  const row = await read.catch((error) => {
+    console.log("feedback prompt state unavailable (have the feedback migrations run?):", error);
+    return null;
+  });
+  if (!row) return false;
+  return shouldAskForFeedback({
+    createdAt: row.created_at,
+    completedBookings,
+    givenAt: row.feedback_given_at,
+    snoozedAt: row.feedback_snoozed_at,
+  });
 }
 
 async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: string): Promise<CrmPayload> {
@@ -3557,23 +3651,6 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   // The per-employee "share this master" entries are gone. All four pointed at the same
   // generic client bot and their own description admitted the master was not preselected,
   // so they were four identical links wearing different names.
-  /**
-   * Whether this shop is due to be asked how the product is going.
-   *
-   * These three columns are read here rather than added to BusinessRow, which getBusinessById loads
-   * on every authenticated request — this is wanted once per payload, for one card. Tolerant of the
-   * migration not having run: a failed read means "do not ask", which costs a prompt and breaks
-   * nothing, whereas letting it throw would 500 the entire CRM over a rating card.
-   */
-  const feedbackState = await env.DB
-    .prepare("SELECT created_at, feedback_given_at, feedback_snoozed_at FROM businesses WHERE id = ?")
-    .bind(business.id)
-    .first<{ created_at: string | null; feedback_given_at: string | null; feedback_snoozed_at: string | null }>()
-    .catch((error) => {
-      console.log("feedback prompt state unavailable (has 2026-08-06-feedback-attribution.sql run?):", error);
-      return null;
-    });
-
   const bookingLinks: BookingLinkItem[] = [
     // The business's own booking page — the one link actually worth sharing, because it
     // is per-tenant. Only offered once a slug exists; before that there is no such page.
@@ -3661,13 +3738,10 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       totalCancelledVisits: bookings.filter((booking) => booking.status === "cancelled").length,
     },
     bookingLinks,
-    askForFeedback: shouldAskForFeedback({
-      role: "owner",
-      createdAt: feedbackState?.created_at ?? null,
-      completedBookings: bookings.filter((booking) => booking.status === "done").length,
-      givenAt: feedbackState?.feedback_given_at ?? null,
-      snoozedAt: feedbackState?.feedback_snoozed_at ?? null,
-    }),
+    // Decided at the route, which knows WHO is asking; getCrmPayload only has a business. This
+    // used to be computed here with `role: "owner"` hardcoded and switched off again in
+    // redactPayloadFor, which was two half-answers pretending to be one.
+    askForFeedback: false,
     paymentsToday: paymentRowsToday.map((payment) => {
       const booking = bookingById.get(payment.booking_id);
       return {
@@ -3937,15 +4011,6 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
       ...visible,
       business: { ...visible.business, crmUsername: null, crmHasTemporaryPassword: false },
     };
-  }
-
-  // The rating card is for whoever speaks for the business, which is the same person allowed to
-  // change what the business IS. A specialist rating the product on the shop's behalf is not the
-  // signal being collected, and the row would be attributed to a business whose owner never said
-  // any of it. getCrmPayload cannot make this call — it takes a business, not an actor — so the
-  // time-and-usage gates live there and the role gate lives here.
-  if (!can(actor.role, "business:write")) {
-    visible = { ...visible, askForFeedback: false };
   }
 
   return visible;
@@ -5114,7 +5179,11 @@ const router = {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
         requireCapability(actor, "crm:read");
         const payload = await getCrmPayload(env, actor.business, getSelectedDate(request, env.APP_TIMEZONE || "UTC"));
-        return json(redactPayloadFor(actor, payload));
+        const visible = redactPayloadFor(actor, payload);
+        // Counted off the RAW payload: redaction zeroes analytics for a specialist, and "has this
+        // shop been used enough for anyone here to have a view" is a fact about the shop.
+        visible.askForFeedback = await askFeedbackFor(env, actor, payload.analytics.totalCompletedVisits);
+        return json(visible);
       }
 
       if (url.pathname === "/api/bookings" && request.method === "POST") {
@@ -5215,7 +5284,9 @@ const router = {
       // is recorded as the BUSINESS's, and only the owner speaks for that.
       if (url.pathname === "/api/me/feedback" && request.method === "POST") {
         const actor = await requireAuthenticatedBusiness(env, request, tenant);
-        requireCapability(actor, "business:write");
+        // crm:read, not business:write: every role that can open the CRM may say how it is going.
+        // The opinion is attributed to the PERSON, so speaking for the business is not required.
+        requireCapability(actor, "crm:read");
         await requireUnderRateLimit(env, request, LIMITS.productFeedback, `biz:${actor.business.id}`);
         return await submitCrmFeedback(env, request, actor);
       }

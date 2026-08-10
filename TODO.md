@@ -145,9 +145,32 @@ Still open:
       `worker.ts` and `shared/slug.ts` respectively. They overlap but neither derives from
       the other, so drift means somebody claims a slug that can never route to them.
       Derive the host set from `RESERVED_SLUGS`, or assert one is a subset of the other.
-- [ ] **`/api/telegram/verify-webhook` is dead code.** Nothing calls it since verification moved
-      to the shared D1 on 2026-07-30. It is kept only until someone confirms that; delete it,
-      along with `VERIFY_BOT_TOKEN`, `VERIFY_BOT_USERNAME` and `VERIFY_WEBHOOK_SECRET`.
+
+      Drifted again on 2026-08-10: `client-bot`, `business-bot`, `clientbot` and `businessbot`
+      were added to `RESERVED_SLUGS` and deliberately NOT to `RESERVED_HOST_LABELS`. Adding
+      them there would make this Worker serve those hosts the SPA instead of its 404, and a
+      Telegram webhook landing on an HTML 200 is worse than one landing on a 404. Which is
+      itself the argument for deriving one from the other with an explicit exception list.
+
+- [x] ~~**`/api/telegram/verify-webhook` is dead code.**~~ Deleted 2026-08-10, with
+      `sendVerifyMessage`, `rememberPendingChat`, `takePendingChat`, `VERIFY_PROMPT`,
+      `SHARE_BUTTON`, `promptLang`, and from `server/verification.ts` `markVerified`,
+      `contactBelongsToSender`, `parseStartPayload`, `VerifyOutcome` and the Telegram update
+      types. `VERIFY_BOT_TOKEN` and `VERIFY_WEBHOOK_SECRET` went from `Env` with it;
+      `VERIFY_BOT_USERNAME` was already dead — declared, never read.
+
+      Worth recording WHY it was safe: it could never have worked. The deep link carries
+      `easyq_<lang>_<nonce>` and the handler looked the whole string up against a column
+      holding the bare nonce, so every link would have answered "expired". The live flow is
+      `easyqueue-business-bot/src/handlers/signup.handler.ts`, whose `parseSignupPayload`
+      anchors on the language codes with a regex — the nonce is base64url and contains `_`,
+      so splitting cuts it in the wrong place.
+
+      The half of this file that IS live stays: `easyq-landing` calls `/api/verify/start` and
+      `/api/verify/status`, so nonce issuing, polling and `consumeVerification` are untouched.
+
+      Still to do in Cloudflare, not in code: delete the two secrets and unregister the
+      webhook. The route now 404s, so Telegram is retrying against nothing.
 
 ### PBKDF2 is at 100k, and cannot go higher
 
@@ -332,16 +355,43 @@ Documented so nobody re-discovers them as defects.
 EXTENDED rather than replaced, because both bots query it by column name and deploy from their
 own repos.
 
-- [ ] **Collect them.** `bookings.review_token` exists and is unused. A post-visit link
-      carrying that token is what makes a review provable — one visit, one review, and the
-      review knows which specialist it is about because the booking does.
+- [x] ~~**Collect them.**~~ Done 2026-08-10, through Telegram rather than a web link.
+      `easyqueue-client-bot` already asked every customer to rate a completed visit and had
+      been writing the answer to `bookings.review_rating` — a column nothing read. `reviews`
+      had three readers across the three repos and **no writer anywhere**, so every specialist
+      card showed "no reviews" permanently while ratings piled up out of sight.
+
+      A star tap now writes a `reviews` row, and the bot asks for words afterwards; the next
+      plain message becomes the body. Provability comes from the same place the token would
+      have given it — the row is `INSERT ... SELECT`ed from the booking, so `staff_id` and
+      `client_name` come from the visit and never from the caller, and `idx_reviews_booking`
+      enforces one review per visit.
+
+      `bookings.review_token` is **still unused**. It is the web equivalent of this, for a
+      customer who booked through the page rather than the bot. Worth building for that
+      audience; no longer the only way to get a review at all.
+
 - [ ] **Moderate them.** `approved` defaults to 0 and the CRM's Reviews screen is still mock
       data. Nothing should render publicly until an owner approves it.
+
+      **More urgent since 2026-08-10:** real rows now land here. Bot ratings count toward the
+      per-specialist average immediately — a number cannot say anything abusive, and gating
+      the score on the queue meant a shop with forty honest ratings showed none — but review
+      TEXT stays invisible until `approved = 1`, and there is still no screen anywhere that
+      can set it. Every comment a customer has written since that date is sitting unread.
 - [ ] **Per-staff averages** on the public payload, for the stars the booking page wants.
+      The client bot computes its own from `reviews WHERE staff_id = ?` as of 2026-08-10, so
+      the query is written and the index (`idx_reviews_staff`) is exercised; what is missing
+      is exposing it through `/api/public/*` so the booking page can show the same number.
 - [x] ~~**Fix both bots first.**~~ Done 2026-08-03. Every review query now filters
       `AND approved = 1`. It was THREE sites, not the two recorded here — this entry missed
       `easyqueue-client-bot/src/services/business.service.ts`, which would have kept publishing
       unmoderated text from the business card while the other two were fixed.
+
+      Down to ONE site as of 2026-08-10. That `business.service.ts` query and the business
+      bot's `listReviews` both turned out to have no callers and were deleted; the only
+      surviving read of review text is `getStaffProfilePreview` in the client bot. Fewer
+      copies of a filter is fewer places to forget it.
 
 ---
 

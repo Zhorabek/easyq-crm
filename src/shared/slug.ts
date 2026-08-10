@@ -43,6 +43,11 @@ export const RESERVED_SLUGS = new Set([
   "billing", "pay", "payment", "payments", "invoice", "checkout",
   "login", "signin", "signup", "register", "auth", "oauth", "sso", "logout",
   "bot", "bots", "tg", "telegram", "webhook", "webhooks",
+  // The two bot Workers have custom domains under this zone. `bot` and `telegram` were
+  // reserved from the start; the compound names were not, so `client-bot` was claimable at
+  // signup — and the wildcard route means claiming it would have pointed a real
+  // infrastructure hostname at that business's CRM.
+  "client-bot", "business-bot", "clientbot", "businessbot",
   "easyq", "easyqueue", "yengil", "book", "booking", "bookings",
   "shop", "store", "about", "contact", "terms", "privacy", "legal", "security",
 ]);

@@ -1778,8 +1778,24 @@ async function signupBusiness(env: Env, request: Request) {
         { status: 400, headers: SIGNUP_CORS }
       );
     }
-    // Telegram vouched for this number, so it never came from the request body.
-    storedPhone = verification.phone;
+    /**
+     * Telegram vouched for this number, so it never came from the request body.
+     *
+     * Canonicalised anyway, for the same reason the demo path below does it: this is the value
+     * the business is reachable on forever, and every other write of a phone number in this
+     * product goes through `toStoragePhone`. The verified path was the one exception, which meant
+     * a business registered through the website carried a number in a shape nothing else
+     * produced — unformattable on screen, and unmatched by the client book.
+     *
+     * The bot now writes E.164 (easyqueue-business-bot's `toE164`), so this is usually a no-op.
+     * It stays because the column has two writers and rows predating that fix are still in it.
+     *
+     * Falls back to the stored value rather than rejecting. `toStoragePhone` returns null for
+     * anything it cannot parse, and refusing a signup at the final step — after the person
+     * already proved the number in Telegram — would be a worse outcome than an oddly formatted
+     * row we can still ring.
+     */
+    storedPhone = toStoragePhone(verification.phone) ?? verification.phone;
     verifiedTelegramId = verification.telegramId;
   } else {
     // Demo path. The code is a constant the form prints, so this proves nothing about

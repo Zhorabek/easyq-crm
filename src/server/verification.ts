@@ -1,11 +1,27 @@
 // Telegram signup verification — the real replacement for the hard-coded "1111".
 //
 // FLOW
-//   1. Browser calls POST /api/verify/start  -> gets a nonce and a t.me deep link.
+//   1. easyq-landing calls POST /api/verify/start -> gets a nonce and a t.me deep link.
 //   2. Visitor opens the link, presses Start, taps "Share my number".
-//   3. Telegram POSTs the contact to our webhook; we record the phone against the nonce.
-//   4. Browser polls GET /api/verify/status until it flips to `verified`.
+//   3. THE BUSINESS BOT receives the contact and writes the phone against the nonce.
+//   4. The landing page polls GET /api/verify/status until it flips to `verified`.
 //   5. POST /api/signup passes the nonce; the phone is read FROM THE DATABASE.
+//
+// THIS FILE OWNS HALF THE LIFECYCLE, NOT ALL OF IT
+// Steps 1, 4 and 5 are ours. Step 3 belongs to easyqueue-business-bot, which binds the
+// same D1 and writes `signup_verification` directly — see its
+// `src/services/signup-verification.service.ts`. Nothing crosses HTTP between the two.
+//
+// There WAS a second implementation of step 3 here, a dedicated verification bot with
+// its own webhook at /api/telegram/verify-webhook. It never worked: the deep-link
+// payload is `easyq_<lang>_<nonce>` and it looked the whole string up against a column
+// holding the bare nonce, so every link answered "expired". Nothing ever called it —
+// the deep link this file hands out points at the BUSINESS bot, which parses the prefix
+// correctly. Deleted on 2026-08-10 rather than fixed; one bot, one webhook.
+//
+// So: `consumeVerification` here is the final gate, and it re-checks expiry, status and
+// single-use at the moment a business is actually created. A bug on the bot's side can
+// fail to verify, but cannot let an unverified signup through.
 //
 // WHY NOT AN OTP
 // A bot cannot message a phone number — the Bot API has no such method, since
@@ -13,20 +29,11 @@
 // Telegram's paid Gateway API can send codes to numbers, but contact-sharing is both
 // free and stronger: the number arrives from Telegram's own records, so there is no
 // code in flight to intercept and no ~10^4 answer space to brute-force.
-//
-// A DEDICATED BOT, NOT THE BUSINESS BOT
-// A bot has exactly one webhook. Pointing the business bot's webhook here would take
-// its updates away from the bot service that owns it. So this needs its own bot from
-// @BotFather and its own token in VERIFY_BOT_TOKEN.
 
 const NONCE_TTL_MS = 15 * 60 * 1000;
 
 /** Wide enough that a caretaker filling a form is never rushed, short enough to bound replay. */
 const NONCE_TTL_SECONDS = NONCE_TTL_MS / 1000;
-
-/** Per-Telegram-account cap on verifications in a rolling window. */
-const MAX_PER_TELEGRAM_ACCOUNT = 5;
-const TELEGRAM_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export type VerificationStatus = "pending" | "verified" | "consumed";
 
@@ -109,55 +116,6 @@ export function isUsable(row: VerificationRow) {
   return row.expires_at >= nowSeconds() && row.status !== "consumed";
 }
 
-async function recentCountForAccount(db: D1Database, telegramId: number) {
-  const since = nowSeconds() - TELEGRAM_ACCOUNT_WINDOW_MS / 1000;
-  const row = await db
-    .prepare("SELECT COUNT(*) AS n FROM signup_verification WHERE telegram_id = ? AND created_at >= ?")
-    .bind(telegramId, since)
-    .first<{ n: number }>();
-  return Number(row?.n ?? 0);
-}
-
-export type VerifyOutcome =
-  | { ok: true; phone: string }
-  | { ok: false; reason: "unknown_nonce" | "expired" | "already_used" | "rate_limited" };
-
-/**
- * Bind a shared contact to a pending nonce.
- *
- * The caller MUST have already confirmed the contact belongs to the sender — see
- * contactBelongsToSender(). Everything downstream trusts `phone`.
- */
-export async function markVerified(
-  db: D1Database,
-  nonce: string,
-  phone: string,
-  telegramId: number
-): Promise<VerifyOutcome> {
-  const row = await getVerification(db, nonce);
-  if (!row) return { ok: false, reason: "unknown_nonce" };
-  if (row.status === "consumed") return { ok: false, reason: "already_used" };
-  if (row.expires_at < nowSeconds()) return { ok: false, reason: "expired" };
-
-  if ((await recentCountForAccount(db, telegramId)) >= MAX_PER_TELEGRAM_ACCOUNT) {
-    return { ok: false, reason: "rate_limited" };
-  }
-
-  // Guarded on status so two rapid contact shares cannot both "win" and overwrite the
-  // phone; the second becomes a no-op and returns the number already recorded.
-  await db
-    .prepare(
-      `UPDATE signup_verification
-       SET status = 'verified', phone = ?, telegram_id = ?, verified_at = ?
-       WHERE nonce = ? AND status = 'pending'`
-    )
-    .bind(phone, telegramId, nowSeconds(), nonce)
-    .run();
-
-  const refreshed = await getVerification(db, nonce);
-  return { ok: true, phone: refreshed?.phone ?? phone };
-}
-
 /**
  * Spend the nonce and hand back the verified number.
  *
@@ -201,43 +159,4 @@ export async function releaseVerification(db: D1Database, nonce: string) {
     .bind(nonce)
     .run()
     .catch(() => undefined);
-}
-
-// ─────────────────────────────────────────────────────────── Telegram webhook types
-
-export type TelegramContact = {
-  phone_number?: string;
-  user_id?: number;
-};
-
-export type TelegramUpdate = {
-  message?: {
-    message_id?: number;
-    from?: { id?: number; language_code?: string };
-    chat?: { id?: number };
-    text?: string;
-    contact?: TelegramContact;
-  };
-};
-
-/**
- * THE critical check.
- *
- * Telegram lets anyone forward a contact card from their address book, and such a
- * message arrives looking almost identical to "I shared my own number" — the only
- * difference is that contact.user_id is absent or belongs to somebody else. Without
- * this comparison a visitor could verify a number they do not control simply by
- * forwarding a friend's contact.
- */
-export function contactBelongsToSender(contact: TelegramContact | undefined, senderId: number | undefined) {
-  if (!contact?.phone_number || !contact.user_id || !senderId) return false;
-  return Number(contact.user_id) === Number(senderId);
-}
-
-/** `/start <payload>` → payload. Returns null for a bare /start or any other text. */
-export function parseStartPayload(text: string | undefined) {
-  const match = String(text ?? "").match(/^\/start(?:@\w+)?\s+(\S+)$/);
-  if (!match) return null;
-  const payload = match[1];
-  return /^[A-Za-z0-9_-]{1,64}$/.test(payload) ? payload : null;
 }

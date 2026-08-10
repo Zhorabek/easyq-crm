@@ -71,15 +71,11 @@ import { createPublicBooking, getPublicBusiness, getPublicSlots } from "./server
 import { buildBookingMeta, injectBookingMeta } from "./server/bookingMeta";
 import {
   consumeVerification,
-  contactBelongsToSender,
   createVerification,
   generateNonce,
   getVerification,
   isUsable,
-  markVerified,
-  parseStartPayload,
   releaseVerification,
-  type TelegramUpdate,
 } from "./server/verification";
 
 interface Env {
@@ -100,16 +96,8 @@ interface Env {
    */
   TENANT_ROOT_DOMAINS?: string;
   /**
-   * Dedicated phone-verification bot. Separate from BUSINESS_BOT_TOKEN because a bot
-   * has one webhook, and reusing the business bot's would steal its updates.
-   */
-  VERIFY_BOT_TOKEN?: string;
-  VERIFY_BOT_USERNAME?: string;
-  /** Echoed by Telegram in X-Telegram-Bot-Api-Secret-Token; gates the webhook. */
-  VERIFY_WEBHOOK_SECRET?: string;
-  /**
-   * The feedback moderation bot. Its own bot, for the same reason VERIFY_BOT_TOKEN is: a bot has
-   * exactly one webhook, and borrowing another bot's would steal its updates.
+   * The feedback moderation bot. Its own bot because a bot has exactly one webhook, and
+   * borrowing another bot's would steal its updates.
    *
    * A SECRET, never a var and never a literal. Two tokens on this platform have already had to be
    * treated as compromised because they were pasted into a chat; the source tree has never held
@@ -1335,153 +1323,6 @@ async function verificationStatus(env: Env, url: URL) {
     },
     { headers: { ...PUBLIC_GET_CORS, "cache-control": "no-store" } }
   );
-}
-
-const VERIFY_PROMPT: Record<string, { ask: string; done: string; bad: string; stale: string }> = {
-  ru: {
-    ask: "Нажмите кнопку ниже, чтобы подтвердить свой номер телефона и продолжить регистрацию на EasyQ.",
-    done: "Номер подтверждён ✅ Вернитесь на страницу регистрации — она продолжится сама.",
-    bad: "Пожалуйста, нажмите кнопку «Поделиться номером», а не отправляйте чужой контакт.",
-    stale: "Ссылка устарела. Откройте регистрацию на easyq.uz заново.",
-  },
-  uz: {
-    ask: "Telefon raqamingizni tasdiqlash va EasyQ’da ro‘yxatdan o‘tishni davom ettirish uchun pastdagi tugmani bosing.",
-    done: "Raqam tasdiqlandi ✅ Ro‘yxatdan o‘tish sahifasiga qayting — u o‘zi davom etadi.",
-    bad: "Iltimos, «Raqamni yuborish» tugmasini bosing, boshqa odamning kontaktini yubormang.",
-    stale: "Havola eskirgan. easyq.uz’da ro‘yxatdan o‘tishni qaytadan boshlang.",
-  },
-  en: {
-    ask: "Tap the button below to confirm your phone number and continue signing up for EasyQ.",
-    done: "Number confirmed ✅ Head back to the signup page — it will continue on its own.",
-    bad: "Please tap the “Share my number” button rather than forwarding someone else's contact.",
-    stale: "This link has expired. Start the signup again at easyq.uz.",
-  },
-};
-
-const SHARE_BUTTON: Record<string, string> = {
-  ru: "📱 Поделиться номером",
-  uz: "📱 Raqamni yuborish",
-  en: "📱 Share my number",
-};
-
-function promptLang(code: string | undefined) {
-  const lang = String(code ?? "").slice(0, 2).toLowerCase();
-  return lang === "ru" || lang === "uz" || lang === "en" ? lang : "ru";
-}
-
-/**
- * Webhook for the dedicated verification bot.
- *
- * Register it once with:
- *   curl "https://api.telegram.org/bot<TOKEN>/setWebhook" -d url=... -d secret_token=...
- *
- * Telegram echoes that secret in X-Telegram-Bot-Api-Secret-Token. Checking it is not
- * optional: this endpoint writes verified phone numbers, so without the check anyone
- * who knows the URL could POST a forged contact and verify any number they like.
- */
-async function telegramVerifyWebhook(env: Env, request: Request) {
-  if (!env.VERIFY_BOT_TOKEN || !env.VERIFY_WEBHOOK_SECRET) {
-    return json({ error: "Not found" }, { status: 404 });
-  }
-
-  const presented = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
-  if (!timingSafeEqualString(presented, env.VERIFY_WEBHOOK_SECRET)) {
-    // 404 rather than 401: an unauthenticated caller learns nothing about the route.
-    return json({ error: "Not found" }, { status: 404 });
-  }
-
-  const update = (await request.json().catch(() => ({}))) as TelegramUpdate;
-  const message = update.message;
-  const chatId = message?.chat?.id;
-  const senderId = message?.from?.id;
-  const lang = promptLang(message?.from?.language_code);
-  const copy = VERIFY_PROMPT[lang];
-
-  // Always 200. A non-2xx makes Telegram retry the same update for hours, so failures
-  // are swallowed here and surfaced through the browser's polling instead.
-  if (!chatId) return json({ ok: true });
-
-  const startPayload = parseStartPayload(message?.text);
-  if (startPayload) {
-    const row = await getVerification(env.DB, startPayload);
-    if (!row || !isUsable(row)) {
-      await sendVerifyMessage(env, chatId, copy.stale);
-      return json({ ok: true });
-    }
-
-    await sendVerifyMessage(env, chatId, copy.ask, {
-      keyboard: [[{ text: SHARE_BUTTON[lang], request_contact: true }]],
-      resize_keyboard: true,
-      one_time_keyboard: true,
-    });
-    // The nonce is remembered against the chat, because the contact message that
-    // follows carries no payload of its own.
-    await rememberPendingChat(env.DB, chatId, startPayload);
-    return json({ ok: true });
-  }
-
-  if (message?.contact) {
-    if (!contactBelongsToSender(message.contact, senderId)) {
-      await sendVerifyMessage(env, chatId, copy.bad);
-      return json({ ok: true });
-    }
-
-    const nonce = await takePendingChat(env.DB, chatId);
-    if (!nonce) {
-      await sendVerifyMessage(env, chatId, copy.stale);
-      return json({ ok: true });
-    }
-
-    const phone = toStoragePhone(String(message.contact.phone_number ?? ""));
-    if (!phone) {
-      await sendVerifyMessage(env, chatId, copy.stale);
-      return json({ ok: true });
-    }
-
-    const outcome = await markVerified(env.DB, nonce, phone, Number(senderId));
-    await sendVerifyMessage(env, chatId, outcome.ok ? copy.done : copy.stale, { remove_keyboard: true });
-    return json({ ok: true });
-  }
-
-  return json({ ok: true });
-}
-
-async function sendVerifyMessage(env: Env, chatId: number, text: string, replyMarkup?: unknown) {
-  if (!env.VERIFY_BOT_TOKEN) return;
-  await tgCallJson(env.VERIFY_BOT_TOKEN, "sendMessage", {
-    chat_id: chatId,
-    text,
-    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-  }).catch((error) => {
-    console.log("verify sendMessage error:", error);
-    return null;
-  });
-}
-
-/**
- * The contact message Telegram sends has no /start payload, so the nonce has to be
- * carried across the two updates. It is parked on the verification row itself
- * (telegram_id doubles as "this chat is mid-flow") to avoid a second table.
- */
-async function rememberPendingChat(db: D1Database, chatId: number, nonce: string) {
-  await db
-    .prepare("UPDATE signup_verification SET telegram_id = ? WHERE nonce = ? AND status = 'pending'")
-    .bind(chatId, nonce)
-    .run();
-}
-
-/** Most recent still-pending nonce this chat opened. */
-async function takePendingChat(db: D1Database, chatId: number) {
-  const row = await db
-    .prepare(
-      `SELECT nonce FROM signup_verification
-       WHERE telegram_id = ? AND status = 'pending' AND expires_at >= ?
-       ORDER BY created_at DESC
-       LIMIT 1`
-    )
-    .bind(chatId, Math.floor(Date.now() / 1000))
-    .first<{ nonce: string }>();
-  return row?.nonce ?? null;
 }
 
 /** Length-independent comparison, so a wrong secret leaks nothing through timing. */
@@ -5044,7 +4885,6 @@ const router = {
           url.pathname === "/api/captcha" ||
           url.pathname === "/api/subdomain/check" ||
           url.pathname.startsWith("/api/verify/") ||
-          url.pathname === "/api/telegram/verify-webhook" ||
           url.pathname === "/api/telegram/feedback-webhook")
       ) {
         return json({ error: "Not found" }, { status: 404 });
@@ -5151,11 +4991,6 @@ const router = {
 
       if (url.pathname === "/api/verify/status" && request.method === "GET") {
         return await verificationStatus(env, url);
-      }
-
-      // Called by Telegram, not by a browser — no CORS, gated on the shared secret.
-      if (url.pathname === "/api/telegram/verify-webhook" && request.method === "POST") {
-        return await telegramVerifyWebhook(env, request);
       }
 
       if (url.pathname === "/api/captcha" && request.method === "GET") {

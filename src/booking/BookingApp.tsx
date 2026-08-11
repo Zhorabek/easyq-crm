@@ -1069,6 +1069,17 @@ export default function BookingApp() {
                   <span className="bk-person-main">
                     <span className="bk-person-name">{person.name}</span>
                     {person.role && <span className="bk-person-role">{person.role}</span>}
+                    {/* Rating, when there is one. Absent rather than "0.0" or an empty row of
+                        outlines for somebody nobody has rated yet — a new specialist should
+                        look new, not badly reviewed. The count rides along because "5.0" from
+                        one visit and "5.0" from ninety are not the same claim. */}
+                    {person.rating !== null && (
+                      <span className="bk-person-rating">
+                        <span className="bk-person-star" aria-hidden="true">★</span>
+                        {person.rating.toFixed(1)}
+                        <span className="bk-person-rating-count">({person.ratingCount})</span>
+                      </span>
+                    )}
                     {busy && <span className="bk-person-busy">{t.busyAt}</span>}
                   </span>
                   <span className={`bk-radio${on ? ' is-on' : ''}`} />

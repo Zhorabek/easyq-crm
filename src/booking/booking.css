@@ -520,6 +520,30 @@
   font-weight: 600;
   color: var(--ink-3);
 }
+/* One number, not five glyphs. A row of stars at this size is a texture rather than a value,
+   and the card already carries a name, a role and a radio — the rating has to read at a glance
+   without competing with the thing being chosen. */
+.bk-person-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  /* Tabular so a column of ratings lines up on the decimal point. */
+  font-variant-numeric: tabular-nums;
+}
+.bk-person-star {
+  /* Amber regardless of brand: this is a rating, and a shop whose accent is red should not
+     appear to be scoring itself in its own colour. */
+  color: #f5a524;
+  font-size: 13px;
+  line-height: 1;
+}
+.bk-person-rating-count {
+  font-weight: 600;
+  color: var(--ink-3);
+}
 .bk-radio {
   width: 22px;
   height: 22px;

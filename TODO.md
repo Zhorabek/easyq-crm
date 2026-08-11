@@ -428,10 +428,20 @@ own repos.
       A rating with no words gets an explanation instead of a Publish button. Most reviews are
       exactly that — the bot asks for words after the stars and most people skip — and without
       the note they read as queue items that cannot be completed.
-- [ ] **Per-staff averages** on the public payload, for the stars the booking page wants.
-      The client bot computes its own from `reviews WHERE staff_id = ?` as of 2026-08-10, so
-      the query is written and the index (`idx_reviews_staff`) is exercised; what is missing
-      is exposing it through `/api/public/*` so the booking page can show the same number.
+- [x] ~~**Per-staff averages**~~ Done 2026-08-11. `PublicStaff` carries `rating` and
+      `ratingCount`, aggregated with one GROUP BY over `idx_reviews_staff` rather than by
+      reading every review into the Worker. The specialist step shows `4.3 (12)` under the
+      role.
+
+      The count is there because 5.0 from one visit and 5.0 from ninety are not the same
+      claim, and a page that hides the denominator is the one people learn not to trust.
+
+      No `approved` filter, matching the CRM screen and the client bot: moderation gates TEXT,
+      and this payload carries none. A score that waited for approval would mean the same
+      specialist rated differently on the web page and in Telegram.
+
+      Review TEXT on the booking page is still not built. That is a bigger surface — it needs a
+      per-specialist list, and text is the part that has to be moderated first.
 - [x] ~~**Fix both bots first.**~~ Done 2026-08-03. Every review query now filters
       `AND approved = 1`. It was THREE sites, not the two recorded here — this entry missed
       `easyqueue-client-bot/src/services/business.service.ts`, which would have kept publishing

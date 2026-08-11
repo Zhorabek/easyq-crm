@@ -336,6 +336,18 @@ export interface PublicStaff {
   role: string;
   /** Whether GET /api/public/staff/<id>/photo will return an image. */
   hasPhoto: boolean;
+  /**
+   * Mean of every rating left for this specialist, to one decimal. Null when there are none —
+   * not 0, which is a score and the worst one.
+   *
+   * Counts ratings regardless of `approved`, matching the CRM screen and the client bot. A
+   * number cannot say anything abusive, so it does not wait for moderation; the TEXT does, and
+   * this payload carries none. Averaging only approved rows would also mean the same
+   * specialist showing a different score here and in Telegram.
+   */
+  rating: number | null;
+  /** How many ratings the average is built from, so "5.0" from one visit reads honestly. */
+  ratingCount: number;
 }
 
 export interface PublicBusinessPayload {

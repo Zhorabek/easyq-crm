@@ -99,7 +99,7 @@ export async function getPublicBusiness(
 
   if (!business) return null;
 
-  const [servicesRes, staffRes, imagesRes, linksRes] = await Promise.all([
+  const [servicesRes, staffRes, imagesRes, linksRes, ratingsRes] = await Promise.all([
     // Only is_active services. An archived service must not be bookable, even though the
     // owner still sees it in the CRM catalogue.
     db
@@ -122,6 +122,32 @@ export async function getPublicBusiness(
       )
       .bind(businessId)
       .all<{ staff_id: number; service_id: number }>(),
+    /**
+     * Per-specialist ratings, aggregated in SQL rather than by reading every review.
+     *
+     * `idx_reviews_staff` is (staff_id, approved) and exists for exactly this. Grouping in the
+     * Worker instead would put every review a busy shop has ever received on the wire for a
+     * page that renders one number per person.
+     *
+     * No `approved` filter, deliberately: the average counts every rating, matching both the
+     * CRM's Reviews screen and the client bot's specialist card. Moderation gates TEXT — which
+     * this payload does not carry — and a score that waited for it would mean a shop with forty
+     * honest ratings showing none, and the same specialist rated differently on the web page
+     * and in Telegram.
+     *
+     * `.catch` for the same reason as crm_images above: this is the public booking page, and a
+     * reviews table that is missing or mid-migration must cost stars, not the whole page.
+     */
+    db
+      .prepare(
+        `SELECT staff_id, AVG(rating) AS average, COUNT(*) AS total
+           FROM reviews
+          WHERE business_id = ? AND staff_id IS NOT NULL
+          GROUP BY staff_id`
+      )
+      .bind(businessId)
+      .all<{ staff_id: number; average: number | null; total: number }>()
+      .catch(() => ({ results: [] as Array<{ staff_id: number; average: number | null; total: number }> })),
   ]);
 
   const services = (servicesRes.results ?? []) as unknown as ServiceRow[];
@@ -174,7 +200,17 @@ export async function getPublicBusiness(
 
   const imageIds = new Set((imagesRes.results ?? []).map((r) => Number(r.staff_id)));
 
-  const publicStaff: PublicStaff[] = staff.map((person) => ({
+  // staff id -> { average, total }. Built once so the map below is a lookup rather than a scan
+  // per specialist.
+  const ratingByStaff = new Map<number, { average: number | null; total: number }>();
+  for (const row of (ratingsRes.results ?? []) as Array<{ staff_id: number; average: number | null; total: number }>) {
+    ratingByStaff.set(Number(row.staff_id), { average: row.average, total: Number(row.total || 0) });
+  }
+
+  const publicStaff: PublicStaff[] = staff.map((person) => {
+    const rated = ratingByStaff.get(person.id);
+    const ratingCount = Number(rated?.total ?? 0);
+    return {
     id: person.id,
     name: person.name,
     // The owner's role wins over the first service name — a client reading "Barber" is
@@ -183,7 +219,12 @@ export async function getPublicBusiness(
     // A flag, not a URL: the page builds /api/public/staff/<id>/photo itself, and sending a
     // file_id to an unauthenticated caller would leak a token that fetches from Telegram.
     hasPhoto: imageIds.has(person.id) || Boolean(person.photo_file_id),
-  }));
+    // Null, not 0, when nobody has rated them: 0 is a score, and a specialist who has simply
+    // never been rated must not render as the worst one on the page.
+    rating: ratingCount > 0 && rated?.average != null ? Number(Number(rated.average).toFixed(1)) : null,
+    ratingCount,
+    };
+  });
 
   return {
     name: business.name,

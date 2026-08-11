@@ -544,6 +544,50 @@
   font-weight: 600;
   color: var(--ink-3);
 }
+/* Published quotes, under the card rather than inside the select button. Indented to the same
+   line the name starts on so the block reads as belonging to that specialist and not to the
+   list. */
+.bk-person-reviews {
+  margin: 0;
+  padding: 2px 14px 12px 66px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bk-person-review {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bk-person-review-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.bk-person-review-score {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.bk-person-review-author {
+  font-weight: 600;
+}
+.bk-person-review-text {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+@media (max-width: 560px) {
+  /* The 66px indent lines up with the photo on desktop; on a narrow screen it costs more than
+     the alignment is worth. */
+  .bk-person-reviews {
+    padding-left: 16px;
+  }
+}
 .bk-radio {
   width: 22px;
   height: 22px;

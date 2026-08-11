@@ -1085,6 +1085,25 @@ export default function BookingApp() {
                   <span className={`bk-radio${on ? ' is-on' : ''}`} />
                 </button>
 
+                {/* What people said, when a moderator has published any of it.
+                    Outside the <button> on purpose: a quote is content to read, not part of the
+                    control that selects this specialist, and nesting it would make the whole
+                    block one enormous click target. */}
+                {person.reviews.length > 0 && (
+                  <ul className="bk-person-reviews">
+                    {person.reviews.map((review) => (
+                      <li key={review.id} className="bk-person-review">
+                        <span className="bk-person-review-head">
+                          <span className="bk-person-star" aria-hidden="true">★</span>
+                          <span className="bk-person-review-score">{review.rating}</span>
+                          {review.author && <span className="bk-person-review-author">{review.author}</span>}
+                        </span>
+                        <span className="bk-person-review-text">{review.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 {/* Next free times, so somebody who mainly cares "when can I be seen" does not
                     have to open each specialist to find out. */}
                 {next.length > 0 && (!showTabs || staffTab === 'other') && (

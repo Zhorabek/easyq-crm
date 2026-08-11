@@ -18,12 +18,39 @@ import { DEFAULT_BRAND_COLOR, normalizeBrandColor, resolveBrandTheme } from "../
 import type {
   CreatePublicBookingInput,
   PublicBusinessPayload,
+  PublicReview,
   PublicService,
   PublicStaff,
 } from "../types";
 
 /** A client may not book further out than this. Keeps an open form from filling a year. */
 const MAX_DAYS_AHEAD = 60;
+
+/**
+ * How many reviews each specialist shows, and how much of each.
+ *
+ * Two, because the specialist step is a list somebody is comparing — a wall of quotes under
+ * every card stops being evidence and starts being scrolling. Long enough to carry a real
+ * sentence, short enough that one essay cannot push the next specialist off the screen.
+ */
+const REVIEWS_PER_STAFF = 2;
+const REVIEW_TEXT_LIMIT = 160;
+
+/**
+ * "Otabek Mirzayev" -> "Otabek M." — a first name and an initial, never the full name.
+ *
+ * The stored value came from Telegram's profile and was collected to identify a booking, not
+ * to be published somewhere anyone can read it. Falls back to a generic label rather than
+ * leaking whatever unexpected shape the column holds.
+ */
+function reviewAuthor(clientName: string | null): string {
+  const parts = String(clientName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0].slice(0, 24);
+  // A single-word name stays as it is; there is no surname to reduce to an initial.
+  if (parts.length === 1) return first;
+  return `${first} ${parts[1].slice(0, 1).toUpperCase()}.`;
+}
 
 /** Per-phone cap per business per day, so one number cannot flood a shop's calendar. */
 const MAX_BOOKINGS_PER_PHONE_PER_DAY = 3;
@@ -99,7 +126,7 @@ export async function getPublicBusiness(
 
   if (!business) return null;
 
-  const [servicesRes, staffRes, imagesRes, linksRes, ratingsRes] = await Promise.all([
+  const [servicesRes, staffRes, imagesRes, linksRes, ratingsRes, reviewsRes] = await Promise.all([
     // Only is_active services. An archived service must not be bookable, even though the
     // owner still sees it in the CRM catalogue.
     db
@@ -148,6 +175,33 @@ export async function getPublicBusiness(
       .bind(businessId)
       .all<{ staff_id: number; average: number | null; total: number }>()
       .catch(() => ({ results: [] as Array<{ staff_id: number; average: number | null; total: number }> })),
+    /**
+     * The two newest APPROVED reviews per specialist that actually have words.
+     *
+     * `approved = 1` here and deliberately nowhere in the average above: a score is a number
+     * and cannot libel anyone, but this is text a stranger wrote, and the moderation queue
+     * exists precisely so none of it reaches a public page unread.
+     *
+     * `text <> ''` because most reviews are a star tap with no words — the bot asks afterwards
+     * and most people skip. Those belong in the average, not in a list of quotes.
+     *
+     * ROW_NUMBER partitions per specialist rather than taking a flat `LIMIT` over the business:
+     * a flat limit would let one popular barber's reviews fill the allowance and leave every
+     * colleague showing none.
+     */
+    db
+      .prepare(
+        `SELECT id, staff_id, rating, text, client_name FROM (
+           SELECT id, staff_id, rating, text, client_name,
+                  ROW_NUMBER() OVER (PARTITION BY staff_id ORDER BY id DESC) AS rn
+             FROM reviews
+            WHERE business_id = ? AND staff_id IS NOT NULL AND approved = 1 AND text <> ''
+         ) WHERE rn <= ?
+         ORDER BY staff_id ASC, id DESC`
+      )
+      .bind(businessId, REVIEWS_PER_STAFF)
+      .all<{ id: number; staff_id: number; rating: number; text: string; client_name: string | null }>()
+      .catch(() => ({ results: [] as Array<{ id: number; staff_id: number; rating: number; text: string; client_name: string | null }> })),
   ]);
 
   const services = (servicesRes.results ?? []) as unknown as ServiceRow[];
@@ -202,6 +256,21 @@ export async function getPublicBusiness(
 
   // staff id -> { average, total }. Built once so the map below is a lookup rather than a scan
   // per specialist.
+  // staff id -> their published quotes, already ordered newest-first by the query.
+  const reviewsByStaff = new Map<number, PublicReview[]>();
+  for (const row of (reviewsRes.results ?? []) as Array<{ id: number; staff_id: number; rating: number; text: string; client_name: string | null }>) {
+    const list = reviewsByStaff.get(Number(row.staff_id)) ?? [];
+    list.push({
+      id: Number(row.id),
+      rating: Number(row.rating || 0),
+      // Trimmed server-side so the wire never carries more than the card can show. An ellipsis
+      // rather than a hard cut, so a clipped sentence looks clipped rather than broken.
+      text: row.text.length > REVIEW_TEXT_LIMIT ? row.text.slice(0, REVIEW_TEXT_LIMIT - 1).trimEnd() + '…' : row.text,
+      author: reviewAuthor(row.client_name),
+    });
+    reviewsByStaff.set(Number(row.staff_id), list);
+  }
+
   const ratingByStaff = new Map<number, { average: number | null; total: number }>();
   for (const row of (ratingsRes.results ?? []) as Array<{ staff_id: number; average: number | null; total: number }>) {
     ratingByStaff.set(Number(row.staff_id), { average: row.average, total: Number(row.total || 0) });
@@ -223,6 +292,7 @@ export async function getPublicBusiness(
     // never been rated must not render as the worst one on the page.
     rating: ratingCount > 0 && rated?.average != null ? Number(Number(rated.average).toFixed(1)) : null,
     ratingCount,
+    reviews: reviewsByStaff.get(person.id) ?? [],
     };
   });
 

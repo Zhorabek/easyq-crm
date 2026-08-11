@@ -348,6 +348,28 @@ export interface PublicStaff {
   rating: number | null;
   /** How many ratings the average is built from, so "5.0" from one visit reads honestly. */
   ratingCount: number;
+  /**
+   * A couple of approved reviews with words in them, newest first.
+   *
+   * Unlike `rating`, this IS gated on `approved = 1` — it is text a stranger wrote, and the
+   * whole point of the moderation queue is that none of it reaches a public page unread.
+   */
+  reviews: PublicReview[];
+}
+
+export interface PublicReview {
+  id: number;
+  rating: number;
+  text: string;
+  /**
+   * The reviewer, shortened to a first name and an initial.
+   *
+   * Never the full `client_name`. That value comes from Telegram's profile — first and last
+   * name as the person set them — and it was collected to identify a booking, not to be
+   * published on a page anyone can open. "Otabek M." is enough for a reader to see a real
+   * person wrote it, and is the convention every review site uses for the same reason.
+   */
+  author: string;
 }
 
 export interface PublicBusinessPayload {

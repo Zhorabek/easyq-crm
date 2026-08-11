@@ -440,8 +440,17 @@ own repos.
       and this payload carries none. A score that waited for approval would mean the same
       specialist rated differently on the web page and in Telegram.
 
-      Review TEXT on the booking page is still not built. That is a bigger surface — it needs a
-      per-specialist list, and text is the part that has to be moderated first.
+      Review TEXT followed on 2026-08-11: up to two published quotes per specialist, newest
+      first, under the card. `approved = 1` here and deliberately nowhere in the average — a
+      score cannot libel anyone, text can, and the queue exists so none of it reaches a public
+      page unread.
+
+      ROW_NUMBER partitions per specialist rather than a flat LIMIT over the business, or one
+      popular barber would fill the allowance and leave colleagues showing none.
+
+      **Reviewers are shown as "Otabek M.", never in full.** `client_name` comes from a
+      Telegram profile and was collected to identify a booking, not to be published where
+      anyone can read it.
 - [x] ~~**Fix both bots first.**~~ Done 2026-08-03. Every review query now filters
       `AND approved = 1`. It was THREE sites, not the two recorded here — this entry missed
       `easyqueue-client-bot/src/services/business.service.ts`, which would have kept publishing

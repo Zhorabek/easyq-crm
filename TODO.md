@@ -9,6 +9,27 @@ Items are ordered within each section by what I'd do first.
 
 Nothing here can be done from the repo.
 
+- [ ] **Revoke the client bot token. It was pasted into a chat on 2026-08-10.**
+      `@BotFather` → `/revoke` → the client bot. A bot token is total control of that bot:
+      read every message it receives, send as it, move its webhook somewhere else. Then
+      `wrangler secret put BOT_TOKEN` in `easyqueue-client-bot` and re-register the webhook.
+
+      Do this **together with** the `TELEGRAM_WEBHOOK_SECRET` item below — re-registering the
+      webhook is the same `setWebhook` call, so both get done in one pass instead of taking
+      the bot down twice.
+
+- [ ] **Delete the two bot Custom Domains** — `client-bot.easyq.uz` and
+      `business-bot.easyq.uz`, on the `easyqueue-client-bot` and `easyqueue-business-bot`
+      Workers. Decided 2026-08-10; the reasoning is beside the routing map in `wrangler.toml`.
+      Both already lose to this Worker's `*.easyq.uz/*` wildcard and answer with the
+      unknown-workspace 404, so removing them changes nothing except removing the confusion.
+      The bots keep workers.dev, which is where their webhooks point and what works today.
+
+- [ ] **Delete `VERIFY_BOT_TOKEN` and `VERIFY_WEBHOOK_SECRET` from this Worker's secrets,
+      and unregister the verification bot's webhook with Telegram.** The route was deleted on
+      2026-08-10, so it now 404s and Telegram is retrying against nothing. Neither secret is
+      read by any code any more.
+
 - [ ] **Set the two webhook secrets. Until this is done, the bots accept forged updates.**
       The check shipped on 2026-08-03 but is INERT while `TELEGRAM_WEBHOOK_SECRET` is unset —
       deliberately, because enforcing it before Telegram sends the header would take both bots
@@ -245,6 +266,23 @@ Two CSS traps from the same pass:
 ---
 
 ## Product / polish
+
+- [ ] **The landing page sells a client mini-app that does not exist.** `TelegramSection.tsx`
+      shows `tg-mini-app.jpeg` captioned *Client mini-app* / *Мини-приложение для клиентов* /
+      *Mijozlar uchun mini-ilova* — all three languages.
+
+      Searched 2026-08-10: no `web_app`, `WebApp`, `initData` or `startapp` anywhere in
+      `easyqueue-client-bot`, nor in any sibling repo on the dev machine. That bot is 54
+      `callback_data` buttons and three Telegram methods; its Worker has no `[assets]` block,
+      so it could not serve a mini app even if one existed.
+
+      The screenshot is not a mockup — it renders live data (10 barbershops, 3 salons, Aril at
+      Tashkent 112a) and mirrors the bot's own structure, right down to *Найти сервис* and
+      *Мои записи* being its two main-menu buttons. So something was built somewhere.
+
+      Two honest ways out: find where that build lives, or take the claim down until it ships.
+      If it gets built, the booking page is most of it already — a mobile-first per-tenant SPA
+      that needs a `web_app` button and `initData` for identity, not a new screen from scratch.
 
 - [ ] **Today / Tomorrow labels on the booking page's quick-pick pills.** They show only a time,
       so a pill on a specialist card does not say which day it belongs to.

@@ -7,20 +7,26 @@ compatibility_date = "2026-04-06"
 #   Custom domain : crm.easyq.uz
 #   Route         : *.easyq.uz/*   (zone easyq.uz)  → per-tenant business CRMs
 #
-# THE WILDCARD CURRENTLY SWALLOWS THE BOT HOSTNAMES.
+# `*.easyq.uz` IS TENANT SPACE. NOTHING ELSE GOES IN IT.
 #
-# `client-bot.easyq.uz` and `business-bot.easyq.uz` are Custom Domains on the two bot
-# Workers, and both answer with THIS Worker's unknown-workspace 404 instead. Verified
-# 2026-08-10: they return the same page as `nonexistent-xyz.easyq.uz`, carrying this
-# Worker's CSP header, while the bots themselves are healthy on their workers.dev URLs.
+# The two bots had Custom Domains here — `client-bot.easyq.uz` and `business-bot.easyq.uz`
+# — and both lost to this wildcard, answering with this Worker's unknown-workspace 404.
+# Verified 2026-08-10: identical response to `nonexistent-xyz.easyq.uz`, carrying this
+# Worker's CSP header, while both bots were healthy on their workers.dev URLs.
 #
-# It is only cosmetic while both Telegram webhooks point at workers.dev. Check with
-# getWebhookInfo before assuming they do — if a webhook points at one of these hostnames,
-# that bot receives nothing and this Worker has been answering Telegram on its behalf.
+# Decided 2026-08-10 to remove those custom domains rather than carve exceptions out of the
+# wildcard. The bots keep workers.dev as their canonical hostname. Telegram does not care
+# what a webhook hostname is, so the branded names bought nothing, and every exception here
+# has to be maintained twice — once as a Cloudflare route and once in RESERVED_SLUGS — for
+# as long as the product exists. The wildcard stays uncarved and every subdomain under it
+# means exactly one thing: a business CRM.
 #
-# The slugs are reserved in src/shared/slug.ts so no business can ever claim one and have
-# the wildcard hand them a real infrastructure hostname. That closes the hijack, not the
-# routing: fixing the routing itself is a dashboard change, which is why it is not here.
+# PENDING: the custom domains still exist in the dashboard. Until they are removed this is
+# a decision, not a state. Deleting them changes nothing about how the bots work today.
+#
+# `client-bot`, `business-bot`, `clientbot` and `businessbot` are reserved in
+# src/shared/slug.ts regardless, so no business can claim a name that was ever
+# infrastructure — cheap insurance that survives whatever happens in the dashboard.
 
 [vars]
 # The zone every "today" and "now" in the CRM is measured in. It was unset in production,

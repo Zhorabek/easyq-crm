@@ -19,6 +19,7 @@ import type {
   PaymentEntry,
   PaymentMethod,
   PaymentSummary,
+  ReviewsSummary,
   ServiceCatalogItem,
   StaffAccessRow,
   UpdateCrmCredentialsInput,
@@ -217,6 +218,30 @@ type BookingServiceRow = {
   service_name: string;
   price: number;
   duration: number;
+};
+
+/** One row of the moderation queue, joined to the specialist it is about. */
+type ReviewQueryRow = {
+  id: number;
+  rating: number;
+  text: string | null;
+  client_name: string | null;
+  staff_id: number | null;
+  approved: number;
+  created_at: string | null;
+  staff_name: string | null;
+};
+
+/** Counts across every review a business has, regardless of the queue's page size. */
+type ReviewStatsRow = {
+  total: number;
+  average: number | null;
+  pending: number;
+  r5: number;
+  r4: number;
+  r3: number;
+  r2: number;
+  r1: number;
 };
 
 type PaymentRow = {
@@ -2613,6 +2638,66 @@ async function listFeedback(env: Env) {
   return json({ items: res.results ?? [] }, { headers: FEEDBACK_CORS });
 }
 
+/**
+ * Publish a review's text.
+ *
+ * Idempotent, and deliberately not guarded on `approved = 0`: a second press from a stale
+ * screen should confirm the state it is asking for, not fail because somebody got there first.
+ * `changes` therefore cannot distinguish "already published" from "not yours", so existence is
+ * checked separately — a 404 for a review of another business is the honest answer either way.
+ */
+async function approveReview(env: Env, business: BusinessRow, reviewId: number) {
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    return json({ error: "Review not found", code: "invalid_review" }, { status: 404 });
+  }
+
+  const row = await env.DB
+    .prepare("SELECT id FROM reviews WHERE id = ? AND business_id = ? LIMIT 1")
+    .bind(reviewId, business.id)
+    .first<{ id: number }>()
+    .catch(() => null);
+
+  if (!row) {
+    return json({ error: "Review not found", code: "invalid_review" }, { status: 404 });
+  }
+
+  await env.DB
+    .prepare("UPDATE reviews SET approved = 1 WHERE id = ? AND business_id = ?")
+    .bind(reviewId, business.id)
+    .run();
+
+  return json({ ok: true });
+}
+
+/**
+ * Delete a review outright.
+ *
+ * Rejection destroys the row rather than parking it at `approved = 2`, which is what the
+ * feedback queue does. That was a deliberate choice, and it has a consequence worth stating
+ * where somebody will read it: the RATING goes too, so the specialist's average changes, and
+ * the customer cannot leave another — the bot refuses once `review_submitted_at` is set, and
+ * that column stays set. There is no undo and no second chance at that visit's opinion.
+ *
+ * The UI asks before calling this for exactly that reason. `business_id` is in the WHERE clause
+ * because a delete keyed only on an id off the URL is a delete of anybody's row.
+ */
+async function deleteReview(env: Env, business: BusinessRow, reviewId: number) {
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    return json({ error: "Review not found", code: "invalid_review" }, { status: 404 });
+  }
+
+  const result = await env.DB
+    .prepare("DELETE FROM reviews WHERE id = ? AND business_id = ?")
+    .bind(reviewId, business.id)
+    .run();
+
+  if (Number(result.meta.changes ?? 0) === 0) {
+    return json({ error: "Review not found", code: "invalid_review" }, { status: 404 });
+  }
+
+  return json({ ok: true });
+}
+
 /** Shared with updateBusinessCredentials so both paths agree on what counts as a password. */
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -2914,7 +2999,7 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
   const imageIds = await storedImageIds(env, business.id);
   const serviceImageIds = await storedServiceImageIds(env, business.id);
 
-  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes, bookingServicesRes] =
+  const [servicesRes, staffRes, staffServicesRes, staffSlotsRes, staffUnavailabilityRes, bookingsRes, paymentsRes, bookingServicesRes, reviewsRes, reviewStatsRes] =
     await Promise.all([
     env.DB
       .prepare(
@@ -2993,6 +3078,54 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       // Older deployments may not have the table yet, and a missing one must not take the whole
       // CRM payload down — the summary string still renders, just without the breakdown.
       .catch(() => ({ results: [] as BookingServiceRow[] })),
+    /**
+     * Reviews, for the moderation screen.
+     *
+     * Bounded at 60. The queue is meant to be worked, not scrolled — if a shop has more than
+     * sixty undecided reviews the answer is to decide some, not to send a longer list on every
+     * poll. Newest first so what arrived while nobody was looking is at the top.
+     *
+     * Left-joined to `staff` rather than inner: `reviews.staff_id` has no foreign key and the
+     * specialist may have been deleted since, and losing the review because the person left is
+     * exactly backwards — that review is about work the shop did.
+     */
+    env.DB
+      .prepare(
+        `SELECT r.id, r.rating, r.text, r.client_name, r.staff_id, r.approved, r.created_at,
+                st.name AS staff_name
+           FROM reviews r
+           LEFT JOIN staff st ON st.id = r.staff_id
+          WHERE r.business_id = ?
+          ORDER BY r.approved ASC, r.id DESC
+          LIMIT 60`
+      )
+      .bind(business.id)
+      .all<ReviewQueryRow>()
+      // Same defence as booking_services above: the columns arrive in a migration, and a CRM
+      // that will not load at all is a worse failure than one review screen being empty.
+      .catch(() => ({ results: [] as ReviewQueryRow[] })),
+    /**
+     * The summary, counted across ALL reviews rather than the 60 above.
+     *
+     * Separate query on purpose. The average and the star distribution are facts about the
+     * whole history; deriving them from a truncated list would quietly change the shop's
+     * rating the moment it passed sixty reviews.
+     */
+    env.DB
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                AVG(rating) AS average,
+                SUM(CASE WHEN approved = 0 THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) AS r5,
+                SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) AS r4,
+                SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) AS r3,
+                SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) AS r2,
+                SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS r1
+           FROM reviews WHERE business_id = ?`
+      )
+      .bind(business.id)
+      .first<ReviewStatsRow>()
+      .catch(() => null),
     ]);
 
   const services = (servicesRes.results ?? []) as unknown as ServiceRow[];
@@ -3637,6 +3770,42 @@ async function getCrmPayload(env: Env, business: BusinessRow, selectedDate: stri
       enabled: Number(person.access_enabled) === 1,
       hasTemporaryPassword: Boolean(Number(person.crm_temp_password_pending)),
     })) satisfies StaffAccessRow[],
+    /**
+     * Reviews and their summary. Redacted away in redactPayloadFor for anyone without
+     * `review:moderate`.
+     *
+     * `average` is null rather than 0 when there is nothing to average. Zero is a score — and
+     * the worst one — so a shop that has never been reviewed would be shown as rated terribly
+     * by the same component that renders a real average.
+     */
+    reviews: (() => {
+      const stats = reviewStatsRes;
+      const total = Number(stats?.total ?? 0);
+      return {
+        items: ((reviewsRes.results ?? []) as unknown as ReviewQueryRow[]).map((row) => ({
+          id: Number(row.id),
+          rating: Number(row.rating || 0),
+          // Coalesced because a rating left without words stores '' — the column is NOT NULL —
+          // and older rows written by hand may be null.
+          text: row.text ?? "",
+          clientName: row.client_name,
+          staffId: row.staff_id === null ? null : Number(row.staff_id),
+          staffName: row.staff_name,
+          createdAt: row.created_at,
+          approved: Number(row.approved || 0),
+        })),
+        pendingCount: Number(stats?.pending ?? 0),
+        total,
+        average: total > 0 && stats?.average != null ? Number(Number(stats.average).toFixed(1)) : null,
+        distribution: [
+          Number(stats?.r5 ?? 0),
+          Number(stats?.r4 ?? 0),
+          Number(stats?.r3 ?? 0),
+          Number(stats?.r2 ?? 0),
+          Number(stats?.r1 ?? 0),
+        ],
+      };
+    })() satisfies ReviewsSummary,
   };
 }
 
@@ -3847,6 +4016,26 @@ function redactPayloadFor(actor: Actor, payload: CrmPayload): CrmPayload {
   // only the business of whoever can change those things.
   if (!can(actor.role, "access:manage")) {
     visible = { ...visible, staffAccess: [] };
+  }
+
+  /**
+   * The moderation queue, for whoever may act on it.
+   *
+   * The conflict of interest is the point, not the secrecy. A review carries the `staff_id` of
+   * the specialist it is about, so shipping the queue to a specialist would hand them the
+   * unpublished opinions of their own customers — including the ones nobody has decided to
+   * publish yet, and including any that name them badly.
+   *
+   * Zeroed rather than deleted, like the payment summaries above: `reviews` is non-optional on
+   * CrmPayload and the screen reads `.items` and `.distribution` unconditionally, so dropping
+   * the key would trade a leak for a crash. The counts go to zero with it — a pending count is
+   * itself a fact about reviews they should not have.
+   */
+  if (!can(actor.role, "review:moderate")) {
+    visible = {
+      ...visible,
+      reviews: { items: [], pendingCount: 0, total: 0, average: null, distribution: [0, 0, 0, 0, 0] },
+    };
   }
 
   // The owner's own login identifier. It exists in this payload solely to render the
@@ -5044,6 +5233,28 @@ const router = {
         requireCapability(actor, "payment:write");
         const bookingId = Number(url.pathname.split("/")[3]);
         return await createBookingPayment(env, actor.business, bookingId, await readJson<CreatePaymentInput>(request));
+      }
+
+      /**
+       * Publish a review, or delete it.
+       *
+       * Both scoped to the actor's own business in the SQL, not just by capability. The id
+       * comes off the URL and a review id is a small integer, so without `business_id = ?` in
+       * the WHERE clause any owner could publish or destroy any other shop's reviews by
+       * counting upwards.
+       */
+      if (url.pathname.match(/^\/api\/reviews\/\d+$/)) {
+        const actor = await requireAuthenticatedBusiness(env, request, tenant);
+        requireCapability(actor, "review:moderate");
+        const reviewId = Number(url.pathname.split("/")[3]);
+
+        if (request.method === "POST") {
+          return await approveReview(env, actor.business, reviewId);
+        }
+        if (request.method === "DELETE") {
+          return await deleteReview(env, actor.business, reviewId);
+        }
+        return json({ error: "Method not allowed" }, { status: 405 });
       }
 
       // ── Staff CRM access (owner only) ───────────────────────────────────────

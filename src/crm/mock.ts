@@ -97,6 +97,28 @@ const BIZ_TYPE: Record<Lang, string> = {
   ru: 'Барбершоп · Ташкент',
   en: 'Barbershop · Tashkent',
 };
+/**
+ * Demo review text. One glowing, one middling, one ordinary — a queue of nothing but five stars
+ * makes the Publish button look like a formality, which is the opposite of what it is.
+ */
+const REVIEW_TEXT: Record<Lang, string[]> = {
+  uz: [
+    'Juda mamnunman, usta ishini biladi. Albatta yana kelaman.',
+    'Yaxshi, lekin belgilangan vaqtdan 15 daqiqa kech qabul qilishdi.',
+    'Qulay joy, Telegram orqali yozilish juda oson ekan.',
+  ],
+  ru: [
+    'Очень доволен, мастер знает своё дело. Обязательно вернусь.',
+    'Неплохо, но приняли на 15 минут позже назначенного времени.',
+    'Удобное место, записаться через Telegram очень просто.',
+  ],
+  en: [
+    'Very happy — the barber knows his craft. I will be back.',
+    'Decent, but they took me fifteen minutes after my slot.',
+    'Convenient place, and booking through Telegram is very easy.',
+  ],
+};
+
 const BIZ_ADDRESS: Record<Lang, string> = {
   uz: 'Toshkent, Amir Temur ko‘chasi 12',
   ru: 'ул. Амира Темура 12, Ташкент',
@@ -356,5 +378,25 @@ export function buildMockPayload(date: string, lang: Lang): CrmPayload {
       enabled: i < 2,
       hasTemporaryPassword: i === 1,
     })),
+    /**
+     * Two pending and two published, because a queue with nothing in it demonstrates nothing —
+     * the demo needs to show the decision, not just the history.
+     *
+     * The third item is a rating with no text, which is what most reviews actually are: the bot
+     * asks for words after the stars and most people skip that step. It has no Publish button,
+     * so the screen has to say why, and the demo is where that gets noticed.
+     */
+    reviews: {
+      items: [
+        { id: 4, rating: 5, text: REVIEW_TEXT[lang][0], clientName: 'Otabek M.', staffId: employees[0]?.id ?? null, staffName: employees[0]?.name ?? null, createdAt: `${date}T11:20:00`, approved: 0 },
+        { id: 3, rating: 3, text: REVIEW_TEXT[lang][1], clientName: 'Dilnoza R.', staffId: employees[1]?.id ?? null, staffName: employees[1]?.name ?? null, createdAt: `${date}T09:05:00`, approved: 0 },
+        { id: 2, rating: 5, text: '', clientName: 'Jasur A.', staffId: employees[0]?.id ?? null, staffName: employees[0]?.name ?? null, createdAt: `${date}T08:40:00`, approved: 0 },
+        { id: 1, rating: 4, text: REVIEW_TEXT[lang][2], clientName: 'Aziza K.', staffId: employees[1]?.id ?? null, staffName: employees[1]?.name ?? null, createdAt: `${date}T08:00:00`, approved: 1 },
+      ],
+      pendingCount: 3,
+      total: 4,
+      average: 4.3,
+      distribution: [2, 1, 1, 0, 0],
+    },
   };
 }

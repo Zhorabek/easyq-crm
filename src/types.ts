@@ -454,6 +454,45 @@ export interface CrmPayload {
    * owner is offered the plan picker.
    */
   subscription: SubscriptionInfo;
+  /**
+   * Customer reviews, and what is waiting to be decided.
+   *
+   * Emptied by redactPayloadFor for any actor without `review:moderate`, so a specialist
+   * never receives the queue — reviews carry the staff id of the person they are about, and
+   * shipping them to that person is the conflict of interest the capability exists to avoid.
+   */
+  reviews: ReviewsSummary;
+}
+
+export interface ReviewsSummary {
+  /**
+   * Recent reviews, newest first, pending and published together — the queue and the record
+   * are the same list with a different `approved` value, and splitting them server-side would
+   * only make the screen re-merge them to show one history.
+   */
+  items: ReviewItem[];
+  /** Waiting for a decision. Drives the nav badge, so it counts ALL of them, not just `items`. */
+  pendingCount: number;
+  /** Every rating ever left for this business, including ones whose text is not published. */
+  total: number;
+  /** Mean of every rating, to one decimal. Null when there are none — not 0, which is a score. */
+  average: number | null;
+  /** Counts for 5,4,3,2,1 stars, in that order, for the distribution bars. */
+  distribution: number[];
+}
+
+export interface ReviewItem {
+  id: number;
+  rating: number;
+  /** Empty for a rating left without words, which is most of them. */
+  text: string;
+  clientName: string | null;
+  staffId: number | null;
+  /** Resolved from the staff row; null if that specialist has since been deleted. */
+  staffName: string | null;
+  createdAt: string | null;
+  /** 0 pending, 1 published. Rejection deletes the row, so 2 never reaches the client. */
+  approved: number;
 }
 
 export interface UpdateBookingStatusInput {

@@ -6,12 +6,12 @@ import { avatarColor, colorForId, fmtPrice, fmtSom, serviceSummary, useData } fr
 import { addDays, isoToday, parseBusinessHours } from '../lib/date';
 import { formatPhone } from '../shared/phone';
 import { BOOKING_FLOWS, type BookingFlow } from '../shared/bookingFlow';
-import { submitProductFeedback, updateBusinessProfile } from '../lib/api';
+import { approveReview, deleteReview, submitProductFeedback, updateBusinessProfile } from '../lib/api';
 import {
   BRAND_PRESETS, BRAND_THEME_PRESETS, DEFAULT_BRAND_COLOR, DEFAULT_BRAND_THEME, MIN_TEXT_CONTRAST,
   brandTokens, isValidBrandColor, normalizeBrandColor, normalizeBrandTheme, themeTextContrast,
 } from '../shared/brand';
-import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ServiceCatalogItem } from '../types';
+import type { CalendarBookingCard, ClientRow, CrmPayload, EmployeeRow, ReviewItem, ServiceCatalogItem } from '../types';
 
 const PALETTE = ['#84A92E', '#3B82F6', '#8B5CF6', '#F59E0B', '#14B8A6', '#F43F5E'];
 const toMin = (hhmm: string) => {
@@ -24,6 +24,208 @@ const kpiColors = ['var(--accent-deep)', 'var(--blue)', 'var(--violet)', 'var(--
 
 function EmptyHint({ text }: { text: string }) {
   return <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, fontWeight: 600 }}>{text}</div>;
+}
+
+/* ============ REVIEWS ============ */
+
+function Stars({ n, size = 13 }: { n: number; size?: number }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 1.5, color: 'var(--amber)', flex: 'none' }}>
+      {[0, 1, 2, 3, 4].map((k) => (
+        <Ic key={k} name="star" size={size} fill={k < n} stroke={1.5} style={{ opacity: k < n ? 1 : 0.25 }} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The moderation queue.
+ *
+ * Replaces a mock that offered a **Reply** button. Nothing backed it — there is no reply column
+ * and no channel to deliver one through — so "Reply sent" was a lie the screen told six times a
+ * page. What the data actually supports is deciding whether a customer's words go public, which
+ * is also the thing currently blocking: the client bot has been collecting review text since it
+ * shipped and nothing anywhere could approve a word of it.
+ *
+ * ## Pending first, and separated
+ *
+ * The server returns one list ordered `approved ASC, id DESC`, and this splits it. A single
+ * merged list would bury a new review under a month of published ones — the queue is work, and
+ * work belongs at the top.
+ *
+ * ## A rating with no text is not a queue item
+ *
+ * Most reviews are a star tap and nothing else: the bot asks for words afterwards and most
+ * people skip it. Those rows still arrive `approved = 0`, but there is nothing to publish and
+ * approving them would change nothing, so they get an explanation instead of a Publish button.
+ * Without that they read as work that cannot be completed.
+ */
+export function Reviews() {
+  const { t, role, notify } = useCRM();
+  const { payload, reload } = useData();
+  const r = t.rev;
+  const [busy, setBusy] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<ReviewItem | null>(null);
+
+  // Specialists receive an empty block from redactPayloadFor — a review carries the staff id of
+  // the person it is about. Saying so beats rendering a convincingly empty queue.
+  if (role === 'specialist') {
+    return <div className="fadein" style={{ padding: 28 }}><EmptyHint text={t.set.ownerOnly} /></div>;
+  }
+  if (!payload) return null;
+
+  const { items, total, average, distribution } = payload.reviews;
+  const pending = items.filter((x) => x.approved === 0);
+  const published = items.filter((x) => x.approved === 1);
+  const positive = total > 0 ? Math.round(((distribution[0] + distribution[1]) / total) * 100) : 0;
+
+  const onPublish = async (review: ReviewItem) => {
+    try {
+      setBusy(review.id);
+      await approveReview(review.id);
+      notify(r.pubToast);
+      await reload();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onDelete = async (review: ReviewItem) => {
+    try {
+      setBusy(review.id);
+      await deleteReview(review.id);
+      setConfirming(null);
+      notify(r.delToast);
+      await reload();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const Row = ({ review }: { review: ReviewItem }) => {
+    const name = review.clientName?.trim() || '—';
+    const hasText = review.text.trim().length > 0;
+    const working = busy === review.id;
+    return (
+      <div style={{ padding: '15px 20px', borderTop: '1px solid var(--line)', opacity: working ? 0.55 : 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <Avatar name={name} color={avatarColor(name)} size={36} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800 }}>{name}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 600 }}>
+              {review.staffName ?? r.unknownStaff}
+              {review.createdAt ? ` · ${review.createdAt.slice(0, 10)}` : ''}
+            </div>
+          </div>
+          <Stars n={review.rating} />
+        </div>
+
+        {hasText ? (
+          <p style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>{review.text}</p>
+        ) : (
+          <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 600, fontStyle: 'italic' }}>{r.noText}</p>
+        )}
+
+        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+          {review.approved === 0 && hasText && (
+            <button
+              onClick={() => onPublish(review)}
+              disabled={working}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', padding: '8px 14px', borderRadius: 9, cursor: working ? 'wait' : 'pointer' }}
+            >
+              <Ic name="check" size={13} stroke={2.6} />{r.publish}
+            </button>
+          )}
+          <button
+            onClick={() => setConfirming(review)}
+            disabled={working}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: 'var(--rose)', background: 'var(--panel-2)', border: '1px solid var(--line-2)', padding: '8px 14px', borderRadius: 9, cursor: working ? 'wait' : 'pointer' }}
+          >
+            <Ic name="trash" size={13} stroke={2.2} />{r.remove}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fadein" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="crm-dash-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 20, alignItems: 'start' }}>
+        <Panel style={{ textAlign: 'center' }}>
+          {/* `average` is null, not 0, when nothing has been rated — 0 is a score, and the worst
+              one. An em dash says "no data" where "0.0" would say "terrible". */}
+          <div className="tnum" style={{ fontSize: 52, fontWeight: 800, letterSpacing: '-.04em', lineHeight: 1 }}>
+            {average === null ? '—' : average.toFixed(1)}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0 4px' }}>
+            <Stars n={Math.round(average ?? 0)} size={18} />
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>{total} {r.total}</div>
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {distribution.map((cnt, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="tnum" style={{ fontSize: 12, fontWeight: 700, width: 10, color: 'var(--ink-2)' }}>{5 - i}</span>
+                <Ic name="star" size={12} fill style={{ color: 'var(--amber)', flex: 'none' }} />
+                <div style={{ flex: 1, height: 6, background: 'var(--panel-2)', borderRadius: 99, overflow: 'hidden' }}>
+                  <div style={{ width: (total > 0 ? (cnt / total) * 100 : 0) + '%', height: '100%', background: 'var(--amber)' }} />
+                </div>
+                <span className="tnum" style={{ fontSize: 12, fontWeight: 700, width: 16, textAlign: 'right', color: 'var(--ink-3)' }}>{cnt}</span>
+              </div>
+            ))}
+          </div>
+          {total > 0 && (
+            <div style={{ marginTop: 16 }}><Badge color="var(--accent-deep)" tint="var(--accent-tint)" dot>{positive}% {r.positive}</Badge></div>
+          )}
+        </Panel>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <Panel pad={0}>
+            <div style={{ padding: '18px 20px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 800 }}>{r.queue}</span>
+              {pending.length > 0 && <Badge color="var(--amber)" tint="var(--amber-t)">{pending.length}</Badge>}
+            </div>
+            {pending.length === 0
+              ? <EmptyHint text={total === 0 ? r.emptyAll : r.emptyQueue} />
+              : pending.map((review) => <Row key={review.id} review={review} />)}
+          </Panel>
+
+          {published.length > 0 && (
+            <Panel pad={0}>
+              <div style={{ padding: '18px 20px 8px', fontSize: 16, fontWeight: 800 }}>{r.published}</div>
+              {published.map((review) => <Row key={review.id} review={review} />)}
+            </Panel>
+          )}
+        </div>
+      </div>
+
+      {confirming && (
+        <Modal
+          title={r.confirmTitle}
+          sub={r.confirmBody}
+          icon="trash"
+          onClose={() => setConfirming(null)}
+          footer={
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirming(null)} style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-2)', background: 'var(--panel-2)', border: '1px solid var(--line-2)', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' }}>{r.cancel}</button>
+              <button onClick={() => onDelete(confirming)} disabled={busy === confirming.id} style={{ fontSize: 13, fontWeight: 800, color: '#fff', background: 'var(--rose)', border: 'none', padding: '10px 16px', borderRadius: 10, cursor: 'pointer' }}>{r.confirmYes}</button>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Stars n={confirming.rating} />
+            <span style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }}>{confirming.clientName?.trim() || '—'}</span>
+          </div>
+          {confirming.text.trim() && (
+            <p style={{ margin: '12px 0 0', fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>{confirming.text}</p>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
 }
 
 /* ============ DASHBOARD ============ */

@@ -4,8 +4,8 @@ import { CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role } from
 import { DataCtx, type DataValue } from './crm/data';
 import { Toast } from './crm/ui';
 import { Sidebar, Topbar } from './crm/shell';
-import { Analytics, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
-import { Automations, Inventory, Loyalty, Marketing, Payroll, Reviews } from './crm/screens-mock';
+import { Analytics, Calendar, Customers, Dashboard, Finance, Reviews, Services, Settings, Staff } from './crm/screens-real';
+import { Automations, Inventory, Loyalty, Marketing, Payroll } from './crm/screens-mock';
 import { Help } from './crm/Help';
 import { buildMockPayload } from './crm/mock';
 import { isoToday } from './lib/date';

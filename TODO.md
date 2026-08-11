@@ -409,14 +409,25 @@ own repos.
       customer who booked through the page rather than the bot. Worth building for that
       audience; no longer the only way to get a review at all.
 
-- [ ] **Moderate them.** `approved` defaults to 0 and the CRM's Reviews screen is still mock
-      data. Nothing should render publicly until an owner approves it.
+- [x] ~~**Moderate them.**~~ Done 2026-08-11. The Reviews screen is real: a queue ordered
+      pending-first, Publish, Delete behind a confirmation, and the ratings summary computed
+      across every review rather than the page shown.
 
-      **More urgent since 2026-08-10:** real rows now land here. Bot ratings count toward the
-      per-specialist average immediately — a number cannot say anything abusive, and gating
-      the score on the queue meant a shop with forty honest ratings showed none — but review
-      TEXT stays invisible until `approved = 1`, and there is still no screen anywhere that
-      can set it. Every comment a customer has written since that date is sitting unread.
+      New capability `review:moderate` — owner and manager yes, specialist **no**, and that one
+      is a conflict of interest rather than seniority: a review carries the `staff_id` of the
+      person it is about, so a specialist holding it would be deciding which reviews of their
+      own work get published. `redactPayloadFor` empties the whole block for anyone without it,
+      so the queue never reaches them at all.
+
+      Rejection **deletes the row**, chosen over parking it at `approved = 2` like
+      `landing_feedback` does. Worth knowing what that costs: the rating goes with the text, so
+      the specialist's average moves, and the customer cannot leave another — the bot refuses
+      once `review_submitted_at` is set and that column stays set. The confirmation dialog says
+      all three things before it happens.
+
+      A rating with no words gets an explanation instead of a Publish button. Most reviews are
+      exactly that — the bot asks for words after the stars and most people skip — and without
+      the note they read as queue items that cannot be completed.
 - [ ] **Per-staff averages** on the public payload, for the stars the booking page wants.
       The client bot computes its own from `reviews WHERE staff_id = ?` as of 2026-08-10, so
       the query is written and the index (`idx_reviews_staff`) is exercised; what is missing

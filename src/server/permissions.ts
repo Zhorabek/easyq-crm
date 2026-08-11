@@ -32,6 +32,8 @@ export type Capability =
   | "business:write"
   /** The business's own CRM login and password. */
   | "credentials:write"
+  /** Publish or delete a customer review. */
+  | "review:moderate"
   /** Grant, reset and revoke staff logins. Owner only, always. */
   | "access:manage";
 
@@ -46,6 +48,7 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
     "service:write": true,
     "business:write": true,
     "credentials:write": true,
+    "review:moderate": true,
     "access:manage": true,
   },
   // Runs the shop day to day. Deliberately cannot touch the business identity, the
@@ -60,6 +63,11 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
     "schedule:write": true,
     "service:write": true,
     "business:write": false,
+    // Publishing a customer's words on the shop's public surfaces is day-to-day work, and a
+    // manager already sets prices and edits the catalogue, which are at least as public. The
+    // queue also needs regular attention — routing it through the owner alone is how it stops
+    // being read at all, which is the state this capability exists to end.
+    "review:moderate": true,
     "credentials:write": false,
     "access:manage": false,
   },
@@ -84,6 +92,11 @@ const MATRIX: Record<ActorRole, Record<Capability, boolean>> = {
     "schedule:write": false,
     "service:write": false,
     "business:write": false,
+    // False on conflict of interest, not on seniority. A review carries the `staff_id` of the
+    // person it is about, so a specialist holding this would be deciding which reviews of
+    // THEIR OWN work get published and which get deleted. That is the one capability where
+    // the specialist's stake in the outcome is the entire objection.
+    "review:moderate": false,
     "credentials:write": false,
     "access:manage": false,
   },

@@ -49,7 +49,7 @@ import { Tour } from './crm/Tour';
 import { Help } from './crm/Help';
 import { Sidebar, Topbar } from './crm/shell';
 import { useBrandAccent } from './crm/brand-shell';
-import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Services, Settings, Staff } from './crm/screens-real';
+import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Reviews, Services, Settings, Staff } from './crm/screens-real';
 import {
   BookingDetailModal,
   BusinessModal,
@@ -66,8 +66,12 @@ import {
 
 // The real, authenticated CRM only exposes screens with live backend data, so a new
 // business starts from an authentic empty setup (no demo/mock screens). The demo-only
-// screens (Inventory, Loyalty, Payroll, Reviews, Marketing, Automations) live in the
-// landing embed (Embed.tsx) instead.
+// screens (Inventory, Loyalty, Payroll, Marketing, Automations) live in the landing embed
+// (Embed.tsx) instead.
+//
+// Reviews graduated out of that list on 2026-08-10: the client bot had been collecting
+// ratings and review text for months and nothing could publish a word of it, so the screen
+// stopped being a demo and became the only place that queue can be worked.
 const SCREEN_COMPONENTS: Record<string, FC> = {
   dashboard: Dashboard,
   calendar: Calendar,
@@ -77,18 +81,19 @@ const SCREEN_COMPONENTS: Record<string, FC> = {
   finance: Finance,
   analytics: Analytics,
   branding: Branding,
+  reviews: Reviews,
   settings: Settings,
   help: Help,
 };
 
-const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'branding', 'settings', 'help'];
+const REAL_SCREENS = ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'branding', 'reviews', 'settings', 'help'];
 
 // Which screens each role sees. This MIRRORS server/permissions.ts to keep the nav tidy —
 // it is NOT the enforcement. Hiding a button stops nobody; the worker rejects the call.
 const ROLE_SCREENS: Record<Role, string[] | null> = {
   owner: null,
   // No branding: it needs business:write, which only an owner has.
-  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'settings', 'help'],
+  manager: ['dashboard', 'calendar', 'customers', 'staff', 'services', 'finance', 'analytics', 'reviews', 'settings', 'help'],
   // Customers is theirs now: the payload used to send them an empty book, and now sends the
   // clients they have personally served (see clientsScopedToStaff in worker.ts). Still no
   // staff screen — that is the whole team, including colleagues' numbers.

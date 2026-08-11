@@ -101,6 +101,22 @@ export function updateEmployee(staffId: number, input: UpdateEmployeeInput) {
   });
 }
 
+/** Publish a review's text. Idempotent, so a double tap is harmless. */
+export function approveReview(reviewId: number) {
+  return request<{ ok: true }>(`/api/reviews/${reviewId}`, { method: "POST" });
+}
+
+/**
+ * Delete a review for good.
+ *
+ * There is no "reject" that keeps the row — rejection IS deletion here, so this also removes
+ * the rating from the specialist's average, and the customer cannot leave another for that
+ * visit. Callers must confirm first.
+ */
+export function deleteReview(reviewId: number) {
+  return request<{ ok: true }>(`/api/reviews/${reviewId}`, { method: "DELETE" });
+}
+
 export function deleteEmployee(staffId: number) {
   return request<{ ok: true }>(`/api/employees/${staffId}`, {
     method: "DELETE",

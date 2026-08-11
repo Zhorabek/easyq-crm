@@ -64,6 +64,9 @@ type Copy = {
   pickStaffForTimes: string;
   pickStaffForTimesHint: string;
   noServices: string;
+  /** Under noServices: what a customer can still do when nothing is bookable. */
+  noServicesHint: string;
+  callShop: string;
   loading: string;
   back: string;
   /** Confirmation screen */
@@ -132,6 +135,8 @@ export const T: Record<BookingLang, Copy> = {
     pickStaffForTimes: "Endi ustani tanlang",
     pickStaffForTimesHint: "Har bir ustaning o‘z ish vaqti bor.",
     noServices: "Hozircha xizmatlar qo‘shilmagan.",
+    noServicesHint: "Onlayn yozilish hali sozlanmagan. Yozilish uchun qo‘ng‘iroq qiling.",
+    callShop: "Qo‘ng‘iroq qilish",
     loading: "Yuklanmoqda…",
     back: "Orqaga",
     doneTitle: "Navbat band qilindi",
@@ -194,6 +199,8 @@ export const T: Record<BookingLang, Copy> = {
     pickStaffForTimes: "Теперь выберите мастера",
     pickStaffForTimesHint: "У каждого мастера своё расписание.",
     noServices: "Услуги пока не добавлены.",
+    noServicesHint: "Онлайн-запись ещё не настроена. Чтобы записаться, позвоните.",
+    callShop: "Позвонить",
     loading: "Загрузка…",
     back: "Назад",
     doneTitle: "Вы записаны",
@@ -256,6 +263,8 @@ export const T: Record<BookingLang, Copy> = {
     pickStaffForTimes: "Now choose a specialist",
     pickStaffForTimesHint: "Each specialist keeps their own hours.",
     noServices: "No services have been added yet.",
+    noServicesHint: "Online booking is not set up yet. Call the shop to book.",
+    callShop: "Call",
     loading: "Loading…",
     back: "Back",
     doneTitle: "You're booked",

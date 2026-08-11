@@ -959,6 +959,23 @@
   color: var(--ink-3);
   margin-top: 6px;
 }
+/* The way out of a booking page with nothing to book. Sized as a real target because on a
+   phone this IS the call button, not a footnote. */
+.bk-empty-call {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
 
 /* ---- service categories ----
  *

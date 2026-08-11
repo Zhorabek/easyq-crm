@@ -5,7 +5,7 @@ import type {
   PublicService,
   PublicStaff,
 } from '../types';
-import { defaultDialPrefix, formatAsYouType, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
+import { defaultDialPrefix, formatAsYouType, formatPhone, isValidPhone, nationalPlaceholder, toStoragePhone } from '../shared/phone';
 import { CountryFlag } from '../shared/CountryFlag';
 import { brandTokens } from '../shared/brand';
 import { DEFAULT_BOOKING_FLOW, flowEntryOrder, flowShowsStaff } from '../shared/bookingFlow';
@@ -850,7 +850,35 @@ export default function BookingApp() {
         {head}
         <div className="bk-card">
           {biz.services.length === 0 ? (
-            <div className="bk-empty">{t.noServices}</div>
+            /**
+             * Nothing is bookable — give them the phone rather than a full stop.
+             *
+             * This is not a rare state: a shop gets its booking link the moment it signs up,
+             * and has neither services nor staff until somebody sets them up. So the first
+             * customers a new business sends here are the ones most likely to see it.
+             *
+             * It used to say "No services have been added yet." and nothing else, which reads
+             * as our software reporting its own internal state at somebody who wanted a
+             * haircut. The number is already in the payload and was rendered nowhere on this
+             * page, so the dead end was avoidable with data we had all along.
+             */
+            <div className="bk-empty">
+              {t.noServices}
+              <span className="bk-empty-hint">{t.noServicesHint}</span>
+              {biz.phone && (
+                /**
+                 * `toStoragePhone` for the href, not a regex over the raw value.
+                 *
+                 * Stripping non-digits off `998901234567` — the shape rows written before
+                 * canonicalisation still hold — yields `tel:998901234567`, which a handset
+                 * dials as a LOCAL number and reaches the wrong person or nobody. E.164 with
+                 * the leading + is what makes the link dial correctly from anywhere.
+                 */
+                <a className="bk-empty-call" href={`tel:${toStoragePhone(biz.phone) ?? biz.phone.replace(/[^\d+]/g, '')}`}>
+                  {t.callShop} {formatPhone(biz.phone)}
+                </a>
+              )}
+            </div>
           ) : (
             <div className="bk-menu">
               {rows.map((row) => (

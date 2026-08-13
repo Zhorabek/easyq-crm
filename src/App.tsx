@@ -44,6 +44,29 @@ import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, useCRM, type CRMContextValue, type Lan
 import { DataCtx, type DataValue } from './crm/data';
 import { OfflineArt } from './crm/OfflineArt';
 
+import { Ic } from './crm/icons';
+import { CRMLogo, Toast } from './crm/ui';
+import { SubscriptionBanner, SubscriptionExpired } from './crm/Subscription';
+import { InstallPrompt } from './crm/InstallPrompt';
+import { Tour } from './crm/Tour';
+import { Help } from './crm/Help';
+import { Sidebar, Topbar } from './crm/shell';
+import { useBrandAccent } from './crm/brand-shell';
+import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Reviews, Services, Settings, Staff } from './crm/screens-real';
+import {
+  BookingDetailModal,
+  BusinessModal,
+  ClientHistoryModal,
+  CredentialsModal,
+  CrmBookingModal,
+  PasswordModal,
+  ModalLayer,
+  ServiceEditModal,
+  SlotEditorModal,
+  StaffCreateModal,
+  StaffEditModal,
+} from './crm/modals';
+
 /**
  * What the CRM shows with no network.
  *
@@ -83,27 +106,6 @@ function OfflineState({ hasPayload, onRetry }: { hasPayload: boolean; onRetry: (
     </div>
   );
 }
-import { Ic } from './crm/icons';
-import { CRMLogo, Toast } from './crm/ui';
-import { SubscriptionBanner, SubscriptionExpired } from './crm/Subscription';
-import { Tour } from './crm/Tour';
-import { Help } from './crm/Help';
-import { Sidebar, Topbar } from './crm/shell';
-import { useBrandAccent } from './crm/brand-shell';
-import { Analytics, Branding, Calendar, Customers, Dashboard, Finance, Reviews, Services, Settings, Staff } from './crm/screens-real';
-import {
-  BookingDetailModal,
-  BusinessModal,
-  ClientHistoryModal,
-  CredentialsModal,
-  CrmBookingModal,
-  PasswordModal,
-  ModalLayer,
-  ServiceEditModal,
-  SlotEditorModal,
-  StaffCreateModal,
-  StaffEditModal,
-} from './crm/modals';
 
 // The real, authenticated CRM only exposes screens with live backend data, so a new
 // business starts from an authentic empty setup (no demo/mock screens). The demo-only
@@ -762,6 +764,10 @@ export default function App() {
           <Sidebar active={effActive} setActive={setActive} navOpen={navOpen} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {payload && <SubscriptionBanner subscription={payload.subscription} />}
+            {/* Below the subscription banner on purpose: "your trial ends in 3 days" outranks
+                "install the app", and two stacked banners should be in that order. Renders only
+                inside the signed-in shell, so it is never shown on the login screen. */}
+            <InstallPrompt />
             <Topbar title={meta.title} sub={meta.sub} onMenu={() => setNavOpen(true)} action={meta.action ? { label: meta.action.label, onClick: meta.action.run } : null} />
             <main style={{ flex: 1, minWidth: 0 }}>
               {/* Offline outranks both loading and error: when there is no network the spinner

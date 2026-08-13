@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Ic } from './icons';
 import { useCRM } from './i18n';
+import { Modal } from './ui';
 
 /**
- * "Install the app" / "you already have the app" banner, for a signed-in owner.
+ * "Install the app" / "you already have the app" dialog, for a signed-in owner.
  *
  * ## What the platforms actually allow
  *
@@ -22,7 +22,7 @@ import { useCRM } from './i18n';
  *
  *   Firefox desktop
  *     Cannot install a PWA at all. Shows NOTHING. Advice somebody cannot follow is worse than
- *     silence, and a banner they can never dismiss by acting on it is just noise.
+ *     silence, and a dialog they can never dismiss by acting on it is just noise.
  *
  * ## "Already installed but browsing" cannot be detected reliably
  *
@@ -36,7 +36,7 @@ import { useCRM } from './i18n';
  *
  * ## And we cannot open it for them
  *
- * No web API launches an installed PWA from a tab. The "installed" banner therefore tells them
+ * No web API launches an installed PWA from a tab. The "installed" dialog therefore tells them
  * where it is; it cannot be a button that takes them there. Anything claiming otherwise would
  * be a button that does nothing.
  */
@@ -47,6 +47,31 @@ const DISMISS_KEY = 'easyq.install.dismissed';
 const INSTALLED_KEY = 'easyq.install.done';
 /** Long enough not to nag, short enough that somebody who changes their mind is asked again. */
 const DISMISS_DAYS = 30;
+/**
+ * Let the dashboard paint before covering it.
+ *
+ * A dialog that arrives with the first frame reads as something being wrong, and it lands before
+ * anybody has seen what they signed in for. A beat later it reads as an offer.
+ */
+const OPEN_DELAY_MS = 1200;
+
+/**
+ * Phone or computer — for the COPY, not for capability.
+ *
+ * The first version had one string, and it said "runs from your phone's home screen" to an owner
+ * sitting at a desktop. The install is just as real there; it lands in the taskbar or the Dock
+ * and opens without browser chrome, which is a different promise and has to be worded as one.
+ *
+ * User agent first, because it is the thing that is actually being described. `pointer: coarse`
+ * is the better capability signal but it is wrong for exactly the case that caused this bug: a
+ * Windows laptop with a touchscreen is a computer.
+ */
+function isHandheld() {
+  if (typeof navigator === 'undefined') return false;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+  // iPadOS 13+ hides behind a Mac user agent; touch points give it away.
+  return /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
+}
 
 function isStandalone() {
   if (typeof window === 'undefined') return false;
@@ -86,13 +111,16 @@ export function InstallPrompt() {
   const [deferred, setDeferred] = useState<Deferred | null>(null);
   const [knownInstalled, setKnownInstalled] = useState(false);
   const [hidden, setHidden] = useState(() => isStandalone() || dismissedRecently());
+  /** Gates the first paint of the dialog — see OPEN_DELAY_MS. */
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) return;
+    const timer = window.setTimeout(() => setReady(true), OPEN_DELAY_MS);
 
     const onBeforeInstall = (event: Event) => {
-      // Chromium shows its own mini-infobar unless this is cancelled, and we want the prompt to
-      // appear where the rest of the CRM's messaging is, not over it.
+      // Chromium shows its own mini-infobar unless this is cancelled. Ours is a dialog with the
+      // shop's own wording, so its bar would be a second, worse ask for the same thing.
       event.preventDefault();
       setDeferred(event as Deferred);
     };
@@ -118,16 +146,17 @@ export function InstallPrompt() {
     }
 
     return () => {
+      window.clearTimeout(timer);
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
 
-  if (hidden) return null;
+  if (hidden || !ready) return null;
 
   const os = platform();
   /**
-   * What this banner can honestly offer, in order of usefulness. `null` means stay quiet — the
+   * What this dialog can honestly offer, in order of usefulness. `null` means stay quiet — the
    * case that matters is Firefox desktop, where installing is impossible and any advice would be
    * a dead end.
    */
@@ -149,55 +178,65 @@ export function InstallPrompt() {
     if (!deferred) return;
     await deferred.prompt();
     const choice = await deferred.userChoice.catch(() => ({ outcome: 'dismissed' }));
-    // The event is single-use; a second prompt() on it throws. Dropping it also removes the
-    // button, which is right either way — accepted means installed, declined means asked.
+    // The event is single-use; a second prompt() on it throws. Dropping it also closes the
+    // dialog, which is right either way — accepted means installed, declined means asked.
     setDeferred(null);
     if (choice.outcome === 'accepted') setHidden(true);
     else dismiss();
   };
 
-  const text =
-    mode === 'button' ? i.body
-    : mode === 'ios' ? i.iosBody
-    : mode === 'macSafari' ? i.macBody
-    : i.installedBody;
+  const handheld = isHandheld();
+
+  // Which promise this device can actually keep. A desktop install is not a home screen.
+  const sub =
+    mode === 'installed'
+      ? (handheld ? i.installedBody : i.installedBodyDesktop)
+      : (handheld ? i.body : i.bodyDesktop);
+
+  // Safari cannot be driven from script, so those two modes are STEPS rather than a button.
+  const steps = mode === 'ios' ? i.iosBody : mode === 'macSafari' ? i.macBody : null;
 
   return (
-    <div
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-        padding: '10px 16px', background: 'var(--accent-tint)', color: 'var(--accent-deep)',
-        fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--line)',
-      }}
+    <Modal
+      title={mode === 'installed' ? i.installedTitle : i.title}
+      sub={sub}
+      icon={handheld ? 'phone' : 'grid'}
+      onClose={dismiss}
+      footer={
+        <>
+          <span style={{ flex: 1 }} />
+          <button
+            onClick={dismiss}
+            style={{
+              minHeight: 40, padding: '0 16px', borderRadius: 10,
+              border: '1px solid var(--line-2)', background: 'var(--panel-2)',
+              color: 'var(--ink-2)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            {mode === 'button' ? i.later : i.dismiss}
+          </button>
+          {/* Only Chromium gets a button, because only Chromium can be asked from script. The
+              other modes close on "got it" — there is nothing here to press that would help. */}
+          {mode === 'button' && (
+            <button
+              onClick={() => void install()}
+              style={{
+                minHeight: 40, padding: '0 18px', borderRadius: 10, border: 'none',
+                background: 'var(--accent)', color: 'var(--accent-ink)',
+                fontSize: 13, fontWeight: 800, cursor: 'pointer',
+              }}
+            >
+              {i.action}
+            </button>
+          )}
+        </>
+      }
     >
-      <Ic name="phone" size={16} stroke={2.2} />
-      <span style={{ fontWeight: 800 }}>{mode === 'installed' ? i.installedTitle : i.title}</span>
-      <span style={{ fontWeight: 600, opacity: 0.9 }}>{text}</span>
-      <span style={{ flex: 1 }} />
-      {mode === 'button' && (
-        <button
-          onClick={() => void install()}
-          style={{
-            minHeight: 32, padding: '0 14px', borderRadius: 9, border: 'none',
-            background: 'var(--accent)', color: 'var(--accent-ink)',
-            fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
-          }}
-        >
-          {i.action}
-        </button>
-      )}
-      <button
-        onClick={dismiss}
-        aria-label={i.dismiss}
-        title={i.dismiss}
-        style={{
-          minHeight: 32, minWidth: 32, display: 'grid', placeItems: 'center',
-          borderRadius: 9, border: 'none', background: 'transparent',
-          color: 'var(--accent-deep)', cursor: 'pointer',
-        }}
-      >
-        <Ic name="x" size={15} stroke={2.4} />
-      </button>
-    </div>
+      {steps ? (
+        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.55, color: 'var(--ink-2)' }}>
+          {steps}
+        </p>
+      ) : null}
+    </Modal>
   );
 }

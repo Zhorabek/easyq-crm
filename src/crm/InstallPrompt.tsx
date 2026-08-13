@@ -114,6 +114,8 @@ export function InstallPrompt() {
   const [hidden, setHidden] = useState(() => isStandalone() || dismissedRecently());
   /** Gates the first paint of the dialog — see OPEN_DELAY_MS. */
   const [ready, setReady] = useState(false);
+  /** Set when the protocol launch was attempted and we are demonstrably still here. */
+  const [openFailed, setOpenFailed] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) return;
@@ -186,6 +188,37 @@ export function InstallPrompt() {
     else dismiss();
   };
 
+  /**
+   * Launch the installed app from this tab.
+   *
+   * There is no API for "open my PWA", but there is a way round it: the manifest registers a
+   * `web+easyq` protocol handler, and navigating to that scheme hands the URL to the installed
+   * app. Chromium honours it on desktop and Android.
+   *
+   * It cannot be relied on. Safari and Firefox do not implement protocol handlers, and Chromium
+   * only registers ours once the installed copy has picked up the new manifest — so an app
+   * installed before today will ignore it until the browser refreshes that manifest.
+   *
+   * Hence the fallback rather than a bare `location.href`. If the page is still visible a beat
+   * later, nothing launched, and the dialog says where to find the app by hand. A button that
+   * silently does nothing is the thing worth avoiding here.
+   */
+  const openApp = () => {
+    setOpenFailed(false);
+    let launched = false;
+    const onHide = () => { if (document.hidden) launched = true; };
+    document.addEventListener('visibilitychange', onHide);
+    try {
+      window.location.href = 'web+easyq://open';
+    } catch {
+      launched = false;
+    }
+    window.setTimeout(() => {
+      document.removeEventListener('visibilitychange', onHide);
+      if (!launched && !document.hidden) setOpenFailed(true);
+    }, 1400);
+  };
+
   const handheld = isHandheld();
 
   // Which promise this device can actually keep. A desktop install is not a home screen.
@@ -216,8 +249,21 @@ export function InstallPrompt() {
           >
             {mode === 'button' ? i.later : i.dismiss}
           </button>
-          {/* Only Chromium gets a button, because only Chromium can be asked from script. The
-              other modes close on "got it" — there is nothing here to press that would help. */}
+          {/* Installed already: offer to hand this tab over to the app. */}
+          {mode === 'installed' && (
+            <button
+              onClick={openApp}
+              style={{
+                minHeight: 40, padding: '0 18px', borderRadius: 10, border: 'none',
+                background: 'var(--accent)', color: 'var(--accent-ink)',
+                fontSize: 13, fontWeight: 800, cursor: 'pointer',
+              }}
+            >
+              {i.open}
+            </button>
+          )}
+          {/* Only Chromium gets an INSTALL button, because only Chromium can be asked from
+              script. The Safari modes close on "got it" — there is nothing to press that helps. */}
           {mode === 'button' && (
             <button
               onClick={() => void install()}
@@ -238,6 +284,11 @@ export function InstallPrompt() {
       <div className="eq-art eq-art--dialog" style={{ marginBottom: 4 }}>
         <InstallArt />
       </div>
+      {openFailed && (
+        <p style={{ margin: '4px 0 0', fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, color: 'var(--ink-3)', textAlign: 'center' }}>
+          {i.openFailed}
+        </p>
+      )}
       {steps ? (
         <p style={{ margin: '4px 0 0', fontSize: 13.5, fontWeight: 600, lineHeight: 1.55, color: 'var(--ink-2)', textAlign: 'center' }}>
           {steps}

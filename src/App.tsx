@@ -83,8 +83,10 @@ import {
  * has not noticed the network is back leaves somebody with a screen and nothing to press, and
  * "wait" is not an instruction anybody follows twice.
  */
-function OfflineState({ hasPayload, onRetry }: { hasPayload: boolean; onRetry: () => void }) {
-  const { t } = useCRM();
+function OfflineState({ t, hasPayload, onRetry }: { t: (typeof CRM_T)[Lang]; hasPayload: boolean; onRetry: () => void }) {
+  // Copy arrives as a prop rather than from useCRM, because this renders BEFORE the provider
+  // exists — the cold-start offline case sits above the auth gate, and crmValue is built far
+  // below it.
   const o = t.offline;
   return (
     <div className="fadein" style={{ padding: '32px 28px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
@@ -573,6 +575,31 @@ export default function App() {
   }
 
   // ---- boot / auth screens ----
+
+  /**
+   * Offline BEFORE the auth gate, or the offline screen is unreachable exactly when it matters.
+   *
+   * Opening the installed app with no network is the whole point of the service worker: it
+   * serves the cached shell, the app boots — and then `/api/auth/session` fails, because API
+   * requests are deliberately never cached. `session` stays null, and the auth gate below
+   * returned the LOGIN SCREEN. Somebody in a dead zone was being asked to sign in, over a
+   * network that is not there, by an app that had already decided it could not reach us.
+   *
+   * The in-shell offline state further down still handles the signed-in case, where keeping the
+   * sidebar and topbar is worth more than a full-page illustration. This one covers the cold
+   * start, which is the case an installed PWA actually produces.
+   *
+   * Ahead of `authChecking` too: a spinner that can never resolve is a worse answer than the
+   * true one.
+   */
+  if (!online && !session) {
+    return (
+      <div className="boot" style={{ alignItems: 'flex-start', overflowY: 'auto' }}>
+        <OfflineState t={CRM_T[lang]} hasPayload={false} onRetry={() => void bootstrap()} />
+      </div>
+    );
+  }
+
   if (authChecking) {
     return <div className="boot"><div className="spin" /></div>;
   }
@@ -777,7 +804,7 @@ export default function App() {
                   sidebar and topbar stay, so somebody can see where they were and that the app
                   itself has not fallen over. */}
               {!online ? (
-                <OfflineState hasPayload={Boolean(payload)} onRetry={() => void reload()} />
+                <OfflineState t={CRM_T[lang]} hasPayload={Boolean(payload)} onRetry={() => void reload()} />
               ) : loading && !payload ? (
                 <div style={{ padding: 28 }}><div className="boot" style={{ height: 320 }}><div className="spin" /></div></div>
               ) : error || !payload ? (

@@ -42,6 +42,27 @@ if (route === 'crm') {
   link.rel = 'manifest';
   link.href = '/manifest.webmanifest';
   document.head.appendChild(link);
+
+  /**
+   * Registered from the CRM route only, for the same reason as the manifest — but note its SCOPE
+   * is the whole origin, so on a tenant host it will also control that shop's `/booking` page
+   * once an owner has opened their CRM there. That is safe (see the strategies in sw.js) and is
+   * why nothing in that file may assume the visitor is an owner.
+   *
+   * After load, so registration never competes with the first render for bandwidth. The worker
+   * only matters from the SECOND visit onward anyway; racing it against the paint of the first
+   * one trades the thing the user is waiting for against a thing they cannot yet use.
+   *
+   * Failure is swallowed deliberately: an unsupported browser, a private window, or a blocked
+   * registration should cost offline support and nothing else. The CRM works without it.
+   */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((error) => {
+        console.warn('service worker registration failed; offline support is off:', error);
+      });
+    });
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

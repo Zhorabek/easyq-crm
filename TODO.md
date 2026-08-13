@@ -1,6 +1,6 @@
 # EasyQ CRM — outstanding work
 
-Last updated 2026-08-08. Everything below is either not started or waiting on someone.
+Last updated 2026-08-13. Everything below is either not started or waiting on someone.
 Items are ordered within each section by what I'd do first.
 
 ---
@@ -8,6 +8,29 @@ Items are ordered within each section by what I'd do first.
 ## Needs a person, not code
 
 Nothing here can be done from the repo.
+
+- [ ] **Walk the review flow end to end. Every piece is deployed; nobody has run the path.**
+      Bot collects -> CRM moderates -> booking page and Telegram both display. Each half is
+      tested in isolation and the whole has never been exercised against a real booking.
+
+      **Only bookings made through the client bot are eligible** — web and CRM bookings insert
+      `user_id = NULL`, and the review cron needs a Telegram identity to message. Check first:
+
+      ```sql
+      SELECT COUNT(*) AS bot_bookings,
+             SUM(CASE WHEN status IN ('pending','confirmed') THEN 1 ELSE 0 END) AS ready_to_test
+        FROM bookings WHERE user_id IS NOT NULL;
+      ```
+
+      Then: book in the bot, mark it `done` in the CRM, wait up to five minutes for the cron,
+      rate it, send a comment, publish it in the CRM, and look at the specialist card on the
+      booking page and in the bot.
+
+      Baseline taken 2026-08-13 — barber777 staff 14 and 16 both at `rating=null, ratingCount=0`,
+      so anything that appears there came from the test.
+
+      The cron is the step to watch: `listBookingsDueForReviewPrompt` has never fired against a
+      real row in production. Its logs are readable now, which they were not before 2026-08-13.
 
 - [ ] **Revoke the client bot token. It was pasted into a chat on 2026-08-10.**
       `@BotFather` → `/revoke` → the client bot. A bot token is total control of that bot:
@@ -503,6 +526,30 @@ chips and search, the two-tab specialist step, month calendar, times grouped by 
 ---
 
 ## Shipped, kept for the reasoning
+
+### The CRM installs as an app — 2026-08-13
+
+Manifest, icon set, service worker, offline screen, and an install dialog that adapts to the
+platform. Written up in the README under *Installing it (PWA)*; the parts that were decisions
+rather than code:
+
+- **The booking page is deliberately not installable.** Once-ever visit; an install prompt there
+  is friction, not value.
+- **No push notifications, and not by omission.** Two Telegram bots already reach these owners
+  better than web push does in Uzbekistan, and iOS web push needs an install first. A PWA
+  competing with Telegram would be worse at the one job Telegram already does.
+- **Four install paths, because the platforms disagree.** Chromium gets a real button;
+  iOS and macOS Safari get written steps, since Apple never shipped `beforeinstallprompt` and
+  the sheet cannot be raised from script; Firefox desktop gets silence, because it cannot
+  install a PWA at all and advice nobody can act on is worse than none.
+- **"Already installed" is a nudge, not a fact.** `getInstalledRelatedApps()` is Chromium-only
+  and a display-mode query answers how THIS tab is running, not whether an installed copy
+  exists. The signal is our own `appinstalled` memory, so it misses another device and always
+  will — worded accordingly.
+- **"Open in the app" works through a `web+easyq` protocol handler**, and says so when it does
+  not: Safari and Firefox ignore protocol handlers, and Chromium only registers ours once the
+  installed copy refreshes its manifest.
+
 
 ### Subscriptions — 2026-08-04
 

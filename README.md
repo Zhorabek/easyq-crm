@@ -275,6 +275,67 @@ promised the legend could shrink to nothing while its text refused to — so not
 the card overflowed a 320px viewport. It wraps with a real floor now, and that floor is 140px
 because that is what the container measures, not because 140 is a tidy number.
 
+## Installing it (PWA)
+
+The CRM installs to a home screen or taskbar and opens without browser chrome. The booking page
+does not, deliberately — it is a once-ever visit, and an install prompt there is friction.
+
+**Everything is scoped to the CRM route.** `main.tsx` decides which of three apps this document
+renders (CRM, `/booking`, `?embed=1`) and links the manifest and registers the service worker
+only for the first. A static `<link rel="manifest">` in `index.html` would offer a customer, on a
+shop's booking page, to install "EasyQ CRM" starting at `/` — which they cannot log into.
+
+**The install offer only appears on the business's own host.** `start_url` is relative, so an
+install captures whatever host it was performed on. Installed from `crm.easyq.uz` the app would
+launch there forever, and the session cookie carries no `Domain=` — so that host holds no session
+and the owner meets a login screen inside their own app, with no address bar to escape from.
+
+**A returning owner is redirected off the shared host.** The landing page's sign-in link points at
+`crm.easyq.uz` and has to: before somebody types a username, nothing knows which shop they are.
+The slug is remembered there at login and read back on the next visit, so the second time they
+land in their CRM instead of a login form. Cleared on explicit sign-out, or a shared computer
+would bounce the next person into somebody else's shop.
+
+### The service worker
+
+`public/sw.js`, two rules and everything follows from them:
+
+1. **Never cache `/api/*`.** This is a calendar. A cached response means an owner reading
+   bookings that were cancelled an hour ago, with nothing on screen saying so. Requests pass
+   through and are allowed to fail.
+2. **Never cache-first the HTML.** Vite content-hashes its bundles and a deploy renames them, so
+   a stale `index.html` points at a file that no longer exists — a white screen until somebody
+   clears site data. Network-first, with the last good shell as fallback. Hashed assets *are*
+   cache-first, because a content hash makes them immutable by definition.
+
+No `skipWaiting`: a new worker waits for tabs to close rather than taking over mid-session, which
+would let a page running the old bundle request a lazy chunk the new deploy has deleted.
+
+Its scope is the whole origin, so on a tenant host it also controls that shop's `/booking` page
+once an owner has opened their CRM there. Safe under both rules, and the reason nothing in that
+file may assume the visitor is an owner.
+
+### Icons
+
+`public/icons/` — two SVG masters, PNGs rendered from them by `node scripts/build-icons.cjs`.
+Never edit a PNG; the next run overwrites it. Not wired into `npm run build`: icons change
+roughly never and `sharp` is a heavy native dependency to put on every deploy.
+
+Two sources rather than one resized. The `any` icon carries its own rounded corners; the
+`maskable` one is full bleed with the mark at 68%, because Android crops to a launcher-chosen
+shape and only guarantees the central 80%.
+
+### Colour
+
+`theme_color` in the manifest is one value for every tenant, so it is only the fallback — used
+for the splash screen, drawn before any JavaScript runs. The live window and status bar colour
+comes from `<meta name="theme-color">`, which `useBrandAccent` rewrites from the shop's own
+accent. Otherwise a barbershop whose brand is orange gets our lime across their title bar.
+
+The offline screen and the install dialog share the same treatment: both illustrations are
+inlined SVGs whose greens are `currentColor`, so `.eq-art` paints them in the shop's colour.
+`prefers-reduced-motion` stops their float entirely rather than slowing it.
+
 ## The booking page
 
 A hub of full screens rather than one scrolling form. The customer starts from whichever of

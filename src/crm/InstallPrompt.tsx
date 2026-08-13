@@ -235,7 +235,7 @@ export function InstallPrompt() {
     >
       {/* Capped and centred rather than full-bleed: this is a dialog somebody is deciding in, and
           artwork wider than the sentence above it turns the decision into a poster. */}
-      <div className="eq-art" style={{ width: '100%', maxWidth: 260, margin: '0 auto 4px' }}>
+      <div className="eq-art eq-art--dialog" style={{ marginBottom: 4 }}>
         <InstallArt />
       </div>
       {steps ? (

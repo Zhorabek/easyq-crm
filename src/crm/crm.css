@@ -785,3 +785,33 @@ a {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Sizing, kept out of the components so both illustrations obey one set of rules.
+ *
+ * Fluid rather than fixed: the dialog one was a flat 260px, which is reasonable on a laptop and
+ * postage-stamp sized on a wide monitor. `clamp` gives a floor so it never shrinks into
+ * decoration, a viewport-relative middle so it grows with the screen, and a ceiling so it never
+ * becomes the loudest thing in a dialog somebody is trying to read.
+ *
+ * The page variant runs larger because it has a whole screen; the dialog variant has to leave
+ * room for a title, a sentence and two buttons.
+ */
+.eq-art--dialog {
+  width: clamp(240px, 62vw, 344px);
+  margin-inline: auto;
+}
+.eq-art--page {
+  width: clamp(260px, 46vw, 440px);
+}
+
+/* Short viewports are the case fluid width alone gets wrong: a landscape phone or a small laptop
+ * has plenty of WIDTH and no height, so a width-driven illustration pushes the buttons below the
+ * fold — on the dialog, off it entirely. Height is the constraint there, so it drives the size. */
+@media (max-height: 720px) {
+  .eq-art--dialog { width: clamp(190px, 34vh, 260px); }
+  .eq-art--page { width: clamp(200px, 40vh, 320px); }
+}
+@media (max-height: 520px) {
+  .eq-art--dialog { width: clamp(150px, 26vh, 200px); }
+  .eq-art--page { width: clamp(160px, 30vh, 240px); }
+}

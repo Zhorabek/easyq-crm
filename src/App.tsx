@@ -89,7 +89,7 @@ function OfflineState({ hasPayload, onRetry }: { hasPayload: boolean; onRetry: (
   return (
     <div className="fadein" style={{ padding: '32px 28px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
       {/* `.eq-art` carries both the brand colour and the shared entrance/float — see crm.css. */}
-      <div className="eq-art" style={{ width: '100%', maxWidth: 340 }}>
+      <div className="eq-art eq-art--page">
         <OfflineArt />
       </div>
       <h2 style={{ margin: '10px 0 0', fontSize: 20, fontWeight: 800, letterSpacing: '-.02em' }}>{o.title}</h2>

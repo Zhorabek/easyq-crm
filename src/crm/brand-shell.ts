@@ -55,6 +55,37 @@ const ACCENT_VARS = [
   '--accent-nav-ink',
 ] as const;
 
+/**
+ * The manifest's `theme_color`, and what we fall back to with no brand set.
+ *
+ * Must match the value in index.html and manifest.webmanifest — this is the colour a shop with
+ * no brand of its own gets.
+ */
+const DEFAULT_THEME_COLOR = '#b4d94e';
+
+/**
+ * Paint the INSTALLED APP's window with the shop's colour, not ours.
+ *
+ * `theme_color` in the manifest is one static value for every tenant, and it was ours: a
+ * barbershop whose brand is orange installed the app and got a lime title bar above their own
+ * orange UI. The manifest cannot fix that — it is a single file served to every business.
+ *
+ * The `<meta name="theme-color">` tag can, and Chromium re-reads it live, so the standalone
+ * window's title bar and a phone's status bar follow the brand as soon as the payload lands.
+ * The manifest value stays as the fallback for the splash screen, which is drawn before any of
+ * our JavaScript runs.
+ */
+function setThemeColor(color: string) {
+  if (typeof document === 'undefined') return;
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute('content', color);
+}
+
 export function useBrandAccent(accent: string | null | undefined) {
   useEffect(() => {
     const root = document.documentElement;
@@ -62,9 +93,11 @@ export function useBrandAccent(accent: string | null | undefined) {
     // Without this a business colour would survive a logout into the next person's session.
     if (!accent) {
       for (const v of ACCENT_VARS) root.style.removeProperty(v);
+      setThemeColor(DEFAULT_THEME_COLOR);
       return;
     }
     const tokens = brandTokens({ ...CRM_SURFACE, accent });
+    setThemeColor(tokens.accent);
     root.style.setProperty('--accent', tokens.accent);
     root.style.setProperty('--accent-deep', tokens.accentDeep);
     root.style.setProperty('--accent-tint', tokens.accentTint);

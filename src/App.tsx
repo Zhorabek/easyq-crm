@@ -793,10 +793,14 @@ export default function App() {
           <Sidebar active={effActive} setActive={setActive} navOpen={navOpen} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {payload && <SubscriptionBanner subscription={payload.subscription} />}
-            {/* Below the subscription banner on purpose: "your trial ends in 3 days" outranks
-                "install the app", and two stacked banners should be in that order. Renders only
-                inside the signed-in shell, so it is never shown on the login screen. */}
-            <InstallPrompt />
+            {/* Only on the business's OWN host.
+                `start_url` in the manifest is relative, so an install captures whatever host it
+                was performed on. Installed from crm.easyq.uz, the app would launch there
+                forever — and the session cookie carries no `Domain=`, so that host has no
+                session and the owner lands on a login screen inside their own app, every time.
+                Signing in already redirects to `<slug>.<apex>`; this makes sure the install
+                offer only appears once that has happened. */}
+            {session.slug && isOwnTenantHost(session.slug) && <InstallPrompt />}
             <Topbar title={meta.title} sub={meta.sub} onMenu={() => setNavOpen(true)} action={meta.action ? { label: meta.action.label, onClick: meta.action.run } : null} />
             <main style={{ flex: 1, minWidth: 0 }}>
               {/* Offline outranks both loading and error: when there is no network the spinner

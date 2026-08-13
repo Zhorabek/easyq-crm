@@ -40,8 +40,49 @@ import type {
   ServiceCatalogItem,
 } from './types';
 import './crm/crm.css';
-import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, type CRMContextValue, type Lang, type Role } from './crm/i18n';
+import { CRM_LANGS, CRM_M, CRM_T, CRMCtx, useCRM, type CRMContextValue, type Lang, type Role } from './crm/i18n';
 import { DataCtx, type DataValue } from './crm/data';
+import { OfflineArt } from './crm/OfflineArt';
+
+/**
+ * What the CRM shows with no network.
+ *
+ * The illustration is capped at 340px and sits above the text rather than beside it. It is
+ * reassurance, not information — the point of this screen is the one sentence saying the page
+ * will come back on its own, and artwork that outgrows that sentence turns an explanation into
+ * a poster.
+ *
+ * `color: var(--accent)` is the whole reason the SVG was inlined: every green in it is
+ * `currentColor`, so this line paints it in the SHOP's brand colour rather than ours.
+ *
+ * The retry button stays even though the `online` event reloads automatically. A browser that
+ * has not noticed the network is back leaves somebody with a screen and nothing to press, and
+ * "wait" is not an instruction anybody follows twice.
+ */
+function OfflineState({ hasPayload, onRetry }: { hasPayload: boolean; onRetry: () => void }) {
+  const { t } = useCRM();
+  const o = t.offline;
+  return (
+    <div className="fadein" style={{ padding: '32px 28px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 340, color: 'var(--accent)' }}>
+        <OfflineArt />
+      </div>
+      <h2 style={{ margin: '10px 0 0', fontSize: 20, fontWeight: 800, letterSpacing: '-.02em' }}>{o.title}</h2>
+      <p style={{ margin: '10px 0 0', maxWidth: 420, fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: 'var(--ink-2)' }}>{o.body}</p>
+      {/* Only when there is something on screen behind this. Warning that cached data may be
+          stale is meaningless on a session that never loaded any. */}
+      {hasPayload && (
+        <p style={{ margin: '8px 0 0', fontSize: 12.5, fontWeight: 600, color: 'var(--ink-3)' }}>{o.stale}</p>
+      )}
+      <button
+        onClick={onRetry}
+        style={{ marginTop: 22, minHeight: 44, padding: '0 22px', borderRadius: 12, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
+      >
+        {o.retry}
+      </button>
+    </div>
+  );
+}
 import { Ic } from './crm/icons';
 import { CRMLogo, Toast } from './crm/ui';
 import { SubscriptionBanner, SubscriptionExpired } from './crm/Subscription';
@@ -168,6 +209,34 @@ export default function App() {
   const [selectedDate, setSelectedDateState] = useState(isoToday());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether the browser believes it has a network at all.
+   *
+   * `navigator.onLine` is only trustworthy in ONE direction, which is exactly the direction
+   * needed here: false means there is definitely no network, true means only that an interface
+   * is up — a captive wifi portal reports true while nothing can reach us. So this drives the
+   * offline SCREEN, and the existing `error` branch still catches the case where we are
+   * nominally online and the request fails anyway. Neither replaces the other.
+   */
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+
+  useEffect(() => {
+    const goOnline = () => {
+      setOnline(true);
+      // Fetch immediately rather than waiting for the next poll. Coming back from a dead zone
+      // and being shown a stale calendar for another interval is the moment this screen exists
+      // to avoid, and it is also what the copy promises: the page refreshes itself.
+      void reload();
+    };
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [dayCache, setDayCache] = useState<Record<string, CrmPayload>>({});
   const inFlight = useRef<Set<string>>(new Set());
 
@@ -695,7 +764,13 @@ export default function App() {
             {payload && <SubscriptionBanner subscription={payload.subscription} />}
             <Topbar title={meta.title} sub={meta.sub} onMenu={() => setNavOpen(true)} action={meta.action ? { label: meta.action.label, onClick: meta.action.run } : null} />
             <main style={{ flex: 1, minWidth: 0 }}>
-              {loading && !payload ? (
+              {/* Offline outranks both loading and error: when there is no network the spinner
+                  is a lie and "failed to fetch" is a worse explanation than the true one. The
+                  sidebar and topbar stay, so somebody can see where they were and that the app
+                  itself has not fallen over. */}
+              {!online ? (
+                <OfflineState hasPayload={Boolean(payload)} onRetry={() => void reload()} />
+              ) : loading && !payload ? (
                 <div style={{ padding: 28 }}><div className="boot" style={{ height: 320 }}><div className="spin" /></div></div>
               ) : error || !payload ? (
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 600 }}>{error ?? '—'}</div>

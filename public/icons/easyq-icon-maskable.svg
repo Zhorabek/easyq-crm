@@ -1,0 +1,30 @@
+<!--
+  EasyQ app icon, maskable variant.
+
+  Two differences from easyq-icon.svg, and both are required rather than stylistic:
+
+  1. NO ROUNDED CORNERS. Android applies its own mask — circle, squircle, teardrop, depending
+     on the launcher — and a shape that already has corners gets them sliced off, leaving pale
+     wedges where the tile used to be. The background is full bleed and the OS decides the
+     silhouette.
+
+  2. THE MARK IS SMALLER. The maskable spec guarantees only the central circle of 80% diameter
+     survives cropping — the "safe zone". The Q is scaled to sit inside it, which is why this
+     looks over-padded next to the other file. It is not: the padding is the part that gets
+     eaten.
+
+  Same geometry otherwise, scaled about the centre, so the two icons cannot drift apart in
+  anything but size.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="EasyQ">
+  <title>EasyQ</title>
+  <rect width="100" height="100" fill="#b4d94e"/>
+  <g transform="translate(50 50) scale(0.68) translate(-50 -47)">
+    <circle cx="48" cy="45" r="24" fill="none" stroke="#0f172a" stroke-width="14"/>
+      <!-- The tail starts at r=20, inside the ring stroke (which spans r 17 to 31), so it merges
+         into the letter as one solid form. Earlier versions cut a lime notch where it crosses,
+         to make it read as piercing the ring; at icon sizes that just looked like a broken
+         circle with a pill next to it. A Q is one shape. -->
+    <path d="M62.1 59.1 L77.7 74.7" stroke="#0f172a" stroke-width="13" stroke-linecap="round"/>
+  </g>
+</svg>

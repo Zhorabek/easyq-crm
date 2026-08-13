@@ -1,0 +1,28 @@
+<!--
+  EasyQ app icon — the "pierced Q".
+
+  Master source. Every PNG in this folder is rendered from this file by
+  scripts/build-icons.cjs; edit here, re-run that, never hand-edit a PNG.
+
+  The tail is drawn TWICE on purpose. The wide lime stroke carves a channel through the dark
+  ring, and the narrower dark stroke sits inside that channel — so the tail reads as passing
+  through the letter rather than being welded onto its outside. That gap is the whole mark; a
+  tail that merely touches the ring is the generic Q this replaced.
+
+  Colours are the platform's own brand tokens, not approximations:
+    #b4d94e  DEFAULT_BRAND_COLOR   (src/shared/brand.ts)
+    #0f172a  DEFAULT_BRAND_THEME.ink
+
+  This is the "any" purpose icon and carries its own rounded corners. The maskable variant is
+  a separate file, because Android crops to a circle and would slice this one's corners off.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="EasyQ">
+  <title>EasyQ</title>
+  <rect width="100" height="100" rx="23" fill="#b4d94e"/>
+  <circle cx="48" cy="45" r="24" fill="none" stroke="#0f172a" stroke-width="14"/>
+  <!-- The tail starts at r=20, inside the ring stroke (which spans r 17 to 31), so it merges
+       into the letter as one solid form. Earlier versions cut a lime notch where it crosses,
+       to make it read as piercing the ring; at icon sizes that just looked like a broken
+       circle with a pill next to it. A Q is one shape. -->
+  <path d="M62.1 59.1 L77.7 74.7" stroke="#0f172a" stroke-width="13" stroke-linecap="round"/>
+</svg>

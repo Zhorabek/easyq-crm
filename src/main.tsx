@@ -24,6 +24,26 @@ const route = (() => {
 
 const Root = route === 'embed' ? EmbedApp : route === 'booking' ? BookingApp : App;
 
+/**
+ * The manifest is linked HERE rather than in index.html, because one HTML file serves three
+ * different things.
+ *
+ * `/booking` and `?embed=1` are the same document as the CRM — the route above is what decides
+ * which app renders. A static `<link rel="manifest">` in the head would therefore offer to
+ * install the CRM from a customer's booking page, under the CRM's name and icon, starting at
+ * `/` which that customer has no login for. Installability is a property of the app, and only
+ * one of the three is an app somebody returns to.
+ *
+ * Chrome re-reads the manifest when the link element is inserted, so adding it before the first
+ * render is enough for the install prompt to appear.
+ */
+if (route === 'crm') {
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = '/manifest.webmanifest';
+  document.head.appendChild(link);
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Root />

@@ -8,6 +8,15 @@
       name="description"
       content="EasyQ CRM for managing bookings, employees, schedules, and client visit analytics."
     />
+    <!--
+      Icons and theme colour are safe to set statically for every route: a booking page wants a
+      favicon and an iOS home-screen icon too. The MANIFEST is not — it is added in main.tsx
+      only for the CRM, so a customer's booking page never offers to install the owner's CRM.
+      iOS ignores the manifest for touch icons and reads this link instead.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/icons/easyq-icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#b4d94e" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useCRM } from './i18n';
 import { Modal } from './ui';
+import { InstallArt } from './InstallArt';
 
 /**
  * "Install the app" / "you already have the app" dialog, for a signed-in owner.
@@ -232,8 +233,13 @@ export function InstallPrompt() {
         </>
       }
     >
+      {/* Capped and centred rather than full-bleed: this is a dialog somebody is deciding in, and
+          artwork wider than the sentence above it turns the decision into a poster. */}
+      <div className="eq-art" style={{ width: '100%', maxWidth: 260, margin: '0 auto 4px' }}>
+        <InstallArt />
+      </div>
       {steps ? (
-        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.55, color: 'var(--ink-2)' }}>
+        <p style={{ margin: '4px 0 0', fontSize: 13.5, fontWeight: 600, lineHeight: 1.55, color: 'var(--ink-2)', textAlign: 'center' }}>
           {steps}
         </p>
       ) : null}

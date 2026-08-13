@@ -720,3 +720,68 @@ a {
     font-size: 16px !important;
   }
 }
+
+/* ── Illustrations ───────────────────────────────────────────────────────────
+ *
+ * Shared by the offline screen and the install dialog. Both are inlined SVGs whose greens are
+ * `currentColor`, so `.eq-art` sets the brand colour once and the artwork follows.
+ *
+ * Three things move, and each earns it:
+ *
+ *   1. The whole piece fades up on mount, so it arrives rather than appearing.
+ *   2. Its top-level <g> layers stagger in behind that. Storyset files are already grouped by
+ *      scene element — background, floor, device, character — so the stagger reads as the
+ *      drawing assembling itself, and it needs no edit to the SVG.
+ *   3. A slow float afterwards, three pixels either way. Enough to stop the panel looking like a
+ *      screenshot, small enough that nobody watching the numbers next to it is distracted.
+ *
+ * `will-change` is deliberately absent: these are small, short, and promoting two layers per
+ * dialog to their own compositor texture costs more than it saves.
+ */
+.eq-art {
+  color: var(--accent);
+}
+.eq-art svg {
+  animation: eq-art-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both, eq-art-float 7s ease-in-out 640ms infinite;
+}
+.eq-art svg > g {
+  animation: eq-art-layer 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Layer stagger. Capped at six: past that the tail of a complex drawing arrives late enough to
+   look like something failed to load. Remaining groups keep the last delay. */
+.eq-art svg > g:nth-of-type(1) { animation-delay: 40ms; }
+.eq-art svg > g:nth-of-type(2) { animation-delay: 90ms; }
+.eq-art svg > g:nth-of-type(3) { animation-delay: 140ms; }
+.eq-art svg > g:nth-of-type(4) { animation-delay: 190ms; }
+.eq-art svg > g:nth-of-type(5) { animation-delay: 240ms; }
+.eq-art svg > g:nth-of-type(n + 6) { animation-delay: 280ms; }
+
+@keyframes eq-art-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes eq-art-layer {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes eq-art-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Not a nicety. Vestibular disorders make looping motion genuinely unpleasant, and an idle
+   float is exactly the kind that triggers it — so the float stops entirely rather than slowing,
+   and the entrance collapses to a plain fade. */
+@media (prefers-reduced-motion: reduce) {
+  .eq-art svg,
+  .eq-art svg > g {
+    animation: none;
+  }
+  .eq-art svg {
+    animation: eq-art-fade 200ms ease-out both;
+  }
+}
+@keyframes eq-art-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

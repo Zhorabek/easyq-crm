@@ -75,8 +75,9 @@ import {
  * will come back on its own, and artwork that outgrows that sentence turns an explanation into
  * a poster.
  *
- * `color: var(--accent)` is the whole reason the SVG was inlined: every green in it is
- * `currentColor`, so this line paints it in the SHOP's brand colour rather than ours.
+ * The `.eq-art` class is the whole reason the SVG was inlined: every green in it is
+ * `currentColor`, and that class sets the SHOP's brand colour — plus the entrance and float it
+ * shares with the install dialog's artwork.
  *
  * The retry button stays even though the `online` event reloads automatically. A browser that
  * has not noticed the network is back leaves somebody with a screen and nothing to press, and
@@ -87,7 +88,8 @@ function OfflineState({ hasPayload, onRetry }: { hasPayload: boolean; onRetry: (
   const o = t.offline;
   return (
     <div className="fadein" style={{ padding: '32px 28px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-      <div style={{ width: '100%', maxWidth: 340, color: 'var(--accent)' }}>
+      {/* `.eq-art` carries both the brand colour and the shared entrance/float — see crm.css. */}
+      <div className="eq-art" style={{ width: '100%', maxWidth: 340 }}>
         <OfflineArt />
       </div>
       <h2 style={{ margin: '10px 0 0', fontSize: 20, fontWeight: 800, letterSpacing: '-.02em' }}>{o.title}</h2>

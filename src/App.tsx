@@ -169,6 +169,25 @@ function isOwnTenantHost(slug: string) {
   }
 }
 
+/**
+ * The last business signed in from THIS browser, remembered on the shared login host.
+ *
+ * Written on `crm.easyq.uz` at the moment we learn the slug, and read there on the next visit.
+ * Same origin both times, which is the only reason it works — a value written on
+ * `barber777.easyq.uz` is invisible to `crm.easyq.uz`, so the tenant host cannot help here.
+ */
+const LAST_SLUG_KEY = 'easyq.lastSlug';
+
+function rememberSlug(slug: string) {
+  try { localStorage.setItem(LAST_SLUG_KEY, slug); } catch { /* private mode */ }
+}
+function forgetSlug() {
+  try { localStorage.removeItem(LAST_SLUG_KEY); } catch { /* private mode */ }
+}
+function recallSlug() {
+  try { return localStorage.getItem(LAST_SLUG_KEY) || ''; } catch { return ''; }
+}
+
 /** Apex of the current host — `crm.easyq.uz` -> `easyq.uz`. */
 function apexHost() {
   const parts = window.location.hostname.split('.');
@@ -322,7 +341,28 @@ export default function App() {
       setSession(s);
       setLoginForm((c) => ({ ...c, username: s.username, password: '' }));
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) { setSession(null); setLoginError(null); }
+      if (e instanceof ApiError && e.status === 401) {
+        /**
+         * No session HERE — but there may be one on the business's own host.
+         *
+         * The landing page's sign-in link points at the shared host, because before anybody
+         * types a username nothing knows which shop they are. That is fine once. It is not fine
+         * every time: a returning owner has a live cookie on `<slug>.<apex>` and was being shown
+         * a login form anyway, because the cookie carries no `Domain=` and does not exist here.
+         *
+         * So if this browser has signed a business in before, send it to that host and let the
+         * cookie there answer. If it has expired they get that shop's login screen instead of
+         * the generic one, which is no worse and better branded — and signing in as a DIFFERENT
+         * business self-corrects, because that login redirects to its own host in turn.
+         */
+        const slug = recallSlug();
+        if (slug && !isOwnTenantHost(slug)) {
+          window.location.replace(`https://${slug}.${apexHost()}/`);
+          return; // navigating away; leave authChecking true so nothing flashes
+        }
+        setSession(null);
+        setLoginError(null);
+      }
       else setError(e instanceof Error ? e.message : 'Auth error');
     } finally {
       setAuthChecking(false);
@@ -378,6 +418,8 @@ export default function App() {
       // own cookie and 303 to `/` — which is exactly what sessionLogin already does for the
       // signup flow. Cross-origin form posts are not CORS-blocked, so no extra plumbing.
       if (res.session.slug && !isOwnTenantHost(res.session.slug)) {
+        // Recorded here, on the shared host, so the NEXT visit to it can skip this screen.
+        rememberSlug(res.session.slug);
         submitToTenantHost(res.session.slug, username, password);
         return; // the browser is navigating away; do not touch state
       }
@@ -393,6 +435,9 @@ export default function App() {
 
   async function handleLogout() {
     try { await apiLogout(); } finally {
+      // Explicit sign-out clears the memory: on a shared computer the next person must get the
+      // generic login door, not a bounce into somebody else's shop.
+      forgetSlug();
       setSession(null);
       setPayload(null);
       setNavOpen(false);
